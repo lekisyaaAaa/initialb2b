@@ -1,0 +1,21 @@
+{
+  "name": "beantobin-environmental-monitoring",
+  "version": "1.0.0",
+  "description": "BeanToBin Environmental Monitoring System",
+  "main": "backend/server.js",
+  "scripts": {
+    "start": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "backend": "cd backend && npm start",
+    "frontend": "cd frontend && npm start",
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "install-all": "npm run install-backend && npm run install-frontend",
+    "install-backend": "cd backend && npm install",
+    "install-frontend": "cd frontend && npm install"
+  },
+  "keywords": ["environmental", "monitoring", "iot", "sensors", "react", "nodejs"],
+  "author": "BeanToBin",
+  "license": "MIT",
+  "devDependencies": {
+    "concurrently": "^7.6.0"
+  }
+}

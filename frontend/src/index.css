@@ -1,0 +1,245 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Custom base styles */
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+  
+  body {
+    @apply bg-coffee-50 text-espresso-900 font-sans antialiased;
+  }
+}
+
+/* Custom component styles */
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-lg font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2;
+  }
+  
+  .btn-primary {
+    @apply btn bg-primary-600 hover:bg-primary-700 text-white focus:ring-primary-500;
+  }
+  
+  .btn-secondary {
+    @apply btn bg-coffee-200 hover:bg-coffee-300 text-espresso-900 focus:ring-coffee-500;
+  }
+  
+  .btn-success {
+    @apply btn bg-success-600 hover:bg-success-700 text-white focus:ring-success-500;
+  }
+  
+  .btn-warning {
+    @apply btn bg-warning-600 hover:bg-warning-700 text-white focus:ring-warning-500;
+  }
+  
+  .btn-danger {
+    @apply btn bg-danger-600 hover:bg-danger-700 text-white focus:ring-danger-500;
+  }
+  
+  .card {
+    @apply bg-white rounded-xl shadow-lg border border-coffee-200 p-6;
+  }
+  
+  .input {
+    @apply block w-full rounded-lg border-coffee-300 shadow-sm focus:border-primary-500 focus:ring-primary-500;
+  }
+  
+  .alert {
+    @apply p-4 rounded-lg border-l-4;
+  }
+  
+  .alert-success {
+    @apply alert bg-success-50 border-success-500 text-success-800;
+  }
+  
+  .alert-warning {
+    @apply alert bg-warning-50 border-warning-500 text-warning-800;
+  }
+  
+  .alert-danger {
+    @apply alert bg-danger-50 border-danger-500 text-danger-800;
+  }
+  
+  .alert-info {
+    @apply alert bg-primary-50 border-primary-500 text-primary-800;
+  }
+
+  /* Coffee-themed custom components */
+  .coffee-gradient {
+    background: linear-gradient(135deg, #f5f1ea 0%, #e1c794 100%);
+  }
+  
+  .espresso-gradient {
+    background: linear-gradient(135deg, #8b6636 0%, #3c2e24 100%);
+  }
+
+  /* Letran-themed gradients */
+  .letran-gradient {
+    background: linear-gradient(135deg, #dc143c 0%, #991b1b 100%);
+  }
+
+  .letran-coffee-gradient {
+    background: linear-gradient(135deg, #dc143c 0%, #a67c52 50%, #6f4e28 100%);
+  }
+  
+  .coffee-card {
+    @apply bg-white rounded-xl shadow-lg border border-coffee-200 p-6 hover:shadow-xl transition-shadow duration-200;
+    background: linear-gradient(145deg, #ffffff 0%, #fefdf9 100%);
+    border-left: 4px solid #dc143c; /* Letran crimson accent */
+  }
+
+  .coffee-card-alt {
+    @apply bg-white rounded-xl shadow-lg border border-coffee-200 p-6 hover:shadow-xl transition-shadow duration-200;
+    background: linear-gradient(145deg, #ffffff 0%, #fefdf9 100%);
+    border-top: 3px solid #dc143c; /* Letran crimson accent */
+  }
+  
+  .coffee-button {
+    @apply bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-md hover:shadow-lg;
+    background: linear-gradient(135deg, #a67c52 0%, #dc143c 100%); /* Coffee to Letran gradient */
+  }
+
+  .letran-button {
+    @apply text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-md hover:shadow-lg;
+    background: linear-gradient(135deg, #dc143c 0%, #991b1b 100%);
+  }
+  
+  .coffee-input {
+    @apply w-full px-3 py-2 border border-coffee-300 rounded-lg focus:ring-2 focus:ring-letran-500 focus:border-letran-500 bg-white placeholder-espresso-400;
+  }
+
+  /* Letran accent elements */
+  .letran-nav-accent {
+    border-bottom: 2px solid #dc143c;
+  }
+
+  .letran-badge {
+    @apply px-3 py-1 rounded-full text-sm font-medium;
+    background-color: rgba(220, 20, 60, 0.1);
+    color: #dc143c;
+  }
+
+  .letran-alert {
+    @apply border-l-4 border-letran-500 bg-letran-50 p-4 rounded-r-lg;
+  }
+
+  /* Premium Glass Card Effects */
+  .glass-card {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  }
+
+  .glass-card:hover {
+    transform: translateY(-8px) scale(1.02);
+    box-shadow: 0 35px 60px -12px rgba(0, 0, 0, 0.35);
+  }
+
+  /* Enhanced Shadow Utilities */
+  .shadow-3xl {
+    box-shadow: 0 35px 60px -12px rgba(0, 0, 0, 0.25);
+  }
+
+  /* Letran Branded Elements */
+  .letran-accent-border {
+    border-image: linear-gradient(45deg, #dc143c, #991b1b) 1;
+  }
+
+  .coffee-shimmer {
+    background: linear-gradient(45deg, #fefdf9, #f4ead2, #fefdf9);
+    background-size: 200% 200%;
+    animation: shimmer 3s ease-in-out infinite;
+  }
+
+  @keyframes shimmer {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+
+  /* Enhanced Hover Effects */
+  .card-hover-lift {
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .card-hover-lift:hover {
+    transform: translateY(-12px) scale(1.03);
+    box-shadow: 0 40px 80px -20px rgba(220, 20, 60, 0.3);
+  }
+
+  /* Advanced Card Animations */
+  .enhanced-glass-card {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border: 1px solid rgba(255, 255, 255, 0.7);
+    transition: all 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .enhanced-glass-card:hover {
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(25px);
+    -webkit-backdrop-filter: blur(25px);
+    border: 1px solid rgba(255, 255, 255, 0.9);
+    transform: translateY(-16px) scale(1.025);
+    box-shadow: 
+      0 50px 100px -30px rgba(0, 0, 0, 0.15),
+      0 25px 50px -12px rgba(220, 20, 60, 0.1),
+      0 0 0 1px rgba(255, 255, 255, 0.8);
+  }
+
+  /* Floating Animation for Cards */
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+  }
+
+  .float-animation {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .float-animation:nth-child(2) {
+    animation-delay: -2s;
+  }
+
+  .float-animation:nth-child(3) {
+    animation-delay: -4s;
+  }
+
+  /* Enhanced Gradient Borders */
+  .gradient-border {
+    position: relative;
+    background: linear-gradient(white, white) padding-box,
+                linear-gradient(45deg, #dc143c, #a67c52, #dc143c) border-box;
+    border: 2px solid transparent;
+  }
+
+  /* Shimmer Effect for Premium Cards */
+  .premium-shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+
+  .premium-shimmer::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      rgba(255, 255, 255, 0.6),
+      transparent
+    );
+    transition: left 0.5s;
+  }
+
+  .premium-shimmer:hover::before {
+    left: 100%;
+  }
+}
