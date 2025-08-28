@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { AlertCircle, Leaf, Lock, User } from 'lucide-react';
 import DarkModeToggle from '../components/DarkModeToggle';
@@ -7,6 +7,7 @@ import DarkModeToggle from '../components/DarkModeToggle';
 const LoginPage: React.FC = () => {
   const { login, isAuthenticated, isLoading } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     username: '',
     password: '',
@@ -14,9 +15,10 @@ const LoginPage: React.FC = () => {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const from = (location.state as any)?.from?.pathname || '/admin/dashboard';
+
   // Redirect if already authenticated
   if (isAuthenticated) {
-    const from = (location.state as any)?.from?.pathname || '/admin/dashboard';
     return <Navigate to={from} replace />;
   }
 
@@ -39,6 +41,9 @@ const LoginPage: React.FC = () => {
       const success = await login(formData.username, formData.password);
       if (!success) {
         setError('Invalid username or password');
+      } else {
+        // Ensure immediate navigation after successful login
+        navigate(from, { replace: true });
       }
     } catch (err) {
       setError('An error occurred during login. Please try again.');

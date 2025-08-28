@@ -217,38 +217,38 @@ const PublicDashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* Latest Sensor Data */}
-            <div className="coffee-card-alt dark:bg-gray-800">
-              <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                <h3 className="text-lg font-medium text-gray-900 dark:text-white">Latest Sensor Readings</h3>
+            {/* Latest Sensor Data (white container with dark rows) */}
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h3 className="text-lg font-medium text-gray-900">Latest Sensor Readings</h3>
               </div>
               <div className="p-6">
                 <div className="space-y-4">
                   {sampleSensorData.map((data) => (
-                    <div key={data._id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div key={data._id} className="flex items-center justify-between p-4 bg-gray-800 rounded-lg text-white">
                       <div className="flex items-center space-x-4">
                         <div className="flex-shrink-0">
                           <div className={`w-3 h-3 rounded-full ${getStatusColor(data.status).replace('text-', 'bg-').replace('bg-', 'bg-')}`}></div>
                         </div>
                         <div>
-                          <p className="font-medium text-gray-900 dark:text-white">{data.deviceId}</p>
-                          <p className="text-sm text-gray-500 dark:text-gray-400">
+                          <p className="font-medium text-white">{data.deviceId}</p>
+                          <p className="text-sm text-gray-300">
                             {format(new Date(data.timestamp), 'MMM dd, yyyy HH:mm')}
                           </p>
                         </div>
                       </div>
                       <div className="flex items-center space-x-6 text-sm">
                         <div className="text-center">
-                          <p className="text-gray-500 dark:text-gray-400">Temp</p>
-                          <p className="font-medium dark:text-white">{data.temperature}°C</p>
+                          <p className="text-gray-300">Temp</p>
+                          <p className="font-medium">{data.temperature}°C</p>
                         </div>
                         <div className="text-center">
-                          <p className="text-gray-500 dark:text-gray-400">Humidity</p>
-                          <p className="font-medium dark:text-white">{data.humidity}%</p>
+                          <p className="text-gray-300">Humidity</p>
+                          <p className="font-medium">{data.humidity}%</p>
                         </div>
                         <div className="text-center">
-                          <p className="text-gray-500 dark:text-gray-400">Moisture</p>
-                          <p className="font-medium dark:text-white">{data.moisture}%</p>
+                          <p className="text-gray-300">Moisture</p>
+                          <p className="font-medium">{data.moisture}%</p>
                         </div>
                       </div>
                     </div>

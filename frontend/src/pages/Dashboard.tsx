@@ -6,6 +6,7 @@ import { Leaf, AlertTriangle, Thermometer, Droplets, Sprout, Battery, RefreshCw,
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import DarkModeToggle from '../components/DarkModeToggle';
+import { useDarkMode } from '../contexts/DarkModeContext';
 
 interface DashboardProps {
   // No props needed - role checking via AuthContext
@@ -19,6 +20,17 @@ const Dashboard: React.FC<DashboardProps> = () => {
   
   // Check if current user is admin
   const isAdmin = isAuthenticated && user?.role === 'admin';
+
+  // Ensure admin dashboard uses dark mode by default, but only once on initial mount.
+  const { isDarkMode, toggleDarkMode, setDarkMode } = useDarkMode();
+  const adminDarkSetRef = useRef(false);
+  useEffect(() => {
+    // Only auto-enable dark mode for admins on first detection to avoid overriding user toggles.
+    if (isAdmin && !isDarkMode && !adminDarkSetRef.current) {
+      setDarkMode(true);
+      adminDarkSetRef.current = true;
+    }
+  }, [isAdmin, isDarkMode, setDarkMode]);
 
   // Debug: Log dashboard access
   useEffect(() => {
@@ -145,6 +157,14 @@ const Dashboard: React.FC<DashboardProps> = () => {
                         {user?.role} - Admin Dashboard
                       </p>
                     </div>
+                    {/* Home Assistant button - admin only */}
+                    <Link
+                      to="/admin/home-assistant"
+                      className="ml-3 px-3 py-1 bg-letran-600 text-white rounded-md hover:bg-letran-700 transition-colors text-sm"
+                      title="Open Home Assistant integration page"
+                    >
+                      Home Assistant
+                    </Link>
                     <button
                       onClick={logout}
                       className="p-2 text-espresso-400 hover:text-danger-600 transition-colors"
@@ -241,7 +261,7 @@ const Dashboard: React.FC<DashboardProps> = () => {
               {/* Active Devices Card */}
               <div className="group relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-letran-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
+                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-letran-500 rounded-t-2xl"></div>
                   <div className="flex items-center">
                     <div className="bg-gradient-to-br from-blue-100 to-blue-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
@@ -260,7 +280,7 @@ const Dashboard: React.FC<DashboardProps> = () => {
               {/* Active Alerts Card */}
               <div className="group relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-red-500/20 to-letran-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
+                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-letran-500 rounded-t-2xl"></div>
                   <div className="flex items-center">
                     <div className="bg-gradient-to-br from-red-100 to-red-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
@@ -279,7 +299,7 @@ const Dashboard: React.FC<DashboardProps> = () => {
               {/* Average Humidity Card */}
               <div className="group relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-coffee-500/20 to-primary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
+                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-coffee-500 to-primary-500 rounded-t-2xl"></div>
                   <div className="flex items-center">
                     <div className="bg-gradient-to-br from-coffee-200 to-coffee-100 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
@@ -300,7 +320,7 @@ const Dashboard: React.FC<DashboardProps> = () => {
               {/* Average Moisture Card */}
               <div className="group relative overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-yellow-500/20 to-warning-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
+                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-500 to-warning-500 rounded-t-2xl"></div>
                   <div className="flex items-center">
                     <div className="bg-gradient-to-br from-yellow-100 to-yellow-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
@@ -319,10 +339,10 @@ const Dashboard: React.FC<DashboardProps> = () => {
               </div>
             </div>
 
-            {/* Latest Manila Sensor Data */}
-            <div className="card">
-              <div className="card-header">
-                <h3 className="card-title">Latest Manila Weather Readings</h3>
+            {/* Latest Manila Sensor Data (white container with dark rows) */}
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h3 className="text-lg font-medium text-gray-900">Latest Manila Weather Readings</h3>
                 <p className="text-sm text-gray-500 mt-1">Real-time environmental data from Manila Metro Area</p>
               </div>
               <div className="p-6">
@@ -337,36 +357,36 @@ const Dashboard: React.FC<DashboardProps> = () => {
                 ) : (
                   <div className="space-y-4">
                     {latestSensorData.slice(0, 5).map((data: SensorData) => (
-                      <div key={data._id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                      <div key={data._id} className="flex items-center justify-between p-4 bg-gray-800 rounded-lg text-white">
                         <div className="flex items-center space-x-4">
                           <div className="flex-shrink-0">
                             <div className={`w-3 h-3 rounded-full ${getStatusColor(data.status).replace('text-', 'bg-').replace('bg-', 'bg-')}`}></div>
                           </div>
                           <div>
-                            <p className="font-medium text-gray-900">{data.deviceId}</p>
-                            <p className="text-sm text-gray-500">
+                            <p className="font-medium text-white">{data.deviceId}</p>
+                            <p className="text-sm text-gray-300">
                               Manila • {format(new Date(data.timestamp), 'MMM dd, yyyy HH:mm')}
                             </p>
                           </div>
                         </div>
                         <div className="flex items-center space-x-6 text-sm">
                           <div className="text-center">
-                            <p className="text-gray-500">Temp</p>
+                            <p className="text-gray-300">Temp</p>
                             <p className="font-medium">{data.temperature}°C</p>
                           </div>
                           <div className="text-center">
-                            <p className="text-gray-500">Humidity</p>
+                            <p className="text-gray-300">Humidity</p>
                             <p className="font-medium">{data.humidity}%</p>
                           </div>
                           <div className="text-center">
-                            <p className="text-gray-500">Moisture</p>
+                            <p className="text-gray-300">Moisture</p>
                             <p className="font-medium">{data.moisture}%</p>
                           </div>
                           {data.batteryLevel && (
                             <div className="text-center">
-                              <p className="text-gray-500">Battery</p>
+                              <p className="text-gray-300">Battery</p>
                               <div className="flex items-center">
-                                <Battery className="h-4 w-4 mr-1" />
+                                <Battery className="h-4 w-4 mr-1 text-white" />
                                 <span className="font-medium">{data.batteryLevel}%</span>
                               </div>
                             </div>

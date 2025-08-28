@@ -24,9 +24,9 @@ const AlertSummaryChart: React.FC<AlertSummaryChartProps> = ({ alerts, height = 
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-white p-3 rounded-lg shadow-lg border border-coffee-200">
-          <p className="text-coffee-900 font-medium">{data.name} Alerts</p>
-          <p className="text-coffee-700">Count: {data.value}</p>
+        <div className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-lg border border-coffee-200 dark:border-gray-700">
+          <p className="text-coffee-900 dark:text-white font-medium">{data.name} Alerts</p>
+          <p className="text-coffee-700 dark:text-gray-300">Count: {data.value}</p>
         </div>
       );
     }

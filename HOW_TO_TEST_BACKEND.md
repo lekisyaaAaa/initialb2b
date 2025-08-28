@@ -3,7 +3,7 @@
 ## Prerequisites Checklist
 Before testing, ensure you have:
 - [ ] Node.js installed (v16 or higher)
-- [ ] MongoDB running (local or Atlas)
+- [ ] PostgreSQL running (local or cloud)
 - [ ] Git Bash or PowerShell
 
 ## 🚀 Method 1: Quick Automated Test
@@ -20,7 +20,7 @@ npm install
 ```bash
 # Copy the example environment file
 cp .env.example .env
-# Edit .env with your MongoDB connection (see options below)
+# Edit .env with your `DATABASE_URL` (see examples in `backend/.env.example`)
 ```
 
 ### Step 3: Start Backend Server
@@ -31,13 +31,12 @@ npm run dev
 
 **✅ Success Signs:**
 ```
-✅ Connected to MongoDB
 🚀 Server running on port 5000
 📊 Health check: http://localhost:5000/api/health
 🔌 WebSocket server running on ws://localhost:5000
 ✅ Default admin user created
 ✅ Default user created
-✅ Database initialization completed
+✅ Database initialization completed (Postgres)
 ```
 
 ### Step 4: Run Automated Tests
@@ -51,26 +50,22 @@ npm run test-backend
 ---
 
 ## 🗄️ Database Setup Options
+## Database
 
-### Option A: MongoDB Atlas (Cloud - Recommended)
-1. **Sign up**: Go to https://www.mongodb.com/atlas
-2. **Create cluster**: Choose free tier M0
-3. **Setup access**: Add your IP (0.0.0.0/0 for development)
-4. **Create user**: Database Access → Add user with readWrite
-5. **Get connection**: Clusters → Connect → Get connection string
-6. **Update .env**:
-```env
-MONGODB_URI=mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/environmental_monitoring
+The backend uses PostgreSQL via Sequelize. Configure Postgres and set `DATABASE_URL` in the backend `.env`.
+
+Example local setup (psql):
+
+```sql
+CREATE DATABASE beantobin;
+CREATE USER beantobin_user WITH PASSWORD 'your_password';
+GRANT ALL PRIVILEGES ON DATABASE beantobin TO beantobin_user;
 ```
 
-### Option B: Local MongoDB
-1. **Install MongoDB**: Download from https://www.mongodb.com/try/download/community
-2. **Start service**: 
-   - Windows: Start MongoDB service in Services
-   - Command: `mongod --dbpath C:\data\db`
-3. **Update .env**:
+Example `.env`:
+
 ```env
-MONGODB_URI=mongodb://localhost:27017/environmental_monitoring
+DATABASE_URL=postgres://beantobin_user:your_password@127.0.0.1:5432/beantobin
 ```
 
 ---
@@ -141,10 +136,7 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/sensors/latest" -Method Get
 3. Verify no firewall blocking
 
 ### Problem: "MongoDB connection error"
-**Solutions:**
-1. **Atlas**: Check connection string, username/password, IP whitelist
-2. **Local**: Ensure MongoDB service is running
-3. **Both**: Verify network connectivity
+This project no longer uses MongoDB. If you see references to MongoDB in logs or docs, they are legacy artifacts and can be ignored or removed.
 
 ### Problem: "ValidationError" or "400 Bad Request"
 **Solution:**

@@ -1,3 +1,4 @@
+// File removed as unnecessary dashboard backup.
 import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';

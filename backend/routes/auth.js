@@ -1,5 +1,6 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 
@@ -25,8 +26,8 @@ router.post('/login', [
 
     const { username, password } = req.body;
 
-    // Check if user exists
-    const user = await User.findOne({ username });
+  // Check if user exists (Sequelize)
+  const user = await User.findOne({ where: { username } });
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -34,8 +35,8 @@ router.post('/login', [
       });
     }
 
-    // Check if user is active
-    if (!user.isActive) {
+    // Check if user is active (treat undefined as active for older/trimmed models)
+    if (user.isActive === false) {
       return res.status(401).json({
         success: false,
         message: 'Account is deactivated'
@@ -43,7 +44,7 @@ router.post('/login', [
     }
 
     // Validate password
-    const isMatch = await user.comparePassword(password);
+    const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
       return res.status(401).json({
         success: false,
@@ -51,12 +52,22 @@ router.post('/login', [
       });
     }
 
-    // Update last login
-    await user.updateLastLogin();
+    // Update last login and increment login count if columns exist
+    try {
+      const updateFields = {};
+      if ('lastLogin' in user) updateFields.lastLogin = new Date();
+      if ('loginCount' in user) updateFields.loginCount = (user.loginCount || 0) + 1;
+      if (Object.keys(updateFields).length) {
+        await user.update(updateFields);
+      }
+    } catch (e) {
+      // Non-fatal: some user models may not have these fields
+      console.warn('Could not update lastLogin/loginCount:', e.message || e);
+    }
 
     // Create JWT token
     const payload = {
-      id: user._id,
+      id: user.id,
       username: user.username,
       role: user.role
     };
@@ -71,10 +82,11 @@ router.post('/login', [
       data: {
         token,
         user: {
-          id: user._id,
+          id: user.id,
           username: user.username,
           role: user.role,
-          lastLogin: user.lastLogin
+          lastLogin: user.lastLogin || null,
+          loginCount: user.loginCount || 0
         }
       }
     });
@@ -103,16 +115,21 @@ router.post('/logout', (req, res) => {
 // @access  Private
 router.get('/me', require('../middleware/auth').auth, async (req, res) => {
   try {
-    const user = await User.findById(req.user.id).select('-password');
+    // Sequelize: find by primary key
+    const user = await User.findByPk(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+
     res.json({
       success: true,
       data: {
         user: {
-          id: user._id,
+          id: user.id,
           username: user.username,
           role: user.role,
-          lastLogin: user.lastLogin,
-          loginCount: user.loginCount
+          lastLogin: user.lastLogin || null,
+          loginCount: user.loginCount || 0
         }
       }
     });
@@ -134,7 +151,7 @@ router.post('/verify-token', require('../middleware/auth').auth, (req, res) => {
     message: 'Token is valid',
     data: {
       user: {
-        id: req.user._id,
+        id: req.user.id,
         username: req.user.username,
         role: req.user.role
       }

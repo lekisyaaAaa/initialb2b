@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+ import { useRef, useCallback } from 'react';
 
 interface UseSafeDataFetchingOptions {
   cooldownMs?: number;

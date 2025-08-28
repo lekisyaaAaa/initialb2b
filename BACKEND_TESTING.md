@@ -15,7 +15,7 @@ npm run dev
 
 **Expected Output:**
 ```
-✅ Connected to MongoDB
+✅ Database: PostgreSQL (connected via Sequelize)
 🚀 Server running on port 5000
 📊 Health check: http://localhost:5000/api/health
 🔌 WebSocket server running on ws://localhost:5000
@@ -180,11 +180,7 @@ Then submit sensor data via API and watch real-time updates!
 
 ## 🔍 Common Issues & Solutions
 
-### ❌ "MongoDB connection error"
-**Solutions:**
-1. **Local MongoDB:** Install and start MongoDB service
-2. **MongoDB Atlas:** Update MONGODB_URI in .env with your Atlas connection string
-3. **Connection String:** Ensure format is correct and credentials are valid
+This project uses PostgreSQL. If you encounter legacy MongoDB references in logs or documentation, they are artifacts from the previous implementation and can be ignored or removed.
 
 ### ❌ "Port already in use"
 **Solutions:**
@@ -234,6 +230,7 @@ use environmental_monitoring
 db.sensordatas.find().limit(5)
 db.alerts.find().limit(5)
 db.users.find()
+<!-- Legacy section about MongoDB removed: project uses PostgreSQL/Sequelize -->
 ```
 
 ## 🎯 Success Indicators

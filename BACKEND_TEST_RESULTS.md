@@ -139,8 +139,8 @@ Your backend is working correctly! Here's what we tested and confirmed:
 ## 🚀 **Next Steps:**
 
 ### **Option 1: Continue with Full Database Integration**
-- Set up MongoDB Atlas or local MongoDB
-- Enable the full server with database functionality
+- Ensure PostgreSQL is configured and `DATABASE_URL` is set in `backend/.env`
+- Enable the full server with database functionality (Sequelize + Postgres)
 - Test complete CRUD operations
 
 ### **Option 2: Build the Frontend**

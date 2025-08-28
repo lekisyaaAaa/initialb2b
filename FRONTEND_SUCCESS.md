@@ -55,7 +55,7 @@ You can now:
 - 🔄 Add real data visualization
 
 ### **Phase 2: Database Integration**
-- Set up MongoDB (Atlas or local)
+- Ensure the backend PostgreSQL is running and DATABASE_URL is set in the backend .env
 - Enable full backend with database
 - Test CRUD operations
 - User management
@@ -84,8 +84,8 @@ You can now:
                               │
                               ▼
                        ┌─────────────────┐
-                       │   MongoDB       │
-                       │  (Coming Soon)  │
+                       │   PostgreSQL    │
+                       │  (configured)   │
                        └─────────────────┘
 ```
 

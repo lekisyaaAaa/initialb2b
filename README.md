@@ -24,7 +24,7 @@ A comprehensive full-stack environmental monitoring system with real-time sensor
 
 ### Prerequisites
 - Node.js 18+ and npm
-- MongoDB Atlas account (or local MongoDB)
+- PostgreSQL (local or cloud) — the backend has been migrated to Postgres/Sequelize
 - Twilio account for SMS (optional)
 - ESP32 development board with MAX485 module
 
@@ -39,7 +39,7 @@ npm run install-all
 ```bash
 # Backend environment
 cp backend/.env.example backend/.env
-# Edit backend/.env with your MongoDB URI, Twilio keys, etc.
+# Edit backend/.env with your DATABASE_URL, JWT secret, and Twilio keys.
 ```
 
 3. **Start development servers:**
@@ -51,53 +51,28 @@ This will start:
 - Backend API server on http://localhost:5000
 - Frontend React app on http://localhost:3000
 
-## 📡 MongoDB Setup Guide
+## �️ PostgreSQL Setup
 
-### Option 1: MongoDB Atlas (Cloud - Recommended)
+The backend now uses PostgreSQL via Sequelize. For local development you can run Postgres locally or use a cloud provider.
 
-1. **Create MongoDB Atlas Account:**
-   - Visit https://www.mongodb.com/atlas
-   - Sign up for a free account
-   - Create a new cluster (Free tier M0 is sufficient)
+1. Install PostgreSQL (Windows installers available at https://www.postgresql.org/download/).
+2. Create a database and user for the application. Example (psql):
 
-2. **Configure Network Access:**
-   - Go to Network Access → Add IP Address
-   - Add `0.0.0.0/0` for development (restrict in production)
+   CREATE DATABASE beantobin;
+   CREATE USER beantobin_user WITH PASSWORD 'your_password';
+   GRANT ALL PRIVILEGES ON DATABASE beantobin TO beantobin_user;
 
-3. **Create Database User:**
-   - Go to Database Access → Add New Database User
-   - Create username/password
-   - Grant `readWrite` permissions
+3. Set the connection URL in the backend `.env` using the `DATABASE_URL` variable. Example:
 
-4. **Get Connection String:**
-   - Go to Clusters → Connect → Connect your application
-   - Copy the connection string
-   - Replace `<password>` with your database user password
-
-5. **Update Backend .env:**
 ```env
-MONGODB_URI=mongodb+srv://username:password@cluster0.xxxxx.mongodb.net/environmental_monitoring
+DATABASE_URL=postgres://beantobin_user:your_password@127.0.0.1:5432/beantobin
 ```
 
-### Option 2: Local MongoDB
+If your Postgres instance listens on a non-standard port (for example 5075 in this workspace), adjust the URL accordingly (127.0.0.1:5075).
 
-1. **Install MongoDB:**
-```bash
-# Windows (using Chocolatey)
-choco install mongodb
-
-# Or download from https://www.mongodb.com/try/download/community
-```
-
-2. **Start MongoDB service:**
-```bash
-mongod --dbpath C:\data\db
-```
-
-3. **Update Backend .env:**
-```env
-MONGODB_URI=mongodb://localhost:27017/environmental_monitoring
-```
+Notes:
+- For cloud Postgres providers, paste the provided connection string into `DATABASE_URL`.
+- If your provider requires SSL, set NODE_TLS_REJECT_UNAUTHORIZED=0 only for local testing and configure Sequelize `dialectOptions` for production.
 
 ## 🔧 Backend Setup Guide
 
@@ -123,7 +98,7 @@ PORT=5000
 NODE_ENV=development
 
 # Database
-MONGODB_URI=your_mongodb_connection_string_here
+DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5075/beantobin
 
 # JWT Authentication
 JWT_SECRET=your_super_secret_jwt_key_here

@@ -1,34 +1,8 @@
-const mongoose = require('mongoose');
-const User = require('../models/User');
-const Settings = require('../models/Settings');
-
+// Legacy MongoDB initializer removed. Project now uses Sequelize/Postgres.
+// This stub preserves the public interface so any accidental imports won't throw.
 const initializeDatabase = async () => {
-  try {
-    console.log('🔄 Initializing database...');
-    
-    // Wait for MongoDB connection
-    await new Promise((resolve) => {
-      if (mongoose.connection.readyState === 1) {
-        resolve();
-      } else {
-        mongoose.connection.once('connected', resolve);
-      }
-    });
-
-    // Create default users
-    await User.createDefaultUsers();
-
-    // Initialize default settings
-    await Settings.getSettings();
-
-    console.log('✅ Database initialization completed');
-    
-  } catch (error) {
-    console.error('❌ Database initialization failed:', error);
-    throw error;
-  }
+  // No-op: Sequelize initialization handled in services/database_pg.js
+  return Promise.resolve();
 };
 
-module.exports = {
-  initializeDatabase
-};
+module.exports = { initializeDatabase };
