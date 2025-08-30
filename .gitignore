@@ -1,0 +1,12 @@
+node_modules/
+frontend/build/
+.env
+*.log
+backend/server_stdout.log
+backend/server_stderr.log
+frontend/frontend_start.log
+/.vscode/
+dist/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
