@@ -1,3 +1,30 @@
+# Node modules
+node_modules/
+
+# Frontend build
+frontend/build/
+
+# Logs
+*.log
+backend/*.log
+frontend/*.log
+
+# Environment files
+.env
+.env.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE/editor folders
+.vscode/
+.idea/
+
+# Misc
+.cache/
+dist/
+coverage/
 node_modules/
 frontend/build/
 .env

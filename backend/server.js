@@ -87,8 +87,11 @@ const initializePostgres = async () => {
     // If you want automatic model sync in development uncomment next line
     // await sequelize.sync({ alter: true });
   } catch (err) {
-    console.error('❌ Postgres connection failed:', err);
-    process.exit(1);
+  // Log the error but do NOT exit the process here.
+  // The caller (startup IIFE) will decide how to proceed so the server
+  // can run in a degraded mode for frontend testing when Postgres is down.
+  console.error('❌ Postgres connection failed:', err);
+  throw err;
   }
 };
 
@@ -122,17 +125,22 @@ app.use(errorHandler);
 // Start the server
 const PORT = process.env.PORT || 5000;
 
-// Start server after DB is ready
-initializePostgres().then(() => {
+// Start server; attempt DB init but do not block server start if DB is down.
+(async () => {
+  try {
+    await initializePostgres();
+    console.log('Postgres initialized successfully');
+  } catch (err) {
+    console.warn('Warning: Postgres initialization failed — starting server without DB:', err && err.message ? err.message : err);
+    // Continue without exiting so the frontend can be served for testing/development.
+  }
+
   server.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
     console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
     console.log(`🔌 WebSocket server running on ws://localhost:${PORT}`);
   });
-}).catch(err => {
-  console.error('Failed to initialize database, exiting', err);
-  process.exit(1);
-});
+})();
 
 
 // Graceful shutdown

@@ -1,1 +1,0 @@
-Legacy stderr sanitized: contained MongoDB driver warnings and legacy errors. Current code uses PostgreSQL/Sequelize.
