@@ -1,5 +1,5 @@
 import React from 'react';
-import { HashRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, Link } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
 import { DarkModeProvider } from './contexts/DarkModeContext';
@@ -22,7 +22,6 @@ import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
 import PublicDashboard from './pages/PublicDashboard';
 import EnhancedDashboard from './pages/EnhancedDashboard';
-import HomeAssistant from './pages/HomeAssistant';
 import ContactPage from './pages/Contact';
 import ProtectedRoute from './components/ProtectedRoute';
 import './App.css';
@@ -79,7 +78,7 @@ const HomePage: React.FC = () => {
 
       {/* Hero Section */}
       <section className="relative py-24 overflow-hidden">
-  <div className="absolute inset-0 bg-gradient-to-b from-white via-coffee-25 to-primary-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-700"></div>
+        <div className="absolute inset-0 bg-gradient-to-b from-white via-coffee-25 to-primary-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-700"></div>
         <div className="absolute top-0 left-0 w-full h-full overflow-hidden">
           <div className="absolute top-20 right-20 w-32 h-32 bg-letran-200/30 dark:bg-letran-400/20 rounded-full blur-2xl"></div>
           <div className="absolute bottom-20 left-20 w-40 h-40 bg-coffee-200/30 dark:bg-coffee-400/20 rounded-full blur-2xl"></div>
@@ -158,7 +157,7 @@ const HomePage: React.FC = () => {
 
       {/* Features Section */}
       <section className="py-20 bg-gradient-to-br from-white via-coffee-25 to-primary-50 dark:from-gray-800 dark:via-gray-700 dark:to-gray-600 relative overflow-hidden">
-  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 dark:via-gray-900/30 to-transparent"></div>
+        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/30 dark:via-gray-900/30 to-transparent"></div>
         <div className="absolute top-10 left-10 w-32 h-32 bg-letran-300/20 dark:bg-letran-400/30 rounded-full blur-3xl"></div>
         <div className="absolute bottom-10 right-10 w-40 h-40 bg-coffee-300/20 dark:bg-coffee-400/30 rounded-full blur-3xl"></div>
         
@@ -461,15 +460,6 @@ function App() {
                     <Dashboard />
                   </ProtectedRoute>
                 } 
-              />
-
-              <Route
-                path="/admin/home-assistant"
-                element={
-                  <ProtectedRoute adminOnly={true}>
-                    <HomeAssistant />
-                  </ProtectedRoute>
-                }
               />
             </Routes>
           </div>

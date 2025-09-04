@@ -3,7 +3,7 @@
 ## Prerequisites Checklist
 Before testing, ensure you have:
 - [ ] Node.js installed (v16 or higher)
-- [ ] PostgreSQL running (local or cloud)
+- [ ] PostgreSQL running (local or Docker)
 - [ ] Git Bash or PowerShell
 
 ## 🚀 Method 1: Quick Automated Test
@@ -20,7 +20,7 @@ npm install
 ```bash
 # Copy the example environment file
 cp .env.example .env
-# Edit .env with your `DATABASE_URL` (see examples in `backend/.env.example`)
+# Edit .env and set DATABASE_URL to your Postgres connection string
 ```
 
 ### Step 3: Start Backend Server
@@ -31,12 +31,13 @@ npm run dev
 
 **✅ Success Signs:**
 ```
+✅ Connected to PostgreSQL (Sequelize)
 🚀 Server running on port 5000
 📊 Health check: http://localhost:5000/api/health
 🔌 WebSocket server running on ws://localhost:5000
 ✅ Default admin user created
 ✅ Default user created
-✅ Database initialization completed (Postgres)
+✅ Database initialization completed
 ```
 
 ### Step 4: Run Automated Tests
@@ -49,24 +50,21 @@ npm run test-backend
 
 ---
 
-## 🗄️ Database Setup Options
-## Database
+## 🗄️ Database Setup (PostgreSQL)
 
-The backend uses PostgreSQL via Sequelize. Configure Postgres and set `DATABASE_URL` in the backend `.env`.
+Use PostgreSQL as the canonical database. Run Postgres locally or with Docker. Example using Docker Compose (recommended for local development):
 
-Example local setup (psql):
-
-```sql
-CREATE DATABASE beantobin;
-CREATE USER beantobin_user WITH PASSWORD 'your_password';
-GRANT ALL PRIVILEGES ON DATABASE beantobin TO beantobin_user;
+1. Create or update `docker-compose.yml` with a Postgres service (image: postgres:15-alpine).
+2. Start the database:
+```powershell
+docker compose up -d
 ```
-
-Example `.env`:
-
+3. Update `backend/.env` with your DATABASE_URL connection string, e.g.:
 ```env
-DATABASE_URL=postgres://beantobin_user:your_password@127.0.0.1:5432/beantobin
+DATABASE_URL=postgres://postgres:password@127.0.0.1:5432/beantobin
 ```
+
+Note: Historical migration helpers that referenced MongoDB were moved to `backend/legacy_migrations/` for archival use only.
 
 ---
 
@@ -135,8 +133,11 @@ Invoke-RestMethod -Uri "http://localhost:5000/api/sensors/latest" -Method Get
 2. Check if port 5000 is available
 3. Verify no firewall blocking
 
-### Problem: "MongoDB connection error"
-This project no longer uses MongoDB. If you see references to MongoDB in logs or docs, they are legacy artifacts and can be ignored or removed.
+### Problem: "Database connection error"
+**Solutions:**
+1. Ensure `DATABASE_URL` in `backend/.env` is correct and properly URL-encoded
+2. If using Docker, confirm Postgres container is running: `docker ps` and check logs: `docker compose logs db`
+3. Check firewall or port binding issues and verify credentials
 
 ### Problem: "ValidationError" or "400 Bad Request"
 **Solution:**

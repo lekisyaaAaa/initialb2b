@@ -2,8 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* end debug helpers */
-
 /* Custom base styles */
 @layer base {
   html {
@@ -42,7 +40,7 @@
   }
   
   .card {
-  @apply bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-coffee-200 dark:border-gray-700 p-6;
+    @apply bg-white rounded-xl shadow-lg border border-coffee-200 p-6;
   }
   
   .input {
@@ -88,13 +86,13 @@
   }
   
   .coffee-card {
-  @apply bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-coffee-200 dark:border-gray-700 p-6 hover:shadow-xl transition-shadow duration-200;
+    @apply bg-white rounded-xl shadow-lg border border-coffee-200 p-6 hover:shadow-xl transition-shadow duration-200;
     background: linear-gradient(145deg, #ffffff 0%, #fefdf9 100%);
     border-left: 4px solid #dc143c; /* Letran crimson accent */
   }
 
   .coffee-card-alt {
-  @apply bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-coffee-200 dark:border-gray-700 p-6 hover:shadow-xl transition-shadow duration-200;
+    @apply bg-white rounded-xl shadow-lg border border-coffee-200 p-6 hover:shadow-xl transition-shadow duration-200;
     background: linear-gradient(145deg, #ffffff 0%, #fefdf9 100%);
     border-top: 3px solid #dc143c; /* Letran crimson accent */
   }
@@ -110,7 +108,7 @@
   }
   
   .coffee-input {
-    @apply w-full px-3 py-2 border border-coffee-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-letran-500 focus:border-letran-500 bg-white dark:bg-gray-700 placeholder-espresso-400 dark:placeholder-gray-400;
+    @apply w-full px-3 py-2 border border-coffee-300 rounded-lg focus:ring-2 focus:ring-letran-500 focus:border-letran-500 bg-white placeholder-espresso-400;
   }
 
   /* Letran accent elements */

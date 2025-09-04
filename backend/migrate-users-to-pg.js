@@ -1,10 +1,2 @@
-﻿/*
- Simple migration: copy users from MongoDB (Mongoose) to Postgres (Sequelize).
- Run from backend folder with DATABASE_URL set if needed.
-*/
-const sequelize = require('./db/sequelize');
-const SQLUser = require('./models_sql/User');
-
-module.exports = async function() {
-  console.log('Legacy migration script removed.');
-};
+﻿console.log('This migration has been moved to backend/legacy_migrations/migrate-users-to-pg.js');
+console.log('If you need it, run the script from the backend folder with MONGODB_URI set.');

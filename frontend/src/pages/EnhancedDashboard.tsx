@@ -275,7 +275,7 @@ const EnhancedDashboard: React.FC = () => {
                 {/* Temperature Card */}
                 <div className="group relative overflow-hidden">
                   <div className="absolute inset-0 bg-gradient-to-br from-red-500/20 to-letran-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                  <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
+                  <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-letran-500 rounded-t-2xl"></div>
                     <div className="flex items-center">
                       <div className="bg-gradient-to-br from-red-100 to-red-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
@@ -353,7 +353,7 @@ const EnhancedDashboard: React.FC = () => {
             {/* Recent Alerts & Quick Chart */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               {/* Recent Alerts */}
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-coffee-200 dark:border-gray-700">
+              <div className="bg-white rounded-xl shadow-lg border border-coffee-200">
                 <div className="p-6 border-b border-coffee-200">
                   <h3 className="text-lg font-semibold text-coffee-900 flex items-center">
                     <AlertTriangle className="w-5 h-5 mr-2" />
@@ -384,7 +384,7 @@ const EnhancedDashboard: React.FC = () => {
               </div>
 
               {/* Alert Summary Chart */}
-              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-coffee-200 dark:border-gray-700">
+              <div className="bg-white rounded-xl shadow-lg border border-coffee-200">
                 <div className="p-6 border-b border-coffee-200">
                   <h3 className="text-lg font-semibold text-coffee-900">Alert Distribution</h3>
                 </div>
@@ -432,7 +432,7 @@ const EnhancedDashboard: React.FC = () => {
 
         {activeTab === 'alerts' && (
           <div className="space-y-6">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-coffee-200 dark:border-gray-700">
+            <div className="bg-white rounded-xl shadow-lg border border-coffee-200">
               <div className="p-6 border-b border-coffee-200">
                 <h3 className="text-lg font-semibold text-coffee-900">All Alerts</h3>
               </div>
@@ -488,7 +488,7 @@ const EnhancedDashboard: React.FC = () => {
                 const latestData = deviceData[deviceData.length - 1];
                 
                 return (
-                  <div key={deviceId} className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-coffee-200 dark:border-gray-700 p-6">
+                  <div key={deviceId} className="bg-white rounded-xl shadow-lg border border-coffee-200 p-6">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-lg font-semibold text-coffee-900">{deviceId}</h3>
                       <div className={`px-3 py-1 rounded-full text-sm ${getStatusColor(latestData?.status || 'unknown')}`}>

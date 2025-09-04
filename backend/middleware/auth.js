@@ -5,7 +5,7 @@ const User = require('../models/User');
 const auth = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
-
+    
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -14,22 +14,16 @@ const auth = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    // Sequelize: find by primary key
-    const user = await User.findByPk(decoded.id);
-
-    if (!user || user.isActive === false) {
+    const user = await User.findById(decoded.id).select('-password');
+    
+    if (!user || !user.isActive) {
       return res.status(401).json({
         success: false,
         message: 'Invalid token or user is inactive.'
       });
     }
 
-    // Normalize minimal user object (avoid sending password and other internals)
-    req.user = {
-      id: user.id,
-      username: user.username,
-      role: user.role
-    };
+    req.user = user;
     next();
   } catch (error) {
     if (error.name === 'JsonWebTokenError') {
@@ -71,16 +65,12 @@ const optionalAuth = async (req, res, next) => {
     const token = req.header('Authorization')?.replace('Bearer ', '');
     
     if (token) {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        const user = await User.findByPk(decoded.id);
-
-        if (user && user.isActive !== false) {
-          req.user = {
-            id: user.id,
-            username: user.username,
-            role: user.role
-          };
-        }
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      const user = await User.findById(decoded.id).select('-password');
+      
+      if (user && user.isActive) {
+        req.user = user;
+      }
     }
     
     next();

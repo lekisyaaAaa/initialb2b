@@ -3,8 +3,6 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 interface DarkModeContextType {
   isDarkMode: boolean;
   toggleDarkMode: () => void;
-  // explicit setter to avoid race conditions when toggling from other components
-  setDarkMode: (value: boolean) => void;
 }
 
 const DarkModeContext = createContext<DarkModeContextType | undefined>(undefined);
@@ -48,12 +46,8 @@ export const DarkModeProvider: React.FC<DarkModeProviderProps> = ({ children }) 
     setIsDarkMode((prev: boolean) => !prev);
   };
 
-  const setDarkMode = (value: boolean) => {
-    setIsDarkMode(Boolean(value));
-  };
-
   return (
-    <DarkModeContext.Provider value={{ isDarkMode, toggleDarkMode, setDarkMode }}>
+    <DarkModeContext.Provider value={{ isDarkMode, toggleDarkMode }}>
       {children}
     </DarkModeContext.Provider>
   );

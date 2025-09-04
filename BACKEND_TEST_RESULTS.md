@@ -139,8 +139,8 @@ Your backend is working correctly! Here's what we tested and confirmed:
 ## 🚀 **Next Steps:**
 
 ### **Option 1: Continue with Full Database Integration**
-- Ensure PostgreSQL is configured and `DATABASE_URL` is set in `backend/.env`
-- Enable the full server with database functionality (Sequelize + Postgres)
+- Set up PostgreSQL (local or Docker)
+- Ensure backend connects via `DATABASE_URL`
 - Test complete CRUD operations
 
 ### **Option 2: Build the Frontend**

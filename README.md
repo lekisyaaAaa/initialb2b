@@ -24,7 +24,7 @@ A comprehensive full-stack environmental monitoring system with real-time sensor
 
 ### Prerequisites
 - Node.js 18+ and npm
-- PostgreSQL (local or cloud) — the backend has been migrated to Postgres/Sequelize
+- PostgreSQL (local or Docker)
 - Twilio account for SMS (optional)
 - ESP32 development board with MAX485 module
 
@@ -37,9 +37,9 @@ npm run install-all
 
 2. **Setup environment variables:**
 ```bash
-# Backend environment
+# Backend environment (copy example and edit DATABASE_URL)
 cp backend/.env.example backend/.env
-# Edit backend/.env with your DATABASE_URL, JWT secret, and Twilio keys.
+# Edit backend/.env and set DATABASE_URL to your Postgres connection string
 ```
 
 3. **Start development servers:**
@@ -51,28 +51,16 @@ This will start:
 - Backend API server on http://localhost:5000
 - Frontend React app on http://localhost:3000
 
-## �️ PostgreSQL Setup
+## 📡 Database (PostgreSQL)
 
-The backend now uses PostgreSQL via Sequelize. For local development you can run Postgres locally or use a cloud provider.
+This project uses PostgreSQL (via Sequelize) as the canonical runtime database. You can run Postgres locally or via Docker (see `docker-compose.yml`).
 
-1. Install PostgreSQL (Windows installers available at https://www.postgresql.org/download/).
-2. Create a database and user for the application. Example (psql):
-
-   CREATE DATABASE beantobin;
-   CREATE USER beantobin_user WITH PASSWORD 'your_password';
-   GRANT ALL PRIVILEGES ON DATABASE beantobin TO beantobin_user;
-
-3. Set the connection URL in the backend `.env` using the `DATABASE_URL` variable. Example:
-
+Example DATABASE_URL (placed in `backend/.env`):
 ```env
-DATABASE_URL=postgres://beantobin_user:your_password@127.0.0.1:5432/beantobin
+DATABASE_URL=postgres://postgres:password@127.0.0.1:5432/beantobin
 ```
 
-If your Postgres instance listens on a non-standard port (for example 5075 in this workspace), adjust the URL accordingly (127.0.0.1:5075).
-
-Notes:
-- For cloud Postgres providers, paste the provided connection string into `DATABASE_URL`.
-- If your provider requires SSL, set NODE_TLS_REJECT_UNAUTHORIZED=0 only for local testing and configure Sequelize `dialectOptions` for production.
+Legacy migration scripts that referenced MongoDB have been preserved in `backend/legacy_migrations/` for archival or one-time migration tasks only. The running application does not require MongoDB.
 
 ## 🔧 Backend Setup Guide
 
@@ -98,7 +86,7 @@ PORT=5000
 NODE_ENV=development
 
 # Database
-DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5075/beantobin
+DATABASE_URL=postgres://postgres:password@127.0.0.1:5432/beantobin
 
 # JWT Authentication
 JWT_SECRET=your_super_secret_jwt_key_here
@@ -198,11 +186,11 @@ npm run build
 
 ## 🔧 Troubleshooting
 
-### MongoDB Connection Issues
-1. Check network connectivity
-2. Verify connection string format
-3. Ensure IP whitelist includes your address
-4. Confirm database user credentials
+### Database Connection Issues (PostgreSQL)
+1. Ensure `DATABASE_URL` in `backend/.env` is correct and properly URL-encoded
+2. If using Docker, verify the Postgres container is running: `docker ps` and view logs with `docker compose logs db`
+3. Confirm database credentials and that the database exists
+4. Check firewall and port bindings (host port vs container port)
 
 ### ESP32 Not Sending Data
 1. Check Wi-Fi connection

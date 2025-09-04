@@ -36,18 +36,18 @@ const TemperatureChart: React.FC<TemperatureChartProps> = ({
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg border border-coffee-200 dark:border-gray-700">
-          <p className="text-coffee-900 dark:text-white font-medium">{formatTooltipTime(label)}</p>
-          <p className="text-coffee-700 dark:text-gray-300">
+        <div className="bg-white p-4 rounded-lg shadow-lg border border-coffee-200">
+          <p className="text-coffee-900 font-medium">{formatTooltipTime(label)}</p>
+          <p className="text-coffee-700">
             <span className="font-medium">Temperature:</span> {data.temperature.toFixed(1)}°C
           </p>
-          <p className="text-coffee-600 dark:text-gray-400 text-sm">Device: {data.deviceId}</p>
+          <p className="text-coffee-600 text-sm">Device: {data.deviceId}</p>
           <div className="flex items-center mt-2">
             <div className={`w-2 h-2 rounded-full mr-2 ${
               data.temperature >= criticalThreshold ? 'bg-red-500' :
               data.temperature >= warningThreshold ? 'bg-yellow-500' : 'bg-green-500'
             }`}></div>
-            <span className="text-sm text-coffee-600 dark:text-gray-300">
+            <span className="text-sm text-coffee-600">
               {data.temperature >= criticalThreshold ? 'Critical' :
                data.temperature >= warningThreshold ? 'Warning' : 'Normal'}
             </span>

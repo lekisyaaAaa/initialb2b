@@ -6,19 +6,19 @@ const errorHandler = (err, req, res, next) => {
   // Log error
   console.error('Error Handler:', err);
 
-  // DB CastError (invalid id)
+  // Mongoose bad ObjectId
   if (err.name === 'CastError') {
     const message = 'Resource not found';
     error = { message, statusCode: 404 };
   }
 
-  // Duplicate key error (unique constraint)
+  // Mongoose duplicate key
   if (err.code === 11000) {
     const message = 'Duplicate field value entered';
     error = { message, statusCode: 400 };
   }
 
-  // Validation error (DB or input validation)
+  // Mongoose validation error
   if (err.name === 'ValidationError') {
     const message = Object.values(err.errors).map(val => val.message).join(', ');
     error = { message, statusCode: 400 };

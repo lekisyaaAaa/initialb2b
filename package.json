@@ -12,7 +12,14 @@
     "install-backend": "cd backend && npm install",
     "install-frontend": "cd frontend && npm install"
   },
-  "keywords": ["environmental", "monitoring", "iot", "sensors", "react", "nodejs"],
+  "keywords": [
+    "environmental",
+    "monitoring",
+    "iot",
+    "sensors",
+    "react",
+    "nodejs"
+  ],
   "author": "BeanToBin",
   "license": "MIT",
   "devDependencies": {

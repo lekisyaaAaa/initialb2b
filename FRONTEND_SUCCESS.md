@@ -55,10 +55,9 @@ You can now:
 - 🔄 Add real data visualization
 
 ### **Phase 2: Database Integration**
-- Ensure the backend PostgreSQL is running and DATABASE_URL is set in the backend .env
-- Enable full backend with database
-- Test CRUD operations
-- User management
+- Set up PostgreSQL (local or Docker)
+- Ensure backend connects via `DATABASE_URL`
+- Test CRUD operations and user management
 
 ### **Phase 3: ESP32 Hardware**
 - Create Arduino sensor code
@@ -85,7 +84,7 @@ You can now:
                               ▼
                        ┌─────────────────┐
                        │   PostgreSQL    │
-                       │  (configured)   │
+                       │  (Configured)   │
                        └─────────────────┘
 ```
 

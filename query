@@ -1,2 +1,1 @@
-PostgreSQL (project migrated to Sequelize). Use DATABASE_URL in .env, e.g.:
-postgres://postgres:postgres@127.0.0.1:5075/beantobin
+MongoDB

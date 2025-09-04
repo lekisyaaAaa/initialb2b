@@ -41,7 +41,7 @@ async function testIntegration() {
     });
     
     console.log('\n🎉 API Integration Test Complete!');
-  console.log('📊 Database: PostgreSQL (Sequelize) with real sensor data');
+    console.log('📊 Database: MongoDB with real sensor data');
     console.log('🔧 Backend: Express.js server running');
     console.log('🌐 API: RESTful endpoints active');
     console.log('⚡ WebSocket: Real-time updates ready');

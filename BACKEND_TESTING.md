@@ -1,3 +1,6 @@
+# Legacy MongoDB note
+
+MongoDB is deprecated for runtime. Use PostgreSQL as the canonical database. Legacy migration scripts that require MongoDB are located in `backend/legacy_migrations/` and should only be used for archival or migration purposes.
 # Backend Testing Guide
 
 ## 🚀 Quick Start Test
@@ -15,7 +18,7 @@ npm run dev
 
 **Expected Output:**
 ```
-✅ Database: PostgreSQL (connected via Sequelize)
+✅ Connected to PostgreSQL (Sequelize)
 🚀 Server running on port 5000
 📊 Health check: http://localhost:5000/api/health
 🔌 WebSocket server running on ws://localhost:5000
@@ -180,7 +183,12 @@ Then submit sensor data via API and watch real-time updates!
 
 ## 🔍 Common Issues & Solutions
 
-This project uses PostgreSQL. If you encounter legacy MongoDB references in logs or documentation, they are artifacts from the previous implementation and can be ignored or removed.
+### ❌ "Database connection error"
+**Solutions:**
+1. Ensure `DATABASE_URL` in `.env` is correct
+2. If using Docker, check container health and logs
+3. Verify network and firewall settings
+3. **Connection String:** Ensure format is correct and credentials are valid
 
 ### ❌ "Port already in use"
 **Solutions:**
@@ -230,7 +238,6 @@ use environmental_monitoring
 db.sensordatas.find().limit(5)
 db.alerts.find().limit(5)
 db.users.find()
-<!-- Legacy section about MongoDB removed: project uses PostgreSQL/Sequelize -->
 ```
 
 ## 🎯 Success Indicators

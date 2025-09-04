@@ -17,13 +17,10 @@ async function createUsers() {
 
     // Create admin user
     const hashedPassword = await bcrypt.hash('admin123', 12);
-    // Provide timestamps explicitly to satisfy schemas that require createdAt/updatedAt
     await User.create({
       username: 'admin',
       password: hashedPassword,
       role: 'admin',
-      createdAt: new Date(),
-      updatedAt: new Date(),
     });
     console.log('✅ Admin user created: admin/admin123');
 

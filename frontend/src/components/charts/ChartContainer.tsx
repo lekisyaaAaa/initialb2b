@@ -78,7 +78,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-coffee-200 dark:border-gray-700 overflow-hidden">
+    <div className="bg-white rounded-xl shadow-lg border border-coffee-200 overflow-hidden">
       {/* Header */}
       <div className="bg-gradient-to-r from-coffee-600 to-coffee-700 text-white p-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -113,7 +113,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
             <select
               value={timeRange}
               onChange={(e) => setTimeRange(e.target.value as TimeRange)}
-              className="bg-white dark:bg-gray-700 border border-coffee-300 dark:border-gray-600 rounded-md px-3 py-1 text-sm text-coffee-700 dark:text-white focus:outline-none focus:ring-2 focus:ring-coffee-500"
+              className="bg-white border border-coffee-300 rounded-md px-3 py-1 text-sm text-coffee-700 focus:outline-none focus:ring-2 focus:ring-coffee-500"
             >
               {timeRangeOptions.map(option => (
                 <option key={option.value} value={option.value}>
@@ -135,10 +135,10 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
                     key={option.value}
                     onClick={() => setChartType(option.value as ChartType)}
                     className={`px-3 py-1 text-xs rounded-md transition-colors ${
-                        chartType === option.value
-                          ? 'bg-coffee-600 text-white'
-                          : 'bg-white dark:bg-gray-700 text-coffee-600 dark:text-white hover:bg-coffee-100 dark:hover:bg-gray-700 border border-coffee-300 dark:border-gray-600'
-                      }`}
+                      chartType === option.value
+                        ? 'bg-coffee-600 text-white'
+                        : 'bg-white text-coffee-600 hover:bg-coffee-100 border border-coffee-300'
+                    }`}
                   >
                     <div className="flex items-center space-x-1">
                       <Icon className="w-3 h-3" />
