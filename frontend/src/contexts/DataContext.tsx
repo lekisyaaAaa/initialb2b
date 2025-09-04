@@ -47,7 +47,6 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
           }
           console.log('WebSocket connected');
           setIsConnected(true);
-          setWs(websocket);
 
           // Clear any pending reconnection attempts
           if (reconnectTimeout) {
@@ -87,7 +86,6 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
           if (!isComponentMounted) return;
           console.log('WebSocket disconnected');
           setIsConnected(false);
-          setWs(null);
 
           // Attempt to reconnect after 5 seconds
           reconnectTimeout = setTimeout(() => {

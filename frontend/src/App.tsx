@@ -11,12 +11,8 @@ import {
   BarChart3, 
   RefreshCw,
   Phone,
-  Mail,
-  Facebook,
-  Twitter,
-  Instagram
+  Mail
 } from 'lucide-react';
-import LetranLogo from './components/LetranLogo';
 import DarkModeToggle from './components/DarkModeToggle';
 import LoginPage from './pages/LoginPage';
 import Dashboard from './pages/Dashboard';
@@ -59,15 +55,15 @@ const HomePage: React.FC = () => {
               {/* Dark Mode Toggle */}
               <DarkModeToggle />
               
-              {/* Letran Logo */}
-              <div className="flex items-center space-x-2 px-3 py-1 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
-                <LetranLogo size="sm" />
-                <span className="text-xs text-gray-600 dark:text-gray-400 font-medium">Letran</span>
+              {/* System Status */}
+              <div className="flex items-center space-x-2 px-3 py-1 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-700">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                <span className="text-xs text-green-700 dark:text-green-400 font-medium">Online</span>
               </div>
               
               <Link 
                 to="/admin/login" 
-                className="letran-button shadow-md"
+                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-md"
               >
                 Admin Login
               </Link>
