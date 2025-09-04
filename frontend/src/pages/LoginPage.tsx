@@ -149,7 +149,7 @@ const LoginPage: React.FC = () => {
 
         {/* Footer */}
         <div className="text-center text-sm text-espresso-500 dark:text-gray-400">
-          © 2025 BeanToBin | Letran Capstone Project
+          © 2025 BeanToBin
         </div>
       </div>
     </div>

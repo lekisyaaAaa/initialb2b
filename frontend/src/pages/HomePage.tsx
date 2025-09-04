@@ -13,7 +13,6 @@ import {
   Twitter,
   Instagram
 } from 'lucide-react';
-import LetranLogo from '../components/LetranLogo';
 import DarkModeToggle from '../components/DarkModeToggle';
 
 const HomePage: React.FC = () => {
@@ -47,12 +46,6 @@ const HomePage: React.FC = () => {
               
               {/* Dark Mode Toggle */}
               <DarkModeToggle />
-              
-              {/* Letran Logo - positioned tastefully in header */}
-              <div className="flex items-center space-x-2 px-3 py-1 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600">
-                <LetranLogo size="sm" />
-                <span className="text-xs text-gray-600 dark:text-gray-400 font-medium">Letran</span>
-              </div>
               
               <Link 
                 to="/admin/login" 

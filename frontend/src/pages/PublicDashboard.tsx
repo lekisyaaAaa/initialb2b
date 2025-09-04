@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import { Leaf, AlertTriangle, Thermometer, Droplets, Sprout, RefreshCw, TrendingUp, LogIn } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
-import LetranLogo from '../components/LetranLogo';
 import DarkModeToggle from '../components/DarkModeToggle';
 
 // Hardcoded sample data to avoid any refresh loops or API issues
@@ -106,12 +105,6 @@ const PublicDashboard: React.FC = () => {
               >
                 <RefreshCw className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} />
               </button>
-
-              {/* Letran Logo - positioned in dashboard header */}
-              <div className="flex items-center space-x-2 px-2 py-1 bg-letran-50 dark:bg-gray-700 rounded-lg border border-letran-200 dark:border-gray-600">
-                <LetranLogo size="sm" />
-                <span className="text-xs text-letran-700 dark:text-gray-300 font-medium">Letran</span>
-              </div>
 
               {/* Admin Login Link */}
               <Link

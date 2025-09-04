@@ -38,7 +38,7 @@ const MONITORING_LOCATIONS: LocationConfig[] = [
   },
   {
     deviceId: 'MNL002', 
-    name: 'Quezon City - Letran Area',
+    name: 'Quezon City - Central Area',
     lat: 14.6760,
     lon: 121.0437
   },
