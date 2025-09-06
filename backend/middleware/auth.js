@@ -5,7 +5,7 @@ const User = require('../models/User');
 const auth = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
-    
+
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -13,10 +13,12 @@ const auth = async (req, res, next) => {
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id).select('-password');
-    
-    if (!user || !user.isActive) {
+    const secret = process.env.JWT_SECRET || 'devsecret';
+    const decoded = jwt.verify(token, secret);
+    // Sequelize: findByPk to fetch user
+    const user = await User.findByPk(decoded.id, { attributes: { exclude: ['password'] } });
+
+    if (!user || (user.isActive === false)) {
       return res.status(401).json({
         success: false,
         message: 'Invalid token or user is inactive.'

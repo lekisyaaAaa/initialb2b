@@ -7,7 +7,9 @@
     "start": "concurrently \"npm run backend\" \"npm run frontend\"",
     "backend": "cd backend && npm start",
     "frontend": "cd frontend && npm start",
-    "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
+  "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
+  "smoke": "node ./scripts/integration-smoke.js",
+  "seed-admin": "node ./backend/scripts/seed-admin.js",
     "install-all": "npm run install-backend && npm run install-frontend",
     "install-backend": "cd backend && npm install",
     "install-frontend": "cd frontend && npm install"

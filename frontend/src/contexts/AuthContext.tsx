@@ -18,23 +18,41 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const storedToken = localStorage.getItem('token');
     const storedUser = localStorage.getItem('user');
 
-    if (storedToken && storedUser) {
-      try {
-        const userData = JSON.parse(storedUser);
-        setToken(storedToken);
-        setUser(userData);
-        // Set token in API headers
-        api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
-      } catch (error) {
-        console.error('Error parsing stored user data:', error);
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+    // If we have a stored token, verify it with the backend before trusting it.
+    // This prevents stale/invalid tokens from granting silent admin access.
+    (async () => {
+      if (storedToken && storedUser) {
+        try {
+          api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+          // Call verify endpoint to confirm token is valid and get fresh user data
+          const verifyResp = await api.get('/auth/verify');
+          if (verifyResp?.data?.success && verifyResp.data.data?.user) {
+            const userData = verifyResp.data.data.user;
+            setToken(storedToken);
+            setUser(userData);
+            // Ensure localStorage matches verified user
+            localStorage.setItem('user', JSON.stringify(userData));
+            localStorage.setItem('token', storedToken);
+            console.log('✅ Token verified on startup for user', userData.username || userData.id);
+          } else {
+            throw new Error('Token verification failed');
+          }
+        } catch (error: any) {
+          const errMsg = error && (error.message || String(error));
+          console.warn('Stored token invalid or verify failed - clearing auth:', errMsg);
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          delete api.defaults.headers.common['Authorization'];
+          setToken(null);
+          setUser(null);
+        }
       }
-    }
-    setIsLoading(false);
+
+      setIsLoading(false);
+    })();
   }, []);
 
-  const login = async (username: string, password: string): Promise<boolean> => {
+  const login = async (username: string, password: string): Promise<{ success: boolean; message?: string }> => {
     try {
       setIsLoading(true);
       console.log('🔐 Attempting login with:', { username, password: '***' });
@@ -43,9 +61,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       
       const response = await api.post('/auth/login', { username, password });
       console.log('✅ Login response received:', response.status, response.statusText);
-      console.log('📄 Response data:', response.data);
+  console.log('📄 Response data:', response.data);
+  // Extra debug: dump nested fields for visibility in browser console
+  try { console.debug('📦 response.data.success=', response.data && response.data.success); } catch(e){}
+  try { console.debug('🔑 token present=', !!(response.data && response.data.data && response.data.data.token)); } catch(e){}
       
-      if (response.data && response.data.success) {
+  if (response.data && response.data.success) {
         const { token: newToken, user: userData } = response.data.data;
         
         console.log('🎯 Login successful! Setting user data:', { 
@@ -63,10 +84,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         // Set token in API headers
         api.defaults.headers.common['Authorization'] = `Bearer ${newToken}`;
         
-        return true;
+  return { success: true };
       } else {
-        console.warn('⚠️ Login response indicates failure:', response.data);
-        return false;
+        // Provide more diagnostic logs when login fails so the in-browser error is clearer
+        console.warn('⚠️ Login response indicates failure:', response.status, response.data);
+        // If backend returned a message, include it for the caller/UI
+        const backendMsg = response.data && (response.data.message || (response.data.error && response.data.error.message));
+        if (backendMsg) console.warn('⚠️ Backend message:', backendMsg);
+  const backendMessage = response.data && (response.data.message || (response.data.error && response.data.error.message));
+  return { success: false, message: backendMessage || 'Invalid credentials' };
       }
     } catch (error: any) {
       console.error('❌ Login error:', error);
@@ -91,7 +117,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.error('⚙️ Error setting up request:', error.message);
       }
       
-      return false;
+      // Try to extract backend error message
+    let backendMessage: string | undefined = undefined;
+      try {
+        if (error.response && error.response.data && (error.response.data.message || error.response.data.error)) {
+      backendMessage = error.response.data.message || (error.response.data.error && error.response.data.error.message);
+        }
+      } catch (e) {
+        // ignore
+      }
+    return { success: false, message: backendMessage || 'An error occurred during login' };
     } finally {
       setIsLoading(false);
     }
