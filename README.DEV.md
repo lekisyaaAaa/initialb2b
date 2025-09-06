@@ -82,3 +82,18 @@ If you prefer not to use hooks, ensure you never commit secrets and rely on CI c
 
 ---
 Small note: this repo already includes `scripts/start-all.ps1` and `scripts/port-fix.ps1` for Windows dev convenience.
+
+CI next steps (one-time)
+-----------------------
+To enable the integration smoke checks in GitHub Actions for the `infra/ci-security` branch, do the following:
+
+1. Add the `JWT_SECRET` repository secret (Settings → Secrets and variables → Actions → New repository secret). Use a strong secret.
+2. Open a pull request from `infra/ci-security` → `master` using this URL:
+
+	https://github.com/lekisyaaAaa/initialb2b/compare/master...infra/ci-security?expand=1
+
+3. Wait for the `smoke-integration` / `smoke-check` workflow to run and confirm it passes.
+
+Notes:
+- The CI workflow requires `JWT_SECRET` to sign/verify tokens during the smoke seed/run.
+- Do NOT check secrets into the repo; use the repository Secrets UI or your organization's secrets manager.
