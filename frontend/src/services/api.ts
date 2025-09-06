@@ -31,10 +31,24 @@ api.interceptors.response.use(
   },
   (error) => {
     if (error.response?.status === 401) {
-      // Token expired or invalid
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/admin/login';
+      // Token expired or invalid - clear client auth state but do NOT force navigation.
+      // This ensures opening the landing page will not automatically redirect to login
+      // if a background request fails with 401. Individual pages/components may
+      // listen for the 'auth:expired' event to react (optional).
+      try {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        // remove Authorization header if set
+        if ((api.defaults.headers as any).Authorization) {
+          delete (api.defaults.headers as any).Authorization;
+        }
+        // notify app if anyone wants to handle expired auth
+        if (typeof window !== 'undefined' && typeof CustomEvent === 'function') {
+          window.dispatchEvent(new CustomEvent('auth:expired'));
+        }
+      } catch (err) {
+        // swallow errors - nothing critical here
+      }
     }
     return Promise.reject(error);
   }

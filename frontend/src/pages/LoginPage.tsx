@@ -36,9 +36,9 @@ const LoginPage: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      const success = await login(formData.username, formData.password);
-      if (!success) {
-        setError('Invalid username or password');
+      const result = await login(formData.username, formData.password);
+      if (!result || !result.success) {
+        setError(result && result.message ? result.message : 'Invalid username or password');
       }
     } catch (err) {
       setError('An error occurred during login. Please try again.');

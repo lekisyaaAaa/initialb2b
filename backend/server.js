@@ -93,13 +93,22 @@ const corsOptions = {
             const bcrypt = require('bcryptjs');
             const User = require('./models/User');
             const adminUser = process.env.LOCAL_ADMIN_USER || 'admin';
-            const adminPass = process.env.LOCAL_ADMIN_PASS || 'admin123';
-            const [user, created] = await User.findOrCreate({
-              where: { username: adminUser },
-              defaults: { password: bcrypt.hashSync(adminPass, 10), role: 'admin' }
-            });
-            if (created) {
+            const adminPass = process.env.LOCAL_ADMIN_PASS || 'admin';
+            // Ensure admin user exists and has the expected dev password (helpful for local testing)
+            let user = await User.findOne({ where: { username: adminUser } });
+            if (!user) {
+              user = await User.create({ username: adminUser, password: bcrypt.hashSync(adminPass, 10), role: 'admin' });
               console.log(`\u2705 Created dev admin user '${adminUser}'`);
+            } else {
+              // Update password/role to match expected dev credentials to avoid mismatch across docs
+              try {
+                user.password = bcrypt.hashSync(adminPass, 10);
+                user.role = 'admin';
+                await user.save();
+                console.log(`\u2705 Ensured dev admin user '${adminUser}' password/role are up-to-date`);
+              } catch (e) {
+                console.warn('Could not update dev admin credentials:', e && e.message ? e.message : e);
+              }
             }
           }
         } catch (seedErr) {
@@ -149,6 +158,65 @@ app.use(errorHandler);
 // Start the server
 const PORT = process.env.PORT || 5000;
 
+// Improved error diagnostics for common startup issues (EADDRINUSE)
+let _triedAlternatePort = false;
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`\u26A0\uFE0F Port ${PORT} already in use (EADDRINUSE).`);
+    // If we haven't tried an alternate port yet, attempt PORT+1 to allow local dev to continue.
+    if (!_triedAlternatePort) {
+      const altPort = Number(PORT) + 1;
+      console.warn(`Attempting to bind to alternate port ${altPort}...`);
+      _triedAlternatePort = true;
+      try {
+        server.listen(altPort, () => {
+          console.log(`🚀 Server running on alternate port ${altPort}`);
+          console.log(`📊 Health check: http://localhost:${altPort}/api/health`);
+          console.log(`🔌 WebSocket server running on ws://localhost:${altPort}`);
+        });
+        return;
+      } catch (e) {
+        console.error('Alternate port bind failed:', e && e.message ? e.message : e);
+      }
+    }
+
+    try {
+      // Try to surface listening process information (Windows-friendly)
+      const { execSync } = require('child_process');
+      try {
+        const netstat = execSync(`netstat -ano | findstr ":${PORT}"`, { encoding: 'utf8' });
+        console.error('netstat results for port ' + PORT + ':');
+        console.error(netstat);
+        const lines = netstat.split(/\r?\n/).filter(Boolean);
+        const pids = new Set();
+        lines.forEach((line) => {
+          const parts = line.trim().split(/\s+/);
+          const pid = parts[parts.length - 1];
+          if (pid && !isNaN(pid)) pids.add(pid);
+        });
+        for (const pid of pids) {
+          try {
+            const wmic = execSync(`wmic process where processid=${pid} get ProcessId,CommandLine /format:list`, { encoding: 'utf8' });
+            console.error(`Process ${pid} info:`);
+            console.error(wmic);
+          } catch (e) {
+            // ignore per-process failures
+          }
+        }
+      } catch (e) {
+        // netstat may not be available on some platforms
+        console.error('Could not run netstat/wmic diagnostics:', e && e.message ? e.message : e);
+      }
+    } catch (e) {
+      console.error('Error while collecting diagnostics:', e && e.message ? e.message : e);
+    }
+    // If we tried alternate and still failing, exit with code
+    process.exit(1);
+  } else {
+    console.error('Server error:', err);
+  }
+});
+
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
@@ -164,5 +232,18 @@ process.on('SIGTERM', () => {
     process.exit(0);
   });
 });
+
+// In development, run seed-admin as a non-blocking child process to ensure admin exists
+if ((process.env.NODE_ENV || 'development') !== 'production') {
+  try {
+    const { spawn } = require('child_process');
+    const seedPath = path.join(__dirname, 'scripts', 'seed-admin.js');
+    const seedProc = spawn(process.execPath, [seedPath], { stdio: 'ignore', detached: true });
+    seedProc.unref();
+    console.log('Launched dev seeding process (seed-admin.js)');
+  } catch (e) {
+    console.warn('Could not launch dev seeding process:', e && e.message ? e.message : e);
+  }
+}
 
 module.exports = app;

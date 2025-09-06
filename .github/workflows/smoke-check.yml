@@ -1,0 +1,121 @@
+name: CI - Smoke checks
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install backend deps
+        working-directory: ./backend
+        run: npm ci --no-audit --no-fund
+
+      - name: Start backend (background)
+        working-directory: ./backend
+        run: |
+          node server.js &
+          sleep 2
+
+      - name: Wait for backend health
+        run: |
+          for i in {1..15}; do
+            if curl -sSf http://localhost:5000/api/health >/dev/null 2>&1; then echo 'backend healthy' && exit 0; fi
+            sleep 2
+          done
+          echo 'backend did not become healthy' && exit 1
+
+      - name: Install frontend deps & build
+        working-directory: ./frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build --if-present
+
+      - name: Start frontend (background)
+        working-directory: ./frontend
+        run: |
+          node server.js &
+          sleep 2
+
+      - name: Wait for frontend
+        run: |
+          for i in {1..15}; do
+            if curl -sSf http://localhost:3002/health >/dev/null 2>&1; then echo 'frontend healthy' && exit 0; fi
+            sleep 2
+          done
+          echo 'frontend did not become healthy' && exit 1
+
+      - name: Run repo smoke script
+        run: |
+          cd $GITHUB_WORKSPACE
+          npm run smoke
+
+  smoke-postgres:
+    runs-on: ubuntu-latest
+    needs: smoke
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: beantobin
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+    env:
+      DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/beantobin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install backend deps
+        working-directory: ./backend
+        run: npm ci --no-audit --no-fund
+
+      - name: Wait for Postgres + seed
+        run: |
+          echo 'Waiting for Postgres and attempting to seed (retries)...'
+          for i in {1..30}; do
+            node ./backend/scripts/seed-admin.js && echo 'Seeded' && exit 0 || echo 'Retrying seed...'; sleep 2;
+          done
+          echo 'Failed to seed Postgres' && exit 1
+
+      - name: Start backend (background)
+        working-directory: ./backend
+        run: |
+          echo 'Starting backend connected to Postgres'
+          DATABASE_URL=${{ env.DATABASE_URL }} node server.js &
+          sleep 3
+
+      - name: Install frontend deps & build
+        working-directory: ./frontend
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build --if-present
+
+      - name: Start frontend (background)
+        working-directory: ./frontend
+        run: |
+          node server.js &
+          sleep 2
+
+      - name: Run repo smoke script
+        run: |
+          cd $GITHUB_WORKSPACE
+          npm run smoke
