@@ -1,0 +1,91 @@
+name: Integration smoke (Postgres)
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  smoke-integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: beantobin
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/beantobin
+      JWT_SECRET: ${{ secrets.JWT_SECRET }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install backend dependencies
+        run: |
+          cd backend
+          npm ci
+
+      - name: Install frontend dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Wait for Postgres
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          export PGPASSWORD=postgres
+          for i in {1..30}; do
+            pg_isready -h localhost -p 5432 -U postgres && break || sleep 1
+          done
+
+      - name: Seed database
+        run: |
+          cd backend
+          node scripts/seed-admin.js
+        env:
+          DATABASE_URL: ${{ env.DATABASE_URL }}
+          JWT_SECRET: ${{ env.JWT_SECRET }}
+
+      - name: Start backend
+        run: |
+          cd backend
+          mkdir -p ../ci-logs/backend || true
+          nohup node server.js > ../ci-logs/backend/stdout.log 2>../ci-logs/backend/stderr.log &
+          echo "backend started"
+
+      - name: Start frontend
+        run: |
+          cd frontend
+          mkdir -p ../ci-logs/frontend || true
+          nohup node server.js > ../ci-logs/frontend/stdout.log 2>../ci-logs/frontend/stderr.log &
+          echo "frontend started"
+
+      - name: Wait for services
+        run: |
+          for i in {1..30}; do
+            if curl -sSf http://localhost:5000/api/health >/dev/null && curl -sSf http://localhost:3002/health >/dev/null; then
+              echo "services up"; break
+            fi
+            sleep 2
+          done
+
+      - name: Run integration smoke script
+        run: node scripts/integration-smoke.js
