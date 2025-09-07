@@ -1,6 +1,6 @@
 import React from 'react';
 import { Link } from 'react-router-dom';
-import { 
+import {
   Leaf, 
   Recycle, 
   TrendingUp, 
@@ -11,7 +11,8 @@ import {
   Mail,
   Facebook,
   Twitter,
-  Instagram
+  Instagram,
+  ArrowRight
 } from 'lucide-react';
 import DarkModeToggle from '../components/DarkModeToggle';
 
@@ -47,11 +48,12 @@ const HomePage: React.FC = () => {
               {/* Dark Mode Toggle */}
               <DarkModeToggle />
               
-              <Link 
-                to="/admin/login" 
-                className="letran-button shadow-md"
+              <Link
+                to="/admin/login"
+                className="bg-[#c81e36] hover:bg-[#b2182e] text-white font-semibold px-4 py-2 rounded-full shadow-lg flex items-center gap-2 transition-colors duration-200"
               >
-                Admin Login
+                <ArrowRight className="h-4 w-4" />
+                <span>Admin Login</span>
               </Link>
             </div>
           </div>
@@ -132,11 +134,12 @@ const HomePage: React.FC = () => {
                 View Dashboard
               </Link>
               
-              <Link 
-                to="/admin/login" 
-                className="font-sans bg-letran-600 hover:bg-letran-700 dark:bg-letran-500 dark:hover:bg-letran-600 text-white font-semibold px-8 py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 tracking-wide"
+              <Link
+                to="/admin/login"
+                className="font-sans bg-[#c81e36] hover:bg-[#b2182e] text-white font-semibold px-8 py-3 rounded-full shadow-lg flex items-center gap-3 transition-all duration-200 tracking-wide"
               >
-                Admin Access
+                <ArrowRight className="h-5 w-5" />
+                <span>Admin Access</span>
               </Link>
             </div>
             

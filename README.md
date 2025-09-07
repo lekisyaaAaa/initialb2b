@@ -150,6 +150,18 @@ npm start
 - **Admin**: username: `admin`, password: `admin`
 - **User**: username: `user`, password: `user`
 
+Husky (pre-commit smoke check)
+--------------------------------
+To enable the local pre-commit hook that runs a quick integration smoke check, install dev dependencies and run:
+
+```powershell
+cd c:\xampp\htdocs\beantobin\system
+npm ci
+npx husky install
+```
+
+This will enable the pre-commit hook defined in the root `package.json`. CI does not require husky.
+
 ## 📊 API Endpoints
 
 ### Authentication

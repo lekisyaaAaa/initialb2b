@@ -1,14 +1,8 @@
 import React from 'react';
-import { motion } from 'framer-motion';
 
 const Hero: React.FC = () => {
   return (
-    <motion.section
-      initial={{ opacity: 0, y: 8 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.45 }}
-      className="bg-gradient-to-r from-primary-50 to-white dark:from-gray-800 dark:to-gray-900 rounded-xl p-6 mb-6"
-    >
+    <section className="bg-gradient-to-r from-primary-50 to-white dark:from-gray-800 dark:to-gray-900 rounded-xl p-6 mb-6 transition-transform duration-300 ease-out transform hover:-translate-y-1">
       <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-start md:items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-espresso-900 dark:text-white">Live Environmental Overview</h2>
@@ -17,11 +11,11 @@ const Hero: React.FC = () => {
         <div className="mt-4 md:mt-0">
           <div className="flex items-center space-x-3">
             <button className="px-4 py-2 bg-green-600 text-white rounded shadow hover:bg-green-700 transition">Add Sensor</button>
-            <button className="px-4 py-2 bg-white border border-gray-200 rounded hover:bg-gray-50 transition">Export</button>
+            <button className="px-4 py-2 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded hover:bg-gray-50 dark:hover:bg-gray-600 transition">Export</button>
           </div>
         </div>
       </div>
-    </motion.section>
+    </section>
   );
 };
 

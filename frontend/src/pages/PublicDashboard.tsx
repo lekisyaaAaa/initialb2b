@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Leaf, AlertTriangle, Thermometer, Droplets, Sprout, RefreshCw, TrendingUp, LogIn } from 'lucide-react';
+import { Leaf, AlertTriangle, Thermometer, Droplets, Sprout, RefreshCw, TrendingUp, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import DarkModeToggle from '../components/DarkModeToggle';
@@ -57,7 +57,7 @@ const PublicDashboard: React.FC = () => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'normal': return 'text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900/30';
-      case 'warning': return 'text-yellow-600 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30';
+  case 'warning': return 'text-secondary-600 bg-secondary-100 dark:text-secondary-400 dark:bg-secondary-900/30';
       case 'critical': return 'text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900/30';
       default: return 'text-gray-600 bg-gray-100 dark:text-gray-400 dark:bg-gray-900/30';
     }
@@ -107,11 +107,8 @@ const PublicDashboard: React.FC = () => {
               </button>
 
               {/* Admin Login Link */}
-              <Link
-                to="/admin/login"
-                className="letran-button flex items-center space-x-1 px-3 py-2 text-sm font-medium rounded-md transition-all"
-              >
-                <LogIn className="h-4 w-4" />
+              <Link to="/admin/login" className="letran-button">
+                <ArrowRight className="h-4 w-4" />
                 <span>Admin Login</span>
               </Link>
             </div>
@@ -150,14 +147,16 @@ const PublicDashboard: React.FC = () => {
         {activeTab === 'overview' && (
           <div className="space-y-6">
             {/* Premium Glass Overview Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch w-full">
               
               {/* Average Temperature Card */}
-              <div className="group relative overflow-hidden">
+              <div className="group relative overflow-hidden h-full">
                 <div className="absolute inset-0 bg-gradient-to-br from-letran-500/20 to-red-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
+                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-letran-500 to-red-500 rounded-t-2xl"></div>
-                  <div className="flex items-center">
+
+                  {/* Header */}
+                  <div className="flex items-center mb-4">
                     <div className="bg-gradient-to-br from-letran-100 to-letran-50 dark:from-letran-800 dark:to-letran-700 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
                       <Thermometer className="h-8 w-8 text-letran-600 dark:text-letran-300" />
                     </div>
@@ -168,15 +167,22 @@ const PublicDashboard: React.FC = () => {
                       </p>
                     </div>
                   </div>
+
+                  {/* Chart / content area that expands to fill card */}
+                  <div className="flex-1 min-h-[160px]">
+                    {/* Chart or detail components should fill this area (use ResponsiveContainer or width/height props) */}
+                  </div>
                 </div>
               </div>
 
               {/* Average Humidity Card */}
-              <div className="group relative overflow-hidden">
+              <div className="group relative overflow-hidden h-full">
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-primary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
+                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-primary-500 rounded-t-2xl"></div>
-                  <div className="flex items-center">
+
+                  {/* Header */}
+                  <div className="flex items-center mb-4">
                     <div className="bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-800 dark:to-blue-700 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
                       <Droplets className="h-8 w-8 text-blue-600 dark:text-blue-300" />
                     </div>
@@ -187,17 +193,24 @@ const PublicDashboard: React.FC = () => {
                       </p>
                     </div>
                   </div>
+
+                  {/* Chart / content area */}
+                  <div className="flex-1 min-h-[160px]">
+                    {/* <HumidityChart data={...} className="w-full h-full" /> */}
+                  </div>
                 </div>
               </div>
 
               {/* Average Moisture Card */}
-              <div className="group relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-yellow-500/20 to-warning-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-500 to-warning-500 rounded-t-2xl"></div>
-                  <div className="flex items-center">
-                    <div className="bg-gradient-to-br from-yellow-100 to-yellow-50 dark:from-yellow-800 dark:to-yellow-700 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
-                      <Sprout className="h-8 w-8 text-yellow-600 dark:text-yellow-300" />
+              <div className="group relative overflow-hidden h-full">
+                <div className="absolute inset-0 bg-gradient-to-br from-secondary-500/20 to-secondary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-secondary-500 to-secondary-500 rounded-t-2xl"></div>
+
+                  {/* Header */}
+                  <div className="flex items-center mb-4">
+                    <div className="bg-gradient-to-br from-secondary-100 to-secondary-50 dark:from-secondary-800 dark:to-secondary-700 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                      <Sprout className="h-8 w-8 text-secondary-600 dark:text-secondary-300" />
                     </div>
                     <div>
                       <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Avg Moisture</p>
@@ -205,6 +218,11 @@ const PublicDashboard: React.FC = () => {
                         {avgMoisture}%
                       </p>
                     </div>
+                  </div>
+
+                  {/* Chart / content area */}
+                  <div className="flex-1 min-h-[160px]">
+                    {/* <MoistureChart data={...} className="w-full h-full" /> */}
                   </div>
                 </div>
               </div>

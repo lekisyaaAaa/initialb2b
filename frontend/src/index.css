@@ -69,7 +69,7 @@
 
   /* Coffee-themed custom components */
   .coffee-gradient {
-    background: linear-gradient(135deg, #f5f1ea 0%, #e1c794 100%);
+  background: linear-gradient(135deg, #f5f7fb 0%, #cfeef5 100%);
   }
   
   .espresso-gradient {
@@ -78,33 +78,39 @@
 
   /* Letran-themed gradients */
   .letran-gradient {
-    background: linear-gradient(135deg, #dc143c 0%, #991b1b 100%);
+  background: linear-gradient(135deg, #8E44AD 0%, #6B21A8 100%);
   }
 
   .letran-coffee-gradient {
-    background: linear-gradient(135deg, #dc143c 0%, #a67c52 50%, #6f4e28 100%);
+  background: linear-gradient(135deg, #8E44AD 0%, #00BFA6 50%, #374151 100%);
   }
   
   .coffee-card {
     @apply bg-white rounded-xl shadow-lg border border-coffee-200 p-6 hover:shadow-xl transition-shadow duration-200;
     background: linear-gradient(145deg, #ffffff 0%, #fefdf9 100%);
-    border-left: 4px solid #dc143c; /* Letran crimson accent */
+  border-left: 4px solid #00BFA6; /* updated accent to teal */
   }
 
   .coffee-card-alt {
     @apply bg-white rounded-xl shadow-lg border border-coffee-200 p-6 hover:shadow-xl transition-shadow duration-200;
     background: linear-gradient(145deg, #ffffff 0%, #fefdf9 100%);
-    border-top: 3px solid #dc143c; /* Letran crimson accent */
+  border-top: 3px solid #00BFA6; /* updated accent to teal */
   }
   
   .coffee-button {
     @apply bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-md hover:shadow-lg;
-    background: linear-gradient(135deg, #a67c52 0%, #dc143c 100%); /* Coffee to Letran gradient */
+  background: linear-gradient(135deg, #00BFA6 0%, #03A9F4 100%); /* teal -> cyan */
   }
 
   .letran-button {
-    @apply text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-md hover:shadow-lg;
-    background: linear-gradient(135deg, #dc143c 0%, #991b1b 100%);
+  @apply text-white px-4 py-2 rounded-full font-semibold transition-all duration-200 shadow-lg hover:shadow-xl inline-flex items-center gap-2;
+  background: #8E44AD; /* purple primary */
+    box-shadow: 0 10px 20px -8px rgba(0,0,0,0.5);
+    border: 1px solid rgba(0,0,0,0.08);
+  }
+
+  .letran-button:hover {
+  background: #7a38a0; /* slightly darker purple on hover */
   }
   
   .coffee-input {
@@ -113,17 +119,19 @@
 
   /* Letran accent elements */
   .letran-nav-accent {
-    border-bottom: 2px solid #dc143c;
+  border-bottom: 2px solid #8E44AD;
   }
 
   .letran-badge {
     @apply px-3 py-1 rounded-full text-sm font-medium;
-    background-color: rgba(220, 20, 60, 0.1);
-    color: #dc143c;
+  background-color: rgba(142, 68, 173, 0.08);
+  color: #8E44AD;
   }
 
   .letran-alert {
-    @apply border-l-4 border-letran-500 bg-letran-50 p-4 rounded-r-lg;
+  @apply p-4 rounded-r-lg;
+  border-left: 4px solid #8E44AD;
+  background-color: rgba(142,68,173,0.04);
   }
 
   /* Premium Glass Card Effects */
@@ -146,7 +154,7 @@
 
   /* Letran Branded Elements */
   .letran-accent-border {
-    border-image: linear-gradient(45deg, #dc143c, #991b1b) 1;
+  border-image: linear-gradient(45deg, #8E44AD, #6B21A8) 1;
   }
 
   .coffee-shimmer {
@@ -166,8 +174,8 @@
   }
 
   .card-hover-lift:hover {
-    transform: translateY(-12px) scale(1.03);
-    box-shadow: 0 40px 80px -20px rgba(220, 20, 60, 0.3);
+  transform: translateY(-12px) scale(1.03);
+  box-shadow: 0 40px 80px -20px rgba(3,169,244,0.12);
   }
 
   /* Advanced Card Animations */
@@ -187,7 +195,7 @@
     transform: translateY(-16px) scale(1.025);
     box-shadow: 
       0 50px 100px -30px rgba(0, 0, 0, 0.15),
-      0 25px 50px -12px rgba(220, 20, 60, 0.1),
+  0 25px 50px -12px rgba(3,169,244,0.06),
       0 0 0 1px rgba(255, 255, 255, 0.8);
   }
 
@@ -213,7 +221,7 @@
   .gradient-border {
     position: relative;
     background: linear-gradient(white, white) padding-box,
-                linear-gradient(45deg, #dc143c, #a67c52, #dc143c) border-box;
+                linear-gradient(45deg, #8E44AD, #00BFA6, #8E44AD) border-box;
     border: 2px solid transparent;
   }
 
@@ -243,3 +251,145 @@
     left: 100%;
   }
 }
+
+/* Dark-mode variants for custom components to ensure consistent admin dashboard UI */
+@layer components {
+  /* Global CSS variables and refined palette for a polished dark theme */
+  .dark {
+    --bg: #121212; /* base background */
+    --bg-2: #181818; /* slightly darker */
+    --card: #1E1E1E; /* primary card */
+    --card-2: #232323; /* secondary card */
+    --muted: #9aa4b2;
+    --text: #E0E0E0; /* body text */
+    --heading: #FFFFFF; /* headings */
+    --primary-accent: #00BFA6; /* teal - active/highlight */
+    --secondary-accent: #03A9F4; /* cyan - graphs/alerts */
+    --tertiary-accent: #8E44AD; /* purple - alternative highlights */
+    --success: #10b981;
+    --danger: #ef4444;
+    --surface-contrast: rgba(255,255,255,0.03);
+  }
+
+  /* Global body adjustments when dark mode is active */
+  .dark body {
+    background-color: var(--bg);
+    color: var(--text);
+  }
+
+  /* Cards and panels */
+  .dark .card,
+  .dark .coffee-card,
+  .dark .coffee-card-alt,
+  .dark .glass-card,
+  .dark .enhanced-glass-card,
+  .dark .premium-shimmer {
+    background-color: var(--card);
+    color: var(--text);
+    border-color: rgba(255,255,255,0.04);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+  }
+
+  .dark .coffee-card {
+    background: linear-gradient(180deg, var(--card) 0%, var(--card-2) 100%);
+  border-left: 4px solid rgba(0,191,166,0.12); /* subtle teal accent */
+  }
+
+  .dark .coffee-card-alt { border-top: 3px solid rgba(3,169,244,0.10); }
+
+  /* Buttons and interactive elements */
+  .dark .btn,
+  .dark .btn-primary,
+  .dark .btn-secondary,
+  .dark .letran-button,
+  .dark .coffee-button {
+    color: var(--heading);
+  }
+
+  .dark .btn-primary {
+    background: linear-gradient(90deg, rgba(0,191,166,0.12), rgba(0,191,166,0.06));
+    border: 1px solid rgba(0,191,166,0.18);
+    color: var(--heading);
+  }
+
+  .dark .letran-button {
+    background: linear-gradient(90deg, rgba(220,20,60,0.08), rgba(220,20,60,0.03));
+    border: 1px solid rgba(255,255,255,0.04);
+    color: var(--heading);
+  }
+
+  .dark .coffee-button {
+    background: linear-gradient(90deg, rgba(0,191,166,0.06), rgba(3,169,244,0.04));
+    border: 1px solid rgba(255,255,255,0.04);
+    color: var(--heading);
+  }
+
+  /* Inputs */
+  .dark .coffee-input,
+  .dark .input {
+    background-color: rgba(255,255,255,0.03);
+    border-color: rgba(255,255,255,0.06);
+    color: var(--text);
+  }
+  .dark .coffee-input::placeholder,
+  .dark .input::placeholder { color: var(--muted); }
+
+  /* Alerts */
+  .dark .alert-success { background-color: rgba(16,185,129,0.08); border-color: rgba(16,185,129,0.2); color: #bbf7d0; }
+  .dark .alert-warning { background-color: rgba(245,158,11,0.08); border-color: rgba(245,158,11,0.18); color: #fde68a; }
+  .dark .alert-danger { background-color: rgba(239,68,68,0.06); border-color: rgba(239,68,68,0.18); color: #fecaca; }
+  .dark .alert-info { background-color: rgba(0,191,166,0.06); border-color: rgba(0,191,166,0.18); color: #bff7ec; }
+
+  /* Glass and premium shimmer tweaks */
+  .dark .glass-card { background: rgba(255,255,255,0.02); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.04); }
+  .dark .premium-shimmer::before { background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent); }
+
+  /* Headings and text */
+  .dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6 { color: var(--heading); }
+  .dark .text-espresso-900, .dark .text-espresso-800, .dark .text-gray-900 { color: var(--text) !important; }
+
+  /* Strong overrides for Tailwind utility classes used throughout the app */
+  .dark .bg-white { background-color: var(--card) !important; color: var(--text) !important; }
+  .dark .bg-white\/80 { background-color: rgba(255,255,255,0.03) !important; color: var(--text) !important; }
+  .dark .bg-white\/95 { background-color: rgba(255,255,255,0.015) !important; color: var(--text) !important; }
+  .dark .bg-white\/50 { background-color: rgba(255,255,255,0.02) !important; color: var(--text) !important; }
+
+  .dark .border-gray-100 { border-color: rgba(255,255,255,0.04) !important; }
+  .dark .border-white\/50 { border-color: rgba(255,255,255,0.04) !important; }
+  .dark .border-white { border-color: rgba(255,255,255,0.03) !important; }
+
+  /* Chart and icon colors: keep high contrast */
+  .dark .chart-label, .dark .chart-axis, .dark .recharts-text { fill: var(--muted) !important; color: var(--muted) !important; }
+
+  /* Hover/active micro-interactions */
+  .dark .card-hover-lift:hover { transform: translateY(-8px) scale(1.02); box-shadow: 0 30px 60px -20px rgba(0,0,0,0.6); }
+
+  /* Small utility to make focus visible */
+  .dark :focus { outline: 2px solid rgba(6,182,212,0.2); outline-offset: 2px; }
+}
+
+/* Strong overrides for Tailwind utility classes that are used directly in many components.
+  These ensure components that use `bg-white`, `bg-white/80`, or light borders receive
+  appropriate dark backgrounds and borders even if they were authored with light utilities. */
+
+/* Background overrides for common white utilities (escape slashes for classes like bg-white/80) */
+.dark .bg-white { background-color: #0b1220 !important; color: #e6eef8 !important; }
+.dark .bg-white\/80 { background-color: rgba(11,18,32,0.6) !important; color: #e6eef8 !important; }
+.dark .bg-white\/95 { background-color: rgba(11,18,32,0.9) !important; color: #e6eef8 !important; }
+.dark .bg-white\/50 { background-color: rgba(11,18,32,0.45) !important; color: #e6eef8 !important; }
+
+/* Border overrides for light borders */
+.dark .border-gray-100 { border-color: #334155 !important; }
+.dark .border-white\/50 { border-color: rgba(255,255,255,0.06) !important; }
+.dark .border-white { border-color: rgba(255,255,255,0.04) !important; }
+
+/* Subtle background for card-like elements using backdrop blur */
+.dark .backdrop-blur-sm { background-color: rgba(17,24,39,0.4) !important; }
+
+/* Ensure placeholder/light text flips to readable color in dark */
+.dark .text-espresso-900, .dark .text-espresso-800 { color: #e6eef8 !important; }
+.dark .text-gray-900 { color: #e6eef8 !important; }
+
+/* Buttons that used light backgrounds should get darker complements */
+.dark .btn-secondary, .dark .btn-primary, .dark .btn { color: #f8fafc !important; }
+

@@ -7,14 +7,16 @@ interface MoistureChartProps {
   data: SensorData[];
   warningThreshold?: number;
   criticalThreshold?: number;
-  height?: number;
+  height?: number | string;
+  className?: string;
 }
 
 const MoistureChart: React.FC<MoistureChartProps> = ({ 
   data, 
-  warningThreshold = 20, 
-  criticalThreshold = 10,
-  height = 300
+  warningThreshold = 300, 
+  criticalThreshold = 100,
+  height = '100%',
+  className
 }) => {
   const formatTime = (timestamp: string) => {
     try {
@@ -32,6 +34,8 @@ const MoistureChart: React.FC<MoistureChartProps> = ({
     }
   };
 
+  const isDark = typeof window !== 'undefined' && (document.documentElement.classList.contains('dark') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
+
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
@@ -45,7 +49,7 @@ const MoistureChart: React.FC<MoistureChartProps> = ({
           <div className="flex items-center mt-2">
             <div className={`w-2 h-2 rounded-full mr-2 ${
               data.moisture <= criticalThreshold ? 'bg-red-500' :
-              data.moisture <= warningThreshold ? 'bg-yellow-500' : 'bg-green-500'
+              data.moisture <= warningThreshold ? 'bg-[#03A9F4]' : 'bg-green-500'
             }`}></div>
             <span className="text-sm text-coffee-600">
               {data.moisture <= criticalThreshold ? 'Critical' :
@@ -59,18 +63,18 @@ const MoistureChart: React.FC<MoistureChartProps> = ({
   };
 
   return (
-    <div className="w-full">
+    <div className={`w-full ${className || ''}`}>
       <ResponsiveContainer width="100%" height={height}>
         <LineChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e1c794" opacity={0.3} />
+          <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#1f2937' : '#cfeef5'} opacity={0.3} />
           <XAxis 
             dataKey="timestamp" 
             tickFormatter={formatTime}
-            stroke="#8b6f47"
+            stroke={isDark ? '#9ca3af' : '#6b7280'}
             fontSize={12}
           />
           <YAxis 
-            stroke="#8b6f47"
+            stroke={isDark ? '#9ca3af' : '#6b7280'}
             fontSize={12}
             domain={[0, 100]}
           />
@@ -79,7 +83,7 @@ const MoistureChart: React.FC<MoistureChartProps> = ({
           {/* Warning threshold line */}
           <ReferenceLine 
             y={warningThreshold} 
-            stroke="#f59e0b" 
+            stroke="#03A9F4" 
             strokeDasharray="5 5" 
             strokeWidth={2}
             label={{ value: `Warning (${warningThreshold}%)`, position: "right" }}
@@ -97,10 +101,10 @@ const MoistureChart: React.FC<MoistureChartProps> = ({
           <Line 
             type="monotone" 
             dataKey="moisture" 
-            stroke="#10b981" 
+            stroke={isDark ? '#00BFA6' : '#10b981'} 
             strokeWidth={3}
-            dot={{ fill: '#10b981', strokeWidth: 2, r: 4 }}
-            activeDot={{ r: 6, fill: '#047857' }}
+            dot={{ fill: isDark ? '#00BFA6' : '#10b981', strokeWidth: 2, r: 4 }}
+            activeDot={{ r: 6, fill: isDark ? '#038f75' : '#047857' }}
           />
         </LineChart>
       </ResponsiveContainer>

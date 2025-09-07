@@ -7,12 +7,14 @@
     "start": "concurrently \"npm run backend\" \"npm run frontend\"",
     "backend": "cd backend && npm start",
     "frontend": "cd frontend && npm start",
-  "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
-  "smoke": "node ./scripts/integration-smoke.js",
-  "seed-admin": "node ./backend/scripts/seed-admin.js",
+    "dev": "concurrently \"npm run backend\" \"npm run frontend\"",
+    "smoke": "node ./scripts/run-no-debug.js ./scripts/integration-smoke.js",
+    "smoke-ui": "node ./scripts/run-no-debug.js ./scripts/ui-login.js && node ./scripts/run-no-debug.js ./scripts/verify-token.js",
+    "seed-admin": "node ./backend/scripts/seed-admin.js",
     "install-all": "npm run install-backend && npm run install-frontend",
     "install-backend": "cd backend && npm install",
-    "install-frontend": "cd frontend && npm install"
+    "install-frontend": "cd frontend && npm install",
+    "precommit-check": "node ./scripts/integration-smoke.js"
   },
   "keywords": [
     "environmental",
@@ -25,6 +27,10 @@
   "author": "BeanToBin",
   "license": "MIT",
   "devDependencies": {
-    "concurrently": "^7.6.0"
+    "concurrently": "^7.6.0",
+    "husky": "^8.0.0"
+  },
+  "dependencies": {
+    "puppeteer": "^24.19.0"
   }
 }

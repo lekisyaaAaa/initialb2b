@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { AlertCircle, Leaf, Lock, User } from 'lucide-react';
+import { AlertCircle, Leaf, Lock, User, ArrowRight } from 'lucide-react';
 import DarkModeToggle from '../components/DarkModeToggle';
 
 const LoginPage: React.FC = () => {
@@ -146,7 +146,7 @@ const LoginPage: React.FC = () => {
               <button
                 type="submit"
                 disabled={!isFormValid || isSubmitting || isLoading}
-                className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
+                className="group relative w-full flex justify-center items-center py-3 px-6 border border-transparent text-sm font-semibold rounded-full text-white bg-[#c81e36] hover:bg-[#b2182e] focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#b2182e] disabled:opacity-50 disabled:cursor-not-allowed transition-colors duration-200"
               >
                 {isSubmitting || isLoading ? (
                   <div className="flex items-center">
@@ -154,7 +154,10 @@ const LoginPage: React.FC = () => {
                     Signing in...
                   </div>
                 ) : (
-                  'Sign in'
+                  <>
+                    <ArrowRight className="h-4 w-4 mr-2" />
+                    <span>Sign in</span>
+                  </>
                 )}
               </button>
             </div>

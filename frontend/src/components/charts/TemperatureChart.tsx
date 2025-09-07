@@ -7,15 +7,19 @@ interface TemperatureChartProps {
   data: SensorData[];
   warningThreshold?: number;
   criticalThreshold?: number;
-  height?: number;
+  /** number in px or percent string like '100%' to fill parent */
+  height?: number | string;
+  className?: string;
 }
 
 const TemperatureChart: React.FC<TemperatureChartProps> = ({ 
   data, 
   warningThreshold = 35, 
   criticalThreshold = 40,
-  height = 300
+  height = '100%',
+  className
 }) => {
+  const isDark = typeof window !== 'undefined' && (document.documentElement.classList.contains('dark') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
   const formatTime = (timestamp: string) => {
     try {
       return format(new Date(timestamp), 'HH:mm');
@@ -36,18 +40,18 @@ const TemperatureChart: React.FC<TemperatureChartProps> = ({
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-white p-4 rounded-lg shadow-lg border border-coffee-200">
-          <p className="text-coffee-900 font-medium">{formatTooltipTime(label)}</p>
-          <p className="text-coffee-700">
+        <div className={`${isDark ? 'bg-gray-800 text-gray-100 border-gray-700' : 'bg-white text-coffee-900 border-coffee-200'} p-4 rounded-lg shadow-lg border`}>
+          <p className="font-medium">{formatTooltipTime(label)}</p>
+          <p>
             <span className="font-medium">Temperature:</span> {data.temperature.toFixed(1)}°C
           </p>
-          <p className="text-coffee-600 text-sm">Device: {data.deviceId}</p>
+          <p className="text-sm">Device: {data.deviceId}</p>
           <div className="flex items-center mt-2">
             <div className={`w-2 h-2 rounded-full mr-2 ${
               data.temperature >= criticalThreshold ? 'bg-red-500' :
-              data.temperature >= warningThreshold ? 'bg-yellow-500' : 'bg-green-500'
+              data.temperature >= warningThreshold ? 'bg-[#03A9F4]' : 'bg-green-500'
             }`}></div>
-            <span className="text-sm text-coffee-600">
+            <span className="text-sm">
               {data.temperature >= criticalThreshold ? 'Critical' :
                data.temperature >= warningThreshold ? 'Warning' : 'Normal'}
             </span>
@@ -59,18 +63,18 @@ const TemperatureChart: React.FC<TemperatureChartProps> = ({
   };
 
   return (
-    <div className="w-full">
+    <div className={`w-full ${className || ''}`}>
       <ResponsiveContainer width="100%" height={height}>
         <LineChart data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e1c794" opacity={0.3} />
+          <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#1f2937' : '#cfeef5'} opacity={0.3} />
           <XAxis 
             dataKey="timestamp" 
             tickFormatter={formatTime}
-            stroke="#8b6f47"
+            stroke={isDark ? '#9ca3af' : '#6b7280'}
             fontSize={12}
           />
           <YAxis 
-            stroke="#8b6f47"
+            stroke={isDark ? '#9ca3af' : '#6b7280'}
             fontSize={12}
             domain={['dataMin - 2', 'dataMax + 2']}
           />
@@ -79,7 +83,7 @@ const TemperatureChart: React.FC<TemperatureChartProps> = ({
           {/* Warning threshold line */}
           <ReferenceLine 
             y={warningThreshold} 
-            stroke="#f59e0b" 
+            stroke="#03A9F4" 
             strokeDasharray="5 5" 
             strokeWidth={2}
             label={{ value: `Warning (${warningThreshold}°C)`, position: "right" }}
@@ -97,10 +101,10 @@ const TemperatureChart: React.FC<TemperatureChartProps> = ({
           <Line 
             type="monotone" 
             dataKey="temperature" 
-            stroke="#a67c52" 
+            stroke={isDark ? '#8E44AD' : '#7C3AED'} 
             strokeWidth={3}
-            dot={{ fill: '#a67c52', strokeWidth: 2, r: 4 }}
-            activeDot={{ r: 6, fill: '#8b6f47' }}
+            dot={{ fill: isDark ? '#8E44AD' : '#7C3AED', strokeWidth: 2, r: 4 }}
+            activeDot={{ r: 6, fill: isDark ? '#8E44AD' : '#7C3AED' }}
           />
         </LineChart>
       </ResponsiveContainer>

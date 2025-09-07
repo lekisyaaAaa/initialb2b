@@ -5,15 +5,19 @@ import { SensorData } from '../../types';
 
 interface MultiSensorChartProps {
   data: SensorData[];
-  height?: number;
+  height?: number | string;
+  className?: string;
   showLegend?: boolean;
 }
 
 const MultiSensorChart: React.FC<MultiSensorChartProps> = ({ 
   data, 
-  height = 400,
+  height = '100%',
+  className,
   showLegend = true
 }) => {
+  // detect dark mode via root html class, fallback to match-media
+  const isDark = typeof window !== 'undefined' && (document.documentElement.classList.contains('dark') || (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches));
   const formatTime = (timestamp: string) => {
     try {
       return format(new Date(timestamp), 'HH:mm');
@@ -34,25 +38,25 @@ const MultiSensorChart: React.FC<MultiSensorChartProps> = ({
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-white p-4 rounded-lg shadow-lg border border-coffee-200">
-          <p className="text-coffee-900 font-medium">{formatTooltipTime(label)}</p>
+        <div className={`${isDark ? 'bg-gray-800 text-gray-100 border-gray-700' : 'bg-white text-coffee-900 border-coffee-200'} p-4 rounded-lg shadow-lg border`}>
+          <p className="font-medium">{formatTooltipTime(label)}</p>
           <div className="space-y-1">
-            <p className="text-coffee-700">
+            <p>
               <span className="font-medium">Temperature:</span> {data.temperature.toFixed(1)}°C
             </p>
-            <p className="text-coffee-700">
+            <p>
               <span className="font-medium">Humidity:</span> {data.humidity.toFixed(1)}%
             </p>
-            <p className="text-coffee-700">
+            <p>
               <span className="font-medium">Moisture:</span> {data.moisture.toFixed(1)}%
             </p>
             {data.batteryLevel && (
-              <p className="text-coffee-700">
+              <p>
                 <span className="font-medium">Battery:</span> {data.batteryLevel}%
               </p>
             )}
           </div>
-          <p className="text-coffee-600 text-sm mt-2">Device: {data.deviceId}</p>
+          <p className="text-sm mt-2">Device: {data.deviceId}</p>
         </div>
       );
     }
@@ -66,42 +70,42 @@ const MultiSensorChart: React.FC<MultiSensorChartProps> = ({
   }));
 
   return (
-    <div className="w-full">
-      <ResponsiveContainer width="100%" height={height}>
+    <div className={`w-full ${className || ''}`}>
+      <ResponsiveContainer width="100%" height={height as any}>
         <ComposedChart data={normalizedData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-          <CartesianGrid strokeDasharray="3 3" stroke="#e1c794" opacity={0.3} />
-          <XAxis 
-            dataKey="timestamp" 
-            tickFormatter={formatTime}
-            stroke="#8b6f47"
-            fontSize={12}
-          />
-          <YAxis 
-            yAxisId="left"
-            stroke="#8b6f47"
-            fontSize={12}
-            domain={[0, 100]}
-          />
-          <YAxis 
-            yAxisId="right"
-            orientation="right"
-            stroke="#8b6f47"
-            fontSize={12}
-            domain={[0, 100]}
-          />
-          <Tooltip content={<CustomTooltip />} />
-          {showLegend && (
-            <Legend 
-              iconType="line"
-              wrapperStyle={{ paddingTop: '10px' }}
+            <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#1f2937' : '#cfeef5'} opacity={0.3} />
+            <XAxis 
+              dataKey="timestamp" 
+              tickFormatter={formatTime}
+              stroke={isDark ? '#9ca3af' : '#6b7280'}
+              fontSize={12}
             />
-          )}
+            <YAxis 
+              yAxisId="left"
+              stroke={isDark ? '#9ca3af' : '#6b7280'}
+              fontSize={12}
+              domain={[0, 100]}
+            />
+            <YAxis 
+              yAxisId="right"
+              orientation="right"
+              stroke={isDark ? '#9ca3af' : '#6b7280'}
+              fontSize={12}
+              domain={[0, 100]}
+            />
+            <Tooltip content={<CustomTooltip />} />
+            {showLegend && (
+              <Legend 
+                iconType="line"
+                wrapperStyle={{ paddingTop: '10px', color: isDark ? '#d1d5db' : undefined }}
+              />
+            )}
           
           {/* Humidity as bars */}
           <Bar 
             yAxisId="left"
             dataKey="humidity" 
-            fill="#3b82f6" 
+            fill={isDark ? '#03A9F4' : '#60A5FA'} 
             fillOpacity={0.6}
             name="Humidity (%)"
           />
@@ -110,7 +114,7 @@ const MultiSensorChart: React.FC<MultiSensorChartProps> = ({
           <Bar 
             yAxisId="left"
             dataKey="moisture" 
-            fill="#10b981" 
+            fill={isDark ? '#00BFA6' : '#34D399'} 
             fillOpacity={0.6}
             name="Moisture (%)"
           />
@@ -120,10 +124,10 @@ const MultiSensorChart: React.FC<MultiSensorChartProps> = ({
             yAxisId="right"
             type="monotone" 
             dataKey="scaledTemperature" 
-            stroke="#a67c52" 
+            stroke={isDark ? '#8E44AD' : '#7C3AED'} 
             strokeWidth={3}
-            dot={{ fill: '#a67c52', strokeWidth: 2, r: 4 }}
-            activeDot={{ r: 6, fill: '#8b6f47' }}
+            dot={{ fill: isDark ? '#8E44AD' : '#7C3AED', strokeWidth: 2, r: 4 }}
+            activeDot={{ r: 6, fill: isDark ? '#8E44AD' : '#7C3AED' }}
             name="Temperature (°C × 2.5)"
           />
         </ComposedChart>

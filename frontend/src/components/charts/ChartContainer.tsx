@@ -5,6 +5,18 @@ import TemperatureChart from './TemperatureChart';
 import HumidityChart from './HumidityChart';
 import MoistureChart from './MoistureChart';
 import MultiSensorChart from './MultiSensorChart';
+import { useData } from '../../contexts/DataContext';
+
+// Small debug component to show last fetch info from DataContext
+const DebugInfo: React.FC = () => {
+  const { lastFetchCount, lastFetchAt, isLoading } = useData();
+  return (
+    <div className="flex items-center space-x-3">
+      <span>{isLoading ? 'Fetching...' : `Last fetch: ${lastFetchCount} readings`}</span>
+      {lastFetchAt && <span className="opacity-80">{new Date(lastFetchAt).toLocaleTimeString()}</span>}
+    </div>
+  );
+};
 
 interface ChartContainerProps {
   data: SensorData[];
@@ -62,25 +74,25 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
   ];
 
   const renderChart = () => {
-    const chartHeight = 350;
-    
+    const chartHeight: number | string = '100%';
+
     switch (chartType) {
       case 'temperature':
-        return <TemperatureChart data={filteredData} height={chartHeight} />;
+        return <TemperatureChart data={filteredData} height={chartHeight} className="h-full" />;
       case 'humidity':
-        return <HumidityChart data={filteredData} height={chartHeight} />;
+        return <HumidityChart data={filteredData} height={chartHeight} className="h-full" />;
       case 'moisture':
-        return <MoistureChart data={filteredData} height={chartHeight} />;
+        return <MoistureChart data={filteredData} height={chartHeight} className="h-full" />;
       case 'multi':
       default:
-        return <MultiSensorChart data={filteredData} height={chartHeight} />;
+        return <MultiSensorChart data={filteredData} height={chartHeight} className="h-full" />;
     }
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-lg border border-coffee-200 overflow-hidden">
-      {/* Header */}
-      <div className="bg-gradient-to-r from-coffee-600 to-coffee-700 text-white p-4">
+    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-coffee-200 dark:border-gray-700 overflow-hidden flex flex-col h-full min-h-[260px]">
+  {/* Header */}
+  <div className="bg-gradient-to-r from-primary-600 to-secondary-500 text-white p-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h3 className="text-lg font-semibold">{title}</h3>
@@ -90,6 +102,11 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
             <p className="text-coffee-200 text-sm">
               {filteredData.length} data points
             </p>
+
+            {/* Debug info from DataContext (lightweight) */}
+            <div className="text-coffee-100 text-xs mt-1">
+              <DebugInfo />
+            </div>
           </div>
           
           <div className="flex items-center space-x-2">
@@ -103,17 +120,17 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
         </div>
       </div>
 
-      {/* Controls */}
-      <div className="bg-coffee-50 p-4 border-b border-coffee-200">
-        <div className="flex flex-wrap items-center gap-4">
+  {/* Controls */}
+  <div className="bg-coffee-50 dark:bg-gray-800 p-4 border-b border-coffee-200 dark:border-gray-700">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
           {/* Time Range Selector */}
-          <div className="flex items-center space-x-2">
+      <div className="flex items-center space-x-2 w-full sm:w-auto">
             <Filter className="w-4 h-4 text-coffee-600" />
             <span className="text-sm font-medium text-coffee-700">Time Range:</span>
             <select
               value={timeRange}
               onChange={(e) => setTimeRange(e.target.value as TimeRange)}
-              className="bg-white border border-coffee-300 rounded-md px-3 py-1 text-sm text-coffee-700 focus:outline-none focus:ring-2 focus:ring-coffee-500"
+    className="bg-white dark:bg-gray-700 border border-coffee-300 dark:border-gray-600 rounded-md px-3 py-1 text-sm text-coffee-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-coffee-500 min-w-[120px] sm:min-w-[160px] w-full sm:w-auto"
             >
               {timeRangeOptions.map(option => (
                 <option key={option.value} value={option.value}>
@@ -124,20 +141,26 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
           </div>
 
           {/* Chart Type Selector */}
-          <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-4 w-full sm:w-auto">
             <BarChart3 className="w-4 h-4 text-coffee-600" />
             <span className="text-sm font-medium text-coffee-700">Chart Type:</span>
-            <div className="flex space-x-1">
+
+            {/* Vertical separator on desktop, horizontal on mobile */}
+            <div className="hidden sm:block h-8 w-px bg-coffee-200 dark:bg-gray-700 mx-2" aria-hidden />
+            <div className="block sm:hidden h-px w-full bg-coffee-200 dark:bg-gray-700 my-2" aria-hidden />
+
+            {/* Buttons for tablet+ */}
+            <div className="hidden sm:flex flex-wrap gap-2">
               {chartTypeOptions.map(option => {
                 const Icon = option.icon;
                 return (
                   <button
                     key={option.value}
                     onClick={() => setChartType(option.value as ChartType)}
-                    className={`px-3 py-1 text-xs rounded-md transition-colors ${
+                    className={`px-4 py-1 text-sm rounded-md transition-colors min-w-[110px] sm:min-w-[140px] whitespace-nowrap ${
                       chartType === option.value
                         ? 'bg-coffee-600 text-white'
-                        : 'bg-white text-coffee-600 hover:bg-coffee-100 border border-coffee-300'
+                        : 'bg-white dark:bg-gray-700 text-coffee-600 dark:text-gray-200 hover:bg-coffee-100 dark:hover:bg-gray-700 border border-coffee-300 dark:border-gray-600'
                     }`}
                   >
                     <div className="flex items-center space-x-1">
@@ -148,12 +171,26 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
                 );
               })}
             </div>
+
+            {/* Compact select for mobile */}
+            <div className="flex sm:hidden w-full">
+              <select
+                aria-label="Chart Type"
+                value={chartType}
+                onChange={(e) => setChartType(e.target.value as ChartType)}
+                className="w-full bg-white dark:bg-gray-700 border border-coffee-300 dark:border-gray-600 rounded-md px-3 py-1 text-sm text-coffee-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-coffee-500"
+              >
+                {chartTypeOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Chart */}
-      <div className="p-4">
+  {/* Chart */}
+  <div className="p-4 flex-1 min-h-[160px]">
         {filteredData.length > 0 ? (
           renderChart()
         ) : (

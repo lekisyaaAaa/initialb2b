@@ -7,7 +7,7 @@ interface Props { alerts: Alert[] }
 
 const AlertsPanel: React.FC<Props> = ({ alerts }) => {
   return (
-    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border">
+    <div className="bg-white dark:bg-gray-800 rounded-lg p-4 shadow-sm border border-coffee-200 dark:border-gray-700">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-espresso-900">Active Alerts</h3>
         <span className="text-xs text-gray-500">{alerts.length} total</span>

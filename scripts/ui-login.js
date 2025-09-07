@@ -20,6 +20,10 @@ async function run() {
   const chromiumPath = process.env.PUPPETEER_EXECUTABLE_PATH || process.env.CHROME_PATH;
   console.log('Using Chromium path:', chromiumPath || '<bundled>');
   const launchOptions = { args: ['--no-sandbox','--disable-setuid-sandbox'] };
+  // allow forcing headless mode via env ("true"/"false")
+  if (process.env.PUPPETEER_HEADLESS) {
+    launchOptions.headless = String(process.env.PUPPETEER_HEADLESS).toLowerCase() === 'true';
+  }
   if (chromiumPath) launchOptions.executablePath = chromiumPath;
   const browser = await puppeteer.launch(launchOptions);
   const page = await browser.newPage();
@@ -88,26 +92,70 @@ async function run() {
     await new Promise((res) => setTimeout(res, 1500));
 
     // Helper: look for common token keys in localStorage
-    const token = await page.evaluate(() => {
-      try {
-        const keys = ['token','jwt','accessToken','authToken','authorization'];
-        if (!window.localStorage) return null;
-        for (const k of keys) {
-          const v = window.localStorage.getItem(k);
-          if (v) return v;
-        }
-        // fallback: return any key that looks like a JWT (three parts separated by '.')
-        for (let i = 0; i < window.localStorage.length; i++) {
-          const key = window.localStorage.key(i);
-          const val = window.localStorage.getItem(key);
-          if (typeof val === 'string' && val.split('.').length === 3) return val;
-        }
-        return null;
-      } catch(e) { return null; }
-    });
+      // TOKEN_KEYS env can override which storage keys to check (comma-separated)
+      const tokenKeysEnv = process.env.TOKEN_KEYS;
+      const tokenKeys = tokenKeysEnv ? tokenKeysEnv.split(',').map(s => s.trim()).filter(Boolean) : ['token','jwt','accessToken','authToken','authorization'];
+
+      const token = await page.evaluate((keys) => {
+        try {
+          // helper to scan an object-like storage (localStorage/sessionStorage)
+          const scanStorage = (storage) => {
+            if (!storage) return null;
+            for (const k of keys) {
+              try {
+                const v = storage.getItem(k);
+                if (v) return v;
+              } catch (e) {}
+            }
+            for (let i = 0; i < storage.length; i++) {
+              const key = storage.key(i);
+              try {
+                const val = storage.getItem(key);
+                if (typeof val === 'string' && val.split('.').length === 3) return val;
+              } catch (e) {}
+            }
+            return null;
+          };
+
+          // check localStorage
+          let found = scanStorage(window.localStorage);
+          if (found) return found;
+          // check sessionStorage
+          found = scanStorage(window.sessionStorage);
+          if (found) return found;
+
+          // check cookies for common auth cookie names or any JWT-like value
+          try {
+            const cookies = document.cookie || '';
+            if (cookies) {
+              const parts = cookies.split(';').map(s => s.trim());
+              for (const p of parts) {
+                const eq = p.indexOf('=');
+                if (eq === -1) continue;
+                const v = decodeURIComponent(p.slice(eq + 1));
+                if (!v) continue;
+                for (const k of keys) {
+                  if (p.toLowerCase().startsWith(k.toLowerCase() + '=')) return v;
+                }
+                if (typeof v === 'string' && v.split('.').length === 3) return v;
+              }
+            }
+          } catch (e) {}
+
+          return null;
+        } catch(e) { return null; }
+      }, tokenKeys);
 
     async function writeToken(tok) {
       try {
+        if (!tok) return;
+        // if TOKEN_OUT is '-' print to stdout instead of writing a file
+        if (TOKEN_OUT === '-') {
+          // stdout may be captured by CI; keep a short log as well
+          process.stdout.write(tok + '\n');
+          console.log('Printed token to stdout');
+          return;
+        }
         // ensure directory exists
         const dir = path.dirname(outPath);
         fs.mkdirSync(dir, { recursive: true });

@@ -2,14 +2,14 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
 import { SensorData, Alert } from '../types';
-import { Leaf, AlertTriangle, Thermometer, Droplets, Sprout, Battery, RefreshCw, Settings, TrendingUp, LogIn, LogOut, User } from 'lucide-react';
+import { Leaf, AlertTriangle, Thermometer, Droplets, Sprout, RefreshCw, Settings, TrendingUp, LogOut, User, ArrowRight } from 'lucide-react';
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import DarkModeToggle from '../components/DarkModeToggle';
 import Hero from '../components/ui/Hero';
 import SensorCard from '../components/ui/SensorCard';
 import AlertsPanel from '../components/ui/AlertsPanel';
-import Timeline from '../components/ui/Timeline';
+// ...existing code...
 import SmartTips from '../components/ui/SmartTips';
 import Graphs from '../components/ui/Graphs';
 
@@ -21,7 +21,7 @@ const Dashboard: React.FC<DashboardProps> = () => {
   const { latestSensorData, recentAlerts, isConnected, isLoading, refreshData } = useData();
   const { user, logout, isAuthenticated } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'alerts' | 'sensors' | 'settings'>('overview');
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  // ...existing code...
   
   // Check if current user is admin
   const isAdmin = isAuthenticated && user?.role === 'admin';
@@ -64,19 +64,12 @@ const Dashboard: React.FC<DashboardProps> = () => {
     };
   }, []); // Empty dependency array - no dependencies to prevent loops
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'normal': return 'text-success-600 bg-success-100';
-      case 'warning': return 'text-warning-600 bg-warning-100';
-      case 'critical': return 'text-danger-600 bg-danger-100';
-      default: return 'text-coffee-600 bg-coffee-100';
-    }
-  };
+  // status color helper removed from this file (defined where needed in specific pages)
 
   const getSeverityColor = (severity: string) => {
     switch (severity) {
       case 'low': return 'text-blue-600 bg-blue-100';
-      case 'medium': return 'text-yellow-600 bg-yellow-100';
+  case 'medium': return 'text-secondary-600 bg-secondary-100';
       case 'high': return 'text-orange-600 bg-orange-100';
       case 'critical': return 'text-red-600 bg-red-100';
       default: return 'text-gray-600 bg-gray-100';
@@ -191,11 +184,8 @@ const Dashboard: React.FC<DashboardProps> = () => {
                         <LogOut className="h-5 w-5" />
                       </button>
                     ) : (
-                      <Link
-                        to="/admin/login"
-                        className="flex items-center space-x-1 px-3 py-2 text-sm font-medium text-espresso-700 hover:text-primary-600 border border-coffee-300 rounded-md hover:border-primary-300 transition-colors"
-                      >
-                        <LogIn className="h-4 w-4" />
+                      <Link to="/admin/login" className="letran-button">
+                        <ArrowRight className="h-4 w-4" />
                         <span>Admin Login</span>
                       </Link>
                     )}
@@ -262,14 +252,14 @@ const Dashboard: React.FC<DashboardProps> = () => {
         {activeTab === 'overview' && (
           <div className="space-y-6">
             {/* Premium Glass Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch w-full">
               
               {/* Active Devices Card */}
-              <div className="group relative overflow-hidden">
+              <div className="group relative overflow-hidden h-full">
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-letran-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
+                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-letran-500 rounded-t-2xl"></div>
-                  <div className="flex items-center">
+                  <div className="flex items-center flex-1">
                     <div className="bg-gradient-to-br from-blue-100 to-blue-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
                       <Thermometer className="h-8 w-8 text-blue-600" />
                     </div>
@@ -284,11 +274,11 @@ const Dashboard: React.FC<DashboardProps> = () => {
               </div>
 
               {/* Active Alerts Card */}
-              <div className="group relative overflow-hidden">
+              <div className="group relative overflow-hidden h-full">
                 <div className="absolute inset-0 bg-gradient-to-br from-red-500/20 to-letran-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
+                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-letran-500 rounded-t-2xl"></div>
-                  <div className="flex items-center">
+                  <div className="flex items-center flex-1">
                     <div className="bg-gradient-to-br from-red-100 to-red-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
                       <AlertTriangle className="h-8 w-8 text-red-600" />
                     </div>
@@ -303,11 +293,13 @@ const Dashboard: React.FC<DashboardProps> = () => {
               </div>
 
               {/* Average Humidity Card */}
-              <div className="group relative overflow-hidden">
+              <div className="group relative overflow-hidden h-full">
                 <div className="absolute inset-0 bg-gradient-to-br from-coffee-500/20 to-primary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
+                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-coffee-500 to-primary-500 rounded-t-2xl"></div>
-                  <div className="flex items-center">
+
+                  {/* Header */}
+                  <div className="flex items-center mb-4">
                     <div className="bg-gradient-to-br from-coffee-200 to-coffee-100 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
                       <Droplets className="h-8 w-8 text-primary-600" />
                     </div>
@@ -320,17 +312,22 @@ const Dashboard: React.FC<DashboardProps> = () => {
                       </p>
                     </div>
                   </div>
+
+                  {/* Content / chart area */}
+                  <div className="flex-1 min-h-[140px]"></div>
                 </div>
               </div>
 
               {/* Average Moisture Card */}
-              <div className="group relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-yellow-500/20 to-warning-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-500 to-warning-500 rounded-t-2xl"></div>
-                  <div className="flex items-center">
-                    <div className="bg-gradient-to-br from-yellow-100 to-yellow-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
-                      <Sprout className="h-8 w-8 text-yellow-600" />
+              <div className="group relative overflow-hidden h-full">
+                <div className="absolute inset-0 bg-gradient-to-br from-secondary-500/20 to-secondary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-secondary-500 to-secondary-500 rounded-t-2xl"></div>
+
+                  {/* Header */}
+                  <div className="flex items-center mb-4">
+                    <div className="bg-gradient-to-br from-secondary-100 to-secondary-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                      <Sprout className="h-8 w-8 text-secondary-600" />
                     </div>
                     <div>
                       <p className="text-sm font-medium text-espresso-600 mb-1">Avg Moisture</p>
@@ -341,6 +338,9 @@ const Dashboard: React.FC<DashboardProps> = () => {
                       </p>
                     </div>
                   </div>
+
+                  {/* Content / chart area */}
+                  <div className="flex-1 min-h-[140px]"></div>
                 </div>
               </div>
             </div>

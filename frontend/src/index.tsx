@@ -7,6 +7,21 @@ import reportWebVitals from './reportWebVitals';
 const root = ReactDOM.createRoot(
   document.getElementById('root') as HTMLElement
 );
+// Apply dark mode class synchronously before React mounts to avoid a flash
+try {
+  const saved = localStorage.getItem('darkMode');
+  const prefersDark = saved !== null
+    ? JSON.parse(saved)
+    : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  if (prefersDark) {
+    document.documentElement.classList.add('dark');
+  } else {
+    document.documentElement.classList.remove('dark');
+  }
+} catch (e) {
+  // ignore - accessing localStorage can fail in some environments
+}
+
 root.render(
   <App />
 );

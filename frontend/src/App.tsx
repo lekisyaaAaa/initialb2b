@@ -64,7 +64,7 @@ const HomePage: React.FC = () => {
               
               <Link 
                 to="/admin/login" 
-                className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-md"
+                className="bg-[#c81e36] hover:bg-[#b2182e] text-white font-semibold px-3 py-2 rounded-full shadow-lg transition-colors duration-200"
               >
                 Admin Login
               </Link>

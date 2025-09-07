@@ -1,12 +1,21 @@
-
-> environmental-monitoring-backend@1.0.0 dev
-> nodemon server.js
-
-[33m[nodemon] 3.1.10[39m
-[33m[nodemon] to restart at any time, enter `rs`[39m
-[33m[nodemon] watching path(s): *.*[39m
-[33m[nodemon] watching extensions: js,mjs,cjs,json[39m
-[32m[nodemon] starting `node server.js`[39m
-[31m[nodemon] app crashed - waiting for file changes before starting...[39m
-[32m[nodemon] restarting child process[39m
-[32m[nodemon] starting `node server.js`[39m
+Using SQLite dev DB at C:\xampp\htdocs\beantobin\system\backend\data\dev.sqlite
+Launched dev seeding process (seed-admin.js)
+Started sensor poller internal server on port 3100
+Sensor poller started (runLoop)
+🚀 Server running on port 5000
+📊 Health check: http://localhost:5000/api/health
+🔌 WebSocket server running on ws://localhost:5000
+Sensor poller internal server listening on 3100
+✅ Connected to Postgres (Sequelize)
+✅ Sequelize models synced (alter: true)
+✅ Ensured dev admin user 'admin' password/role are up-to-date
+Login attempt for username='admin'
+Auth: looking up user in DB for admin
+Auth: DB lookup result for admin true
+Auth: password compare for admin result= true
+Login successful for user id=1 via DB
+Login attempt for username='admin'
+Auth: looking up user in DB for admin
+Auth: DB lookup result for admin true
+Auth: password compare for admin result= true
+Login successful for user id=1 via DB

@@ -39,7 +39,7 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({ children, adminOnly = f
           </div>
           <button
             onClick={() => window.history.back()}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+            className="mt-4 px-4 py-2 bg-[#c81e36] hover:bg-[#b2182e] text-white rounded-full font-semibold transition-colors duration-200 shadow-sm"
           >
             Go Back
           </button>

@@ -6,7 +6,7 @@ interface Props { data: SensorData }
 
 const SensorCard: React.FC<Props> = ({ data }) => {
   return (
-    <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border">
+  <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-coffee-200 dark:border-gray-700">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-espresso-600">{data.deviceId}</p>
