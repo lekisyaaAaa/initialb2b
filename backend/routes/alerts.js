@@ -46,15 +46,15 @@ router.get('/', auth, [
     // Calculate pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    // Get alerts with pagination
-    const [alerts, total] = await Promise.all([
-      Alert.find(query)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(parseInt(limit))
-        .lean(),
-      Alert.countDocuments(query)
-    ]);
+    // Get alerts with pagination using Sequelize
+    const where = query; // Sequelize will use this object for filtering
+    const alerts = await Alert.findAll({
+      where,
+      order: [['createdAt', 'DESC']],
+      offset: skip,
+      limit: parseInt(limit)
+    });
+    const total = await Alert.count({ where });
 
     res.json({
       success: true,
@@ -85,10 +85,11 @@ router.get('/recent', auth, async (req, res) => {
   try {
     const { limit = 10 } = req.query;
 
-    const alerts = await Alert.find({ isResolved: false })
-      .sort({ createdAt: -1 })
-      .limit(parseInt(limit))
-      .lean();
+    const alerts = await Alert.findAll({
+      where: { isResolved: false },
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit)
+    });
 
     res.json({
       success: true,
@@ -113,53 +114,43 @@ router.get('/stats', auth, async (req, res) => {
     
     const hoursAgo = new Date(Date.now() - parseInt(hours) * 60 * 60 * 1000);
 
-    const stats = await Alert.aggregate([
-      { $match: { createdAt: { $gte: hoursAgo } } },
-      {
-        $group: {
-          _id: {
-            severity: '$severity',
-            type: '$type'
-          },
-          count: { $sum: 1 }
-        }
-      },
-      {
-        $group: {
-          _id: '$_id.severity',
-          types: {
-            $push: {
-              type: '$_id.type',
-              count: '$count'
-            }
-          },
-          total: { $sum: '$count' }
-        }
-      }
-    ]);
+    // Use Sequelize to compute breakdown and overall stats
+    // Breakdown: counts grouped by severity and type
+    const { Sequelize } = require('sequelize');
+    const db = Alert.sequelize;
 
-    // Get overall stats
-    const overallStats = await Alert.aggregate([
-      { $match: { createdAt: { $gte: hoursAgo } } },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: 1 },
-          resolved: {
-            $sum: { $cond: ['$isResolved', 1, 0] }
-          },
-          unresolved: {
-            $sum: { $cond: ['$isResolved', 0, 1] }
-          }
-        }
-      }
-    ]);
+    // Raw query using Sequelize to count by severity and type
+    const breakdownRows = await Alert.findAll({
+      attributes: [
+        'severity', 'type', [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']
+      ],
+      where: { createdAt: { [Sequelize.Op.gte]: hoursAgo } },
+      group: ['severity', 'type']
+    });
+
+    // Transform rows into desired structure
+    const breakdownMap = {};
+    breakdownRows.forEach(r => {
+      const sev = r.get('severity') || 'unknown';
+      const type = r.get('type') || 'unknown';
+      const count = parseInt(r.get('count') || 0, 10);
+      if (!breakdownMap[sev]) breakdownMap[sev] = { severity: sev, types: [], total: 0 };
+      breakdownMap[sev].types.push({ type, count });
+      breakdownMap[sev].total += count;
+    });
+
+    const breakdown = Object.values(breakdownMap);
+
+    // Overall stats
+    const total = await Alert.count({ where: { createdAt: { [Sequelize.Op.gte]: hoursAgo } } });
+    const resolved = await Alert.count({ where: { createdAt: { [Sequelize.Op.gte]: hoursAgo }, isResolved: true } });
+    const unresolved = await Alert.count({ where: { createdAt: { [Sequelize.Op.gte]: hoursAgo }, isResolved: false } });
 
     res.json({
       success: true,
       data: {
-        summary: overallStats[0] || { total: 0, resolved: 0, unresolved: 0 },
-        breakdown: stats,
+        summary: { total, resolved, unresolved },
+        breakdown,
         period: `${hours} hours`
       }
     });
@@ -178,7 +169,7 @@ router.get('/stats', auth, async (req, res) => {
 // @access  Private (Admin only)
 router.put('/:id/resolve', [auth, adminOnly], async (req, res) => {
   try {
-    const alert = await Alert.findById(req.params.id);
+  const alert = await Alert.findByPk(req.params.id);
     
     if (!alert) {
       return res.status(404).json({
@@ -223,23 +214,22 @@ router.put('/resolve-all', [auth, adminOnly], async (req, res) => {
       query.deviceId = deviceId;
     }
 
-    const result = await Alert.updateMany(
-      query,
+    // Sequelize equivalent: update matching alerts
+    const [updatedCount] = await Alert.update(
       {
-        $set: {
-          isResolved: true,
-          resolvedAt: new Date(),
-          acknowledgedBy: req.user.username,
-          acknowledgedAt: new Date()
-        }
-      }
+        isResolved: true,
+        resolvedAt: new Date(),
+        acknowledgedBy: req.user.username,
+        acknowledgedAt: new Date()
+      },
+      { where: query }
     );
 
     res.json({
       success: true,
-      message: `${result.modifiedCount} alerts resolved successfully`,
+      message: `${updatedCount} alerts resolved successfully`,
       data: {
-        resolved: result.modifiedCount,
+        resolved: updatedCount,
         deviceId: deviceId || 'all'
       }
     });
@@ -258,7 +248,7 @@ router.put('/resolve-all', [auth, adminOnly], async (req, res) => {
 // @access  Private (Admin only)
 router.delete('/:id', [auth, adminOnly], async (req, res) => {
   try {
-    const alert = await Alert.findById(req.params.id);
+  const alert = await Alert.findByPk(req.params.id);
     
     if (!alert) {
       return res.status(404).json({
@@ -267,7 +257,7 @@ router.delete('/:id', [auth, adminOnly], async (req, res) => {
       });
     }
 
-    await Alert.findByIdAndDelete(req.params.id);
+  await Alert.destroy({ where: { id: req.params.id } });
 
     res.json({
       success: true,

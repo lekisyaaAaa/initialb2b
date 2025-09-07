@@ -48,14 +48,17 @@ const LoginPage: React.FC = () => {
     try {
       const result = await login(formData.username, formData.password);
       if (!result || !result.success) {
-  setError(result && result.message ? result.message : 'Invalid username or password');
-  // Clear password and focus username input for immediate retry
-  setFormData(prev => ({ ...prev, password: '' }));
-  const el = document.getElementById('username') as HTMLInputElement | null;
-  if (el) { el.focus(); el.select(); }
+        setError(result && result.message ? result.message : 'Invalid username or password');
+        // Clear password and focus username input for immediate retry
+        setFormData(prev => ({ ...prev, password: '' }));
+        const el = document.getElementById('username') as HTMLInputElement | null;
+        if (el) { el.focus(); el.select(); }
       }
-    } catch (err) {
-      setError('An error occurred during login. Please try again.');
+    } catch (err: any) {
+      // Try to surface server-provided message (axios-like shape) and log raw error for debugging
+      const serverMsg = (err && err.response && err.response.data && err.response.data.message) || err?.message || 'An error occurred during login. Please try again.';
+      console.error('LoginPage: login error', err);
+      setError(serverMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -89,7 +92,7 @@ const LoginPage: React.FC = () => {
           <form className="space-y-6" onSubmit={handleSubmit}>
             {/* Error Message */}
             {error && (
-              <div className="bg-danger-50 dark:bg-red-900/30 border border-danger-200 dark:border-red-700 rounded-md p-4 flex items-center">
+              <div role="alert" aria-live="assertive" className="bg-danger-50 dark:bg-red-900/30 border border-danger-200 dark:border-red-700 rounded-md p-4 flex items-center">
                 <AlertCircle className="h-5 w-5 text-danger-400 dark:text-red-400 mr-3" />
                 <span className="text-danger-700 dark:text-red-400 text-sm">{error}</span>
               </div>

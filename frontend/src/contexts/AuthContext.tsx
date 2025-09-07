@@ -135,6 +135,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       } catch (e) {
         // ignore
       }
+      // If backend returned an empty 401, provide a clearer fallback for the UI
+      try {
+        if (!backendMessage && error.response && error.response.status === 401) {
+          backendMessage = 'Invalid username or password';
+        }
+      } catch (e) { /* ignore */ }
       // Ensure we do not leak a stale token on unexpected errors
       try {
         setUser(null);

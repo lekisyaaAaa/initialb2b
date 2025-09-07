@@ -140,6 +140,11 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Lightweight internal ping for debugging connectivity (temporary)
+app.get('/internal/ping', (req, res) => {
+  res.status(200).send('pong');
+});
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/sensors', sensorRoutes);
@@ -219,10 +224,46 @@ server.on('error', (err) => {
   }
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '127.0.0.1', () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🔌 WebSocket server running on ws://localhost:${PORT}`);
+  try {
+    console.log('Process PID:', process.pid);
+    const addr = server.address();
+    console.log('Server bound address:', addr);
+  } catch (e) {
+    console.warn('Could not determine server address/pid:', e && e.message ? e.message : e);
+  }
+
+  // Temporary self-connectivity check: attempt to HTTP GET the health endpoint from the same process.
+  try {
+    const http = require('http');
+    const selfOpts = {
+      hostname: '127.0.0.1',
+      port: PORT,
+      path: '/internal/ping',
+      method: 'GET',
+      timeout: 2000
+    };
+    const req = http.request(selfOpts, (res) => {
+      let body = '';
+      res.on('data', (c) => body += c.toString());
+      res.on('end', () => {
+        console.log('Self-check: response', res.statusCode, body && body.toString().slice(0,200));
+      });
+    });
+    req.on('error', (err) => {
+      console.error('Self-check: error connecting to local HTTP endpoint:', err && err.message ? err.message : err);
+    });
+    req.on('timeout', () => {
+      console.error('Self-check: timed out connecting to local HTTP endpoint');
+      req.destroy();
+    });
+    req.end();
+  } catch (e) {
+    console.error('Self-check setup failed:', e && e.message ? e.message : e);
+  }
 });
 
 

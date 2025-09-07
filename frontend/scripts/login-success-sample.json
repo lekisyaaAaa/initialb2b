@@ -1,0 +1,18 @@
+﻿{
+    "ok":  true,
+    "data":  {
+                 "success":  true,
+                 "message":  "Login successful",
+                 "data":  {
+                              "token":  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwidXNlcm5hbWUiOiJhZG1pbiIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc1NzI3OTYzOSwiZXhwIjoxNzU3MzY2MDM5fQ.qTIvpRp3y2s5aVpjLUMf9yKlJ3-wuOT2Mx1Dj5lrRtQ",
+                              "user":  {
+                                           "id":  1,
+                                           "username":  "admin",
+                                           "role":  "admin",
+                                           "lastLogin":  null,
+                                           "loginCount":  0
+                                       }
+                          }
+             },
+    "status":  200
+}

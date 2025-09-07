@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { SensorData, Alert } from '../types';
 import { alertService } from '../services/api';
 import weatherService, { type WeatherData } from '../services/weatherService';
+import mockData from '../mocks/mockData';
 
 interface DataContextType {
   latestSensorData: SensorData[];
@@ -12,6 +13,8 @@ interface DataContextType {
   // lightweight debug info
   lastFetchCount: number;
   lastFetchAt?: string | null;
+  lastFetchError?: string | null;
+  clearLastFetchError: () => void;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -20,6 +23,9 @@ interface DataProviderProps {
   children: ReactNode;
 }
 
+// Small helper moved outside loops to avoid creating functions inside loops (ESLint no-loop-func)
+const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
 export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const [latestSensorData, setLatestSensorData] = useState<SensorData[]>([]);
   const [recentAlerts, setRecentAlerts] = useState<Alert[]>([]);
@@ -27,6 +33,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [lastFetchCount, setLastFetchCount] = useState(0);
   const [lastFetchAt, setLastFetchAt] = useState<string | null>(null);
+  const [lastFetchError, setLastFetchError] = useState<string | null>(null);
   // const hasInitiallyFetched = useRef(false); // Temporarily disabled
   const isCurrentlyLoading = useRef(false);
   const cooldownActive = useRef(false);
@@ -140,9 +147,12 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     };
   }, []); // run once
 
-  // Use simulated connection status - properly implemented
+  // If WebSocket is disabled, mark connection as available (polling mode)
   useEffect(() => {
-    setIsConnected(true);
+    const enableWs = process.env.REACT_APP_ENABLE_WS === 'true';
+    if (!enableWs) {
+      setIsConnected(true);
+    }
   }, []);
 
   const refreshData = useCallback(async () => {
@@ -166,14 +176,36 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     setIsLoading(true);
     
     console.log('DataContext: Starting Manila weather service call...');
-    
+    setLastFetchError(null);
+
     try {
-      // Get real-time Manila weather data from weather service
-      const weatherData = await weatherService.getAllLocationsWeather();
-      
-      console.log('DataContext: Manila weather data received:', weatherData);
-      
-  if (weatherData && weatherData.length > 0) {
+      // Retry logic with exponential backoff
+    const maxRetries = 3;
+    let attempt = 0;
+    let backoff = 1000; // 1s
+    let weatherData: WeatherData[] | null = null;
+
+    while (attempt <= maxRetries) {
+      try {
+        weatherData = await weatherService.getAllLocationsWeather();
+        break;
+      } catch (err: any) {
+        attempt += 1;
+        console.error(`DataContext: weatherService attempt ${attempt} failed`, err);
+        if (attempt > maxRetries) {
+          // rethrow to outer catch
+          throw err;
+        }
+  // wait before retrying using top-level helper to avoid function-in-loop ESLint errors
+  // backoff doubles each retry (exponential backoff)
+  await sleep(backoff);
+  backoff *= 2;
+      }
+    }
+
+    console.log('DataContext: Manila weather data received:', weatherData);
+
+    if (weatherData && weatherData.length > 0) {
         // Convert Manila weather data to sensor data format
         const sensorData: SensorData[] = weatherData.map((weather: WeatherData) => ({
           _id: `manila_weather_${weather.deviceId}_${Date.now()}`,
@@ -196,9 +228,13 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         
         console.log(`DataContext: Updated with ${sensorData.length} Manila weather readings`);
       } else {
-        console.log('DataContext: No Manila weather data received or empty array');
-  setLastFetchCount(0);
-  setLastFetchAt(new Date().toISOString());
+        console.log('DataContext: No Manila weather data received or empty array - falling back to mock data');
+        // Use mock data so UI remains functional during backend outages
+        setLatestSensorData(mockData.mockSensorData);
+        setIsConnected(false);
+        setLastFetchCount(mockData.mockSensorData.length);
+        setLastFetchAt(new Date().toISOString());
+        setLastFetchError('No live weather data - using local mock data');
       }
 
       // Try to fetch alerts from backend (if available)
@@ -208,17 +244,19 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
           setRecentAlerts(alertResponse.data.data);
         }
       } catch (alertError) {
-        console.log('Could not fetch alerts from backend, using empty array');
-        setRecentAlerts([]);
+        console.log('Could not fetch alerts from backend, falling back to mock alerts');
+        setRecentAlerts(mockData.mockAlerts);
+        setLastFetchError((alertError as any)?.message || 'Failed to fetch alerts - using mock alerts');
       }
-      
     } catch (error) {
       console.error('Error fetching weather data:', error);
+      // Fall back to mock data so the UI remains usable offline
       setIsConnected(false);
-      setLatestSensorData([]);
-      setRecentAlerts([]);
-  setLastFetchCount(0);
-  setLastFetchAt(new Date().toISOString());
+      setLatestSensorData(mockData.mockSensorData);
+      setRecentAlerts(mockData.mockAlerts);
+      setLastFetchCount(mockData.mockSensorData.length);
+      setLastFetchAt(new Date().toISOString());
+      setLastFetchError(((error as any)?.message || 'Failed to fetch sensor data') + ' - using mock data');
     } finally {
       isCurrentlyLoading.current = false;
       setIsLoading(false);
@@ -276,6 +314,8 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     refreshData,
   lastFetchCount,
   lastFetchAt,
+  lastFetchError,
+  clearLastFetchError: () => setLastFetchError(null),
   };
 
   return (

@@ -12,6 +12,18 @@ import AlertsPanel from '../components/ui/AlertsPanel';
 // ...existing code...
 import SmartTips from '../components/ui/SmartTips';
 import Graphs from '../components/ui/Graphs';
+import ErrorBanner from '../components/ui/ErrorBanner';
+
+// Top-level WebSocketStatus component (uses hooks at top level)
+const WebSocketStatus: React.FC = () => {
+  const { isConnected, lastFetchCount, lastFetchAt } = useData();
+  return (
+    <div className="text-sm text-espresso-600 dark:text-gray-300 text-right">
+      <div>WS: {isConnected ? <span className="text-success-500">Connected</span> : <span className="text-danger-500">Disconnected</span>}</div>
+      <div className="text-xs">Last fetch: {lastFetchCount} @ {lastFetchAt ? new Date(lastFetchAt).toLocaleTimeString() : '—'}</div>
+    </div>
+  );
+};
 
 interface DashboardProps {
   // No props needed - role checking via AuthContext
@@ -19,6 +31,7 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = () => {
   const { latestSensorData, recentAlerts, isConnected, isLoading, refreshData } = useData();
+  const { lastFetchError, clearLastFetchError } = useData();
   const { user, logout, isAuthenticated } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'alerts' | 'sensors' | 'settings'>('overview');
   // ...existing code...
@@ -31,6 +44,8 @@ const Dashboard: React.FC<DashboardProps> = () => {
     console.log('Dashboard: Component mounted - Public access enabled');
     console.log('Dashboard: Authentication status:', { isAuthenticated, isAdmin, user: user?.username || 'None' });
   }, [isAuthenticated, isAdmin, user]);
+
+  
   
   // Store refreshData in a ref to prevent re-renders from affecting the interval
   const refreshDataRef = useRef(refreshData);
@@ -76,7 +91,11 @@ const Dashboard: React.FC<DashboardProps> = () => {
     }
   };
 
-  const unresolvedAlerts = recentAlerts.filter((alert: Alert) => !alert.isResolved);
+  // Guard against undefined/null data coming from the backend
+  const safeLatestSensorData: SensorData[] = Array.isArray(latestSensorData) ? latestSensorData : [];
+  const safeRecentAlerts: Alert[] = Array.isArray(recentAlerts) ? recentAlerts : [];
+
+  const unresolvedAlerts = safeRecentAlerts.filter((alert: Alert) => !alert.isResolved);
 
   return (
     <div className="min-h-screen bg-coffee-50 dark:bg-gray-900">
@@ -105,6 +124,9 @@ const Dashboard: React.FC<DashboardProps> = () => {
                   {isConnected ? 'Connected' : 'Disconnected'}
                 </span>
               </div>
+
+              {/* WebSocket status + last fetch */}
+              <WebSocketStatus />
 
               {/* Dark Mode Toggle */}
               <DarkModeToggle />
@@ -197,6 +219,11 @@ const Dashboard: React.FC<DashboardProps> = () => {
         </div>
       </header>
 
+      {/* Error banner */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-4">
+        <ErrorBanner message={lastFetchError} onClose={clearLastFetchError} />
+      </div>
+
       {/* Navigation Tabs */}
       <nav className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -266,7 +293,7 @@ const Dashboard: React.FC<DashboardProps> = () => {
                     <div>
                       <p className="text-sm font-medium text-espresso-600 mb-1">Active Devices</p>
                       <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">
-                        {latestSensorData.length}
+                        {safeLatestSensorData.length}
                       </p>
                     </div>
                   </div>
@@ -306,8 +333,8 @@ const Dashboard: React.FC<DashboardProps> = () => {
                     <div>
                       <p className="text-sm font-medium text-espresso-600 mb-1">Avg Humidity</p>
                       <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">
-                        {latestSensorData.length > 0
-                          ? Math.round(latestSensorData.reduce((sum: number, d: SensorData) => sum + d.humidity, 0) / latestSensorData.length)
+                        {safeLatestSensorData.length > 0
+                          ? Math.round(safeLatestSensorData.reduce((sum: number, d: SensorData) => sum + (d.humidity || 0), 0) / safeLatestSensorData.length)
                           : 0}%
                       </p>
                     </div>
@@ -332,8 +359,8 @@ const Dashboard: React.FC<DashboardProps> = () => {
                     <div>
                       <p className="text-sm font-medium text-espresso-600 mb-1">Avg Moisture</p>
                       <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">
-                        {latestSensorData.length > 0
-                          ? Math.round(latestSensorData.reduce((sum: number, d: SensorData) => sum + d.moisture, 0) / latestSensorData.length)
+                        {safeLatestSensorData.length > 0
+                          ? Math.round(safeLatestSensorData.reduce((sum: number, d: SensorData) => sum + (d.moisture || 0), 0) / safeLatestSensorData.length)
                           : 0}%
                       </p>
                     </div>
@@ -347,14 +374,14 @@ const Dashboard: React.FC<DashboardProps> = () => {
 
             {/* Latest Sensor Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {latestSensorData.length === 0 ? (
+              {safeLatestSensorData.length === 0 ? (
                 <div className="col-span-full p-6 bg-gray-50 rounded-lg text-center text-gray-500">
                   <Thermometer className="h-12 w-12 text-gray-400 mx-auto mb-2" />
                   No sensor data available — click "Load Weather" to fetch data
                 </div>
               ) : (
-                latestSensorData.slice(0, 9).map((d: SensorData) => (
-                  <SensorCard key={d._id || d.deviceId} data={d} />
+                safeLatestSensorData.slice(0, 9).map((d: SensorData, idx: number) => (
+                  <SensorCard key={(d as any).id || d.deviceId || `sensor-${idx}`} data={d} />
                 ))
               )}
             </div>
@@ -376,14 +403,14 @@ const Dashboard: React.FC<DashboardProps> = () => {
                 <h3 className="card-title">Recent Alerts</h3>
               </div>
               <div className="p-6">
-                {recentAlerts.length === 0 ? (
+                {safeRecentAlerts.length === 0 ? (
                   <div className="text-center py-8 text-gray-500">
                     No recent alerts
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {recentAlerts.slice(0, 5).map((alert: Alert) => (
-                      <div key={alert._id} className="flex items-center justify-between p-3 border rounded-lg">
+                    {safeRecentAlerts.slice(0, 5).map((alert: Alert, idx: number) => (
+                      <div key={(alert as any).id || alert._id || `${alert.deviceId || 'alert'}-${idx}`} className="flex items-center justify-between p-3 border rounded-lg">
                         <div className="flex items-center space-x-3">
                           <div className={`px-2 py-1 rounded-full text-xs font-medium ${getSeverityColor(alert.severity)}`}>
                             {alert.severity}

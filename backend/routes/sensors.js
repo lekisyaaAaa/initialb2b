@@ -36,6 +36,10 @@ const checkThresholds = async (sensorData) => {
     const thresholds = settings.thresholds;
     
     const alerts = [];
+    // Normalize sensorData to a plain object for consistent handling
+    const plainSensor = sensorData && typeof sensorData.get === 'function'
+      ? sensorData.get({ plain: true })
+      : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData);
     
     // Check temperature
     if (sensorData.temperature > thresholds.temperature.critical) {
@@ -80,13 +84,13 @@ const checkThresholds = async (sensorData) => {
     }
     
     // Check moisture (low moisture is bad)
-    if (sensorData.moisture < thresholds.moisture.critical) {
+  if (plainSensor.moisture < thresholds.moisture.critical) {
       alerts.push({
         type: 'moisture',
         severity: 'critical',
         message: `Critical low moisture: ${sensorData.moisture}% (threshold: ${thresholds.moisture.critical}%)`,
         deviceId: sensorData.deviceId,
-        sensorData: sensorData.toObject(),
+    sensorData: plainSensor,
         threshold: { value: thresholds.moisture.critical, operator: '<' }
       });
     } else if (sensorData.moisture < thresholds.moisture.warning) {
@@ -95,29 +99,29 @@ const checkThresholds = async (sensorData) => {
         severity: 'medium',
         message: `Low moisture: ${sensorData.moisture}% (threshold: ${thresholds.moisture.warning}%)`,
         deviceId: sensorData.deviceId,
-        sensorData: sensorData.toObject(),
+    sensorData: plainSensor,
         threshold: { value: thresholds.moisture.warning, operator: '<' }
       });
     }
     
     // Check battery level if provided
-    if (sensorData.batteryLevel !== undefined) {
-      if (sensorData.batteryLevel < thresholds.batteryLevel.critical) {
+    if (plainSensor.batteryLevel !== undefined) {
+      if (plainSensor.batteryLevel < thresholds.batteryLevel.critical) {
         alerts.push({
           type: 'battery_low',
           severity: 'critical',
-          message: `Critical battery level: ${sensorData.batteryLevel}% (threshold: ${thresholds.batteryLevel.critical}%)`,
-          deviceId: sensorData.deviceId,
-          sensorData: sensorData.toObject(),
+          message: `Critical battery level: ${plainSensor.batteryLevel}% (threshold: ${thresholds.batteryLevel.critical}%)`,
+          deviceId: plainSensor.deviceId,
+          sensorData: plainSensor,
           threshold: { value: thresholds.batteryLevel.critical, operator: '<' }
         });
       } else if (sensorData.batteryLevel < thresholds.batteryLevel.warning) {
         alerts.push({
           type: 'battery_low',
           severity: 'medium',
-          message: `Low battery level: ${sensorData.batteryLevel}% (threshold: ${thresholds.batteryLevel.warning}%)`,
-          deviceId: sensorData.deviceId,
-          sensorData: sensorData.toObject(),
+          message: `Low battery level: ${plainSensor.batteryLevel}% (threshold: ${thresholds.batteryLevel.warning}%)`,
+          deviceId: plainSensor.deviceId,
+          sensorData: plainSensor,
           threshold: { value: thresholds.batteryLevel.warning, operator: '<' }
         });
       }
@@ -167,8 +171,8 @@ router.post('/', [
       isOfflineData = false
     } = req.body;
 
-    // Create sensor data (Sequelize-compatible)
-    const sensorData = await SensorData.create({
+  // Create sensor data (Sequelize-compatible)
+  const sensorData = await SensorData.create({
       deviceId,
       temperature: parseFloat(temperature),
       humidity: parseFloat(humidity),
@@ -180,7 +184,7 @@ router.post('/', [
     });
 
     // Respond quickly — process alerts and broadcast asynchronously to avoid blocking or failing the request
-    const plain = sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData);
+  const plain = sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData);
 
     // Fire-and-forget alerts and broadcast
     (async () => {
@@ -251,7 +255,7 @@ router.post('/batch', [
     let totalAlerts = 0;
 
     for (const item of data) {
-      const sensorData = new SensorData({
+      const sensorData = await SensorData.create({
         deviceId,
         temperature: parseFloat(item.temperature),
         humidity: parseFloat(item.humidity),
@@ -262,11 +266,10 @@ router.post('/batch', [
         isOfflineData: true
       });
 
-      await sensorData.save();
       const alerts = await checkThresholds(sensorData);
       totalAlerts += alerts.length;
       
-      savedData.push(sensorData);
+      savedData.push(sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : sensorData);
     }
 
     // Broadcast latest data to WebSocket clients
@@ -309,15 +312,18 @@ router.get('/latest', optionalAuth, async (req, res) => {
     let latestData = null;
     try {
       if (SensorData && SensorData.sequelize && typeof SensorData.findOne === 'function') {
-        // Sequelize: use findOne with order
-        latestData = await SensorData.findOne({ where: query, order: [['timestamp', 'DESC']] });
+        // Build Sequelize where clause
+        const { Op } = SensorData.sequelize;
+        const where = {};
+        if (deviceId) where.deviceId = deviceId;
+        latestData = await SensorData.findOne({ where, order: [['timestamp', 'DESC']] });
         if (latestData && typeof latestData.get === 'function') latestData = latestData.get({ plain: true });
-      } else if (typeof SensorData.findOne === 'function') {
-        // Mongoose-like fallback
-        latestData = await SensorData.findOne(query).sort({ timestamp: -1 }).lean();
+      } else {
+        // If model isn't Sequelize, return empty data for stability
+        latestData = null;
       }
     } catch (e) {
-      console.warn('Error querying latest sensor data (compat layer):', e && e.message ? e.message : e);
+      console.warn('Error querying latest sensor data:', e && e.message ? e.message : e);
       latestData = null;
     }
 
@@ -366,16 +372,14 @@ router.get('/history', auth, [
     } = req.query;
 
     // Build query
+    // Build Sequelize-friendly where clause
+    const { Op } = SensorData.sequelize || {};
     let query = {};
-    
-    if (deviceId) {
-      query.deviceId = deviceId;
-    }
-    
+    if (deviceId) query.deviceId = deviceId;
     if (startDate || endDate) {
       query.timestamp = {};
-      if (startDate) query.timestamp.$gte = new Date(startDate);
-      if (endDate) query.timestamp.$lte = new Date(endDate);
+      if (startDate) query.timestamp[Op.gte] = new Date(startDate);
+      if (endDate) query.timestamp[Op.lte] = new Date(endDate);
     }
 
     // Calculate pagination
@@ -389,12 +393,13 @@ router.get('/history', auth, [
       if (SensorData && SensorData.sequelize && typeof SensorData.findAll === 'function') {
         data = await SensorData.findAll({ where: query, order: [['timestamp', 'DESC']], offset: skip, limit: parseInt(limit), raw: true });
         total = await SensorData.count({ where: query });
-      } else if (typeof SensorData.find === 'function') {
-        data = await SensorData.find(query).sort({ timestamp: -1 }).skip(skip).limit(parseInt(limit)).lean();
-        total = await SensorData.countDocuments(query);
+      } else {
+        // Non-Sequelize fallback: return empty result for stability
+        data = [];
+        total = 0;
       }
     } catch (e) {
-      console.warn('Error fetching sensor history (compat layer):', e && e.message ? e.message : e);
+      console.warn('Error fetching sensor history:', e && e.message ? e.message : e);
       data = [];
       total = 0;
     }
@@ -457,31 +462,11 @@ router.get('/stats', auth, async (req, res) => {
         });
         const stats = rows && rows[0] ? rows[0] : {};
         res.json({ success: true, data: { stats, period: `${hours} hours`, deviceId: deviceId || 'all' } });
-      } else if (typeof SensorData.aggregate === 'function') {
-        const stats = await SensorData.aggregate([
-          { $match: query },
-          {
-            $group: {
-              _id: null,
-              avgTemperature: { $avg: '$temperature' },
-              maxTemperature: { $max: '$temperature' },
-              minTemperature: { $min: '$temperature' },
-              avgHumidity: { $avg: '$humidity' },
-              maxHumidity: { $max: '$humidity' },
-              minHumidity: { $min: '$humidity' },
-              avgMoisture: { $avg: '$moisture' },
-              maxMoisture: { $max: '$moisture' },
-              minMoisture: { $min: '$moisture' },
-              count: { $sum: 1 }
-            }
-          }
-        ]);
-        res.json({ success: true, data: { stats: stats[0] || {}, period: `${hours} hours`, deviceId: deviceId || 'all' } });
       } else {
         res.json({ success: true, data: { stats: {}, period: `${hours} hours`, deviceId: deviceId || 'all' } });
       }
     } catch (e) {
-      console.error('Error fetching sensor stats (compat layer):', e && e.message ? e.message : e);
+      console.error('Error fetching sensor stats:', e && e.message ? e.message : e);
       res.status(500).json({ success: false, message: 'Error fetching sensor statistics' });
     }
 

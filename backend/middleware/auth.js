@@ -68,7 +68,8 @@ const optionalAuth = async (req, res, next) => {
     
     if (token) {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      const user = await User.findById(decoded.id).select('-password');
+      // Sequelize: use findByPk and exclude password
+      const user = await User.findByPk(decoded.id, { attributes: { exclude: ['password'] } });
       
       if (user && user.isActive) {
         req.user = user;
