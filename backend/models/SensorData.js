@@ -1,14 +1,36 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../services/database_pg');
 
+// Sequelize model for sensor readings. Fields align with the REST route payloads.
 const SensorData = sequelize.define('SensorData', {
-  sensorId: {
+  deviceId: {
     type: DataTypes.STRING,
     allowNull: false,
   },
-  value: {
+  temperature: {
     type: DataTypes.FLOAT,
-    allowNull: false,
+    allowNull: true,
+  },
+  humidity: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  moisture: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  batteryLevel: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  signalStrength: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  isOfflineData: {
+    type: DataTypes.BOOLEAN,
+    allowNull: true,
+    defaultValue: false
   },
   timestamp: {
     type: DataTypes.DATE,
@@ -20,5 +42,4 @@ const SensorData = sequelize.define('SensorData', {
   timestamps: false,
 });
 
-module.exports = SensorData;
 module.exports = SensorData;

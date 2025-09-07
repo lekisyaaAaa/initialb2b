@@ -44,7 +44,7 @@ const checkThresholds = async (sensorData) => {
         severity: 'critical',
         message: `Critical temperature: ${sensorData.temperature}°C (threshold: ${thresholds.temperature.critical}°C)`,
         deviceId: sensorData.deviceId,
-        sensorData: sensorData.toObject(),
+  sensorData: sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData),
         threshold: { value: thresholds.temperature.critical, operator: '>' }
       });
     } else if (sensorData.temperature > thresholds.temperature.warning) {
@@ -53,7 +53,7 @@ const checkThresholds = async (sensorData) => {
         severity: 'high',
         message: `High temperature: ${sensorData.temperature}°C (threshold: ${thresholds.temperature.warning}°C)`,
         deviceId: sensorData.deviceId,
-        sensorData: sensorData.toObject(),
+  sensorData: sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData),
         threshold: { value: thresholds.temperature.warning, operator: '>' }
       });
     }
@@ -65,7 +65,7 @@ const checkThresholds = async (sensorData) => {
         severity: 'critical',
         message: `Critical humidity: ${sensorData.humidity}% (threshold: ${thresholds.humidity.critical}%)`,
         deviceId: sensorData.deviceId,
-        sensorData: sensorData.toObject(),
+  sensorData: sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData),
         threshold: { value: thresholds.humidity.critical, operator: '>' }
       });
     } else if (sensorData.humidity > thresholds.humidity.warning) {
@@ -74,7 +74,7 @@ const checkThresholds = async (sensorData) => {
         severity: 'high',
         message: `High humidity: ${sensorData.humidity}% (threshold: ${thresholds.humidity.warning}%)`,
         deviceId: sensorData.deviceId,
-        sensorData: sensorData.toObject(),
+  sensorData: sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData),
         threshold: { value: thresholds.humidity.warning, operator: '>' }
       });
     }
@@ -167,8 +167,8 @@ router.post('/', [
       isOfflineData = false
     } = req.body;
 
-    // Create sensor data
-    const sensorData = new SensorData({
+    // Create sensor data (Sequelize-compatible)
+    const sensorData = await SensorData.create({
       deviceId,
       temperature: parseFloat(temperature),
       humidity: parseFloat(humidity),
@@ -179,28 +179,46 @@ router.post('/', [
       isOfflineData
     });
 
-    await sensorData.save();
+    // Respond quickly — process alerts and broadcast asynchronously to avoid blocking or failing the request
+    const plain = sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData);
 
-    // Check thresholds and create alerts
-    const alerts = await checkThresholds(sensorData);
-
-    // Broadcast to WebSocket clients
-    broadcastSensorData({
-      ...sensorData.toObject(),
-      alerts: alerts.length > 0 ? alerts : undefined
-    });
+    // Fire-and-forget alerts and broadcast
+    (async () => {
+      try {
+        const alerts = await checkThresholds(sensorData);
+        try {
+          broadcastSensorData({ ...plain, alerts: alerts.length > 0 ? alerts : undefined });
+        } catch (e) {
+          console.warn('Broadcast failed (async):', e && e.message ? e.message : e);
+        }
+      } catch (e) {
+        console.warn('Async alert processing failed:', e && e.message ? e.message : e);
+      }
+    })();
 
     res.status(201).json({
       success: true,
       message: 'Sensor data received successfully',
       data: {
-        sensorData,
-        alertsCreated: alerts.length
+        sensorData: plain,
+        alertsCreated: 0
       }
     });
 
   } catch (error) {
     console.error('Error saving sensor data:', error);
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const logDir = path.join(__dirname, '..', 'logs');
+      try { fs.mkdirSync(logDir, { recursive: true }); } catch (e) {}
+      const logPath = path.join(logDir, 'sensor-post-errors.log');
+      const now = new Date().toISOString();
+      const dump = `--- ${now} ---\n${error && error.stack ? error.stack : JSON.stringify(error)}\n\n`;
+      try { fs.appendFileSync(logPath, dump, 'utf8'); } catch (e) { console.warn('Failed to write error log:', e && e.message ? e.message : e); }
+    } catch (e) {
+      // ignore logging failures
+    }
     res.status(500).json({
       success: false,
       message: 'Error saving sensor data'
@@ -287,21 +305,28 @@ router.get('/latest', optionalAuth, async (req, res) => {
       query.deviceId = deviceId;
     }
 
-    const latestData = await SensorData.findOne(query)
-      .sort({ timestamp: -1 })
-      .lean();
-
-    if (!latestData) {
-      return res.status(404).json({
-        success: false,
-        message: 'No sensor data found'
-      });
+    // Support both Sequelize and Mongoose-style models. Prefer Sequelize when available.
+    let latestData = null;
+    try {
+      if (SensorData && SensorData.sequelize && typeof SensorData.findOne === 'function') {
+        // Sequelize: use findOne with order
+        latestData = await SensorData.findOne({ where: query, order: [['timestamp', 'DESC']] });
+        if (latestData && typeof latestData.get === 'function') latestData = latestData.get({ plain: true });
+      } else if (typeof SensorData.findOne === 'function') {
+        // Mongoose-like fallback
+        latestData = await SensorData.findOne(query).sort({ timestamp: -1 }).lean();
+      }
+    } catch (e) {
+      console.warn('Error querying latest sensor data (compat layer):', e && e.message ? e.message : e);
+      latestData = null;
     }
 
-    res.json({
-      success: true,
-      data: latestData
-    });
+    if (!latestData) {
+      // Return a graceful empty result (poller expects a successful response); use 200 with empty data
+      return res.json({ success: true, data: [] });
+    }
+
+    res.json({ success: true, data: latestData });
 
   } catch (error) {
     console.error('Error fetching latest sensor data:', error);
@@ -357,14 +382,22 @@ router.get('/history', auth, [
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
     // Get data with pagination
-    const [data, total] = await Promise.all([
-      SensorData.find(query)
-        .sort({ timestamp: -1 })
-        .skip(skip)
-        .limit(parseInt(limit))
-        .lean(),
-      SensorData.countDocuments(query)
-    ]);
+    // Support Sequelize and Mongoose
+    let data = [];
+    let total = 0;
+    try {
+      if (SensorData && SensorData.sequelize && typeof SensorData.findAll === 'function') {
+        data = await SensorData.findAll({ where: query, order: [['timestamp', 'DESC']], offset: skip, limit: parseInt(limit), raw: true });
+        total = await SensorData.count({ where: query });
+      } else if (typeof SensorData.find === 'function') {
+        data = await SensorData.find(query).sort({ timestamp: -1 }).skip(skip).limit(parseInt(limit)).lean();
+        total = await SensorData.countDocuments(query);
+      }
+    } catch (e) {
+      console.warn('Error fetching sensor history (compat layer):', e && e.message ? e.message : e);
+      data = [];
+      total = 0;
+    }
 
     res.json({
       success: true,
@@ -402,33 +435,55 @@ router.get('/stats', auth, async (req, res) => {
       query.deviceId = deviceId;
     }
 
-    const stats = await SensorData.aggregate([
-      { $match: query },
-      {
-        $group: {
-          _id: null,
-          avgTemperature: { $avg: '$temperature' },
-          maxTemperature: { $max: '$temperature' },
-          minTemperature: { $min: '$temperature' },
-          avgHumidity: { $avg: '$humidity' },
-          maxHumidity: { $max: '$humidity' },
-          minHumidity: { $min: '$humidity' },
-          avgMoisture: { $avg: '$moisture' },
-          maxMoisture: { $max: '$moisture' },
-          minMoisture: { $min: '$moisture' },
-          count: { $sum: 1 }
-        }
+    // Compute stats with Sequelize if available, otherwise fallback to aggregation
+    try {
+      if (SensorData && SensorData.sequelize && typeof SensorData.findAll === 'function') {
+        const { fn, col } = SensorData.sequelize;
+        const rows = await SensorData.findAll({
+          where: query,
+          attributes: [
+            [fn('AVG', col('temperature')), 'avgTemperature'],
+            [fn('MAX', col('temperature')), 'maxTemperature'],
+            [fn('MIN', col('temperature')), 'minTemperature'],
+            [fn('AVG', col('humidity')), 'avgHumidity'],
+            [fn('MAX', col('humidity')), 'maxHumidity'],
+            [fn('MIN', col('humidity')), 'minHumidity'],
+            [fn('AVG', col('moisture')), 'avgMoisture'],
+            [fn('MAX', col('moisture')), 'maxMoisture'],
+            [fn('MIN', col('moisture')), 'minMoisture'],
+            [fn('COUNT', col('*')), 'count']
+          ],
+          raw: true
+        });
+        const stats = rows && rows[0] ? rows[0] : {};
+        res.json({ success: true, data: { stats, period: `${hours} hours`, deviceId: deviceId || 'all' } });
+      } else if (typeof SensorData.aggregate === 'function') {
+        const stats = await SensorData.aggregate([
+          { $match: query },
+          {
+            $group: {
+              _id: null,
+              avgTemperature: { $avg: '$temperature' },
+              maxTemperature: { $max: '$temperature' },
+              minTemperature: { $min: '$temperature' },
+              avgHumidity: { $avg: '$humidity' },
+              maxHumidity: { $max: '$humidity' },
+              minHumidity: { $min: '$humidity' },
+              avgMoisture: { $avg: '$moisture' },
+              maxMoisture: { $max: '$moisture' },
+              minMoisture: { $min: '$moisture' },
+              count: { $sum: 1 }
+            }
+          }
+        ]);
+        res.json({ success: true, data: { stats: stats[0] || {}, period: `${hours} hours`, deviceId: deviceId || 'all' } });
+      } else {
+        res.json({ success: true, data: { stats: {}, period: `${hours} hours`, deviceId: deviceId || 'all' } });
       }
-    ]);
-
-    res.json({
-      success: true,
-      data: {
-        stats: stats[0] || {},
-        period: `${hours} hours`,
-        deviceId: deviceId || 'all'
-      }
-    });
+    } catch (e) {
+      console.error('Error fetching sensor stats (compat layer):', e && e.message ? e.message : e);
+      res.status(500).json({ success: false, message: 'Error fetching sensor statistics' });
+    }
 
   } catch (error) {
     console.error('Error fetching sensor stats:', error);

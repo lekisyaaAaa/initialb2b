@@ -19,6 +19,7 @@ import Dashboard from './pages/Dashboard';
 import PublicDashboard from './pages/PublicDashboard';
 import EnhancedDashboard from './pages/EnhancedDashboard';
 import ContactPage from './pages/Contact';
+import HomeAssistant from './pages/HomeAssistant';
 import ProtectedRoute from './components/ProtectedRoute';
 import './App.css';
 
@@ -447,12 +448,15 @@ function App() {
               
               {/* Admin login */}
               <Route path="/admin/login" element={<LoginPage />} />
+
+              {/* Home Assistant placeholder route */}
+              <Route path="/home-assistant" element={<HomeAssistant />} />
               
               {/* Protected admin dashboard with full features */}
               <Route 
                 path="/admin/dashboard" 
                 element={
-                  <ProtectedRoute>
+                  <ProtectedRoute adminOnly={true}>
                     <Dashboard />
                   </ProtectedRoute>
                 } 

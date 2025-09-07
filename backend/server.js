@@ -78,12 +78,14 @@ const corsOptions = {
       try {
         await sequelize.authenticate();
         console.log('\u2705 Connected to Postgres (Sequelize)');
-        // In development, sync models lightly to ensure schema compatibility (no force)
+        // In development, attempt to update the SQLite schema to reflect model changes.
+        // Use `alter: true` so we don't drop data but apply column changes.
         if ((process.env.NODE_ENV || 'development') !== 'production') {
           try {
-            await sequelize.sync();
+            await sequelize.sync({ alter: true });
+            console.log('\u2705 Sequelize models synced (alter: true)');
           } catch (e) {
-            console.warn('Model sync warning:', e && e.message ? e.message : e);
+            console.warn('Model sync warning (alter):', e && e.message ? e.message : e);
           }
         }
 
@@ -243,6 +245,30 @@ if ((process.env.NODE_ENV || 'development') !== 'production') {
     console.log('Launched dev seeding process (seed-admin.js)');
   } catch (e) {
     console.warn('Could not launch dev seeding process:', e && e.message ? e.message : e);
+  }
+}
+
+// Optionally start the sensor poller inline when RUN_POLLER is enabled.
+// This keeps the poller in-process for simple local dev flows and PM2 will manage it when desired.
+if (process.env.RUN_POLLER === 'true' || process.env.RUN_POLLER === '1') {
+  try {
+    const poller = require('./services/sensor-poller');
+    const internalPort = process.env.POLLER_INTERNAL_PORT ? Number(process.env.POLLER_INTERNAL_PORT) : (process.env.INTERNAL_PORT ? Number(process.env.INTERNAL_PORT) : 3100);
+    // start the internal HTTP server for poller metrics
+    try {
+      poller.startServer(internalPort);
+      console.log(`Started sensor poller internal server on port ${internalPort}`);
+    } catch (e) {
+      console.warn('Sensor poller internal server failed to start:', e && e.message ? e.message : e);
+    }
+
+    // start the polling loop (non-blocking)
+    poller.runLoop().catch((err) => {
+      console.error('Sensor poller loop exited with error:', err && err.message ? err.message : err);
+    });
+    console.log('Sensor poller started (runLoop)');
+  } catch (e) {
+    console.warn('Could not start sensor poller inline:', e && e.message ? e.message : e);
   }
 }
 

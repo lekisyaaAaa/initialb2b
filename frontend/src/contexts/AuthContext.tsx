@@ -92,7 +92,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         const backendMsg = response.data && (response.data.message || (response.data.error && response.data.error.message));
         if (backendMsg) console.warn('⚠️ Backend message:', backendMsg);
   const backendMessage = response.data && (response.data.message || (response.data.error && response.data.error.message));
-  return { success: false, message: backendMessage || 'Invalid credentials' };
+        // Clear any partially set auth state to avoid silent incorrect auth
+        try {
+          setUser(null);
+          setToken(null);
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          delete api.defaults.headers.common['Authorization'];
+        } catch (e) { /* ignore */ }
+
+        return { success: false, message: backendMessage || 'Invalid credentials' };
       }
     } catch (error: any) {
       console.error('❌ Login error:', error);
@@ -126,7 +135,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       } catch (e) {
         // ignore
       }
-    return { success: false, message: backendMessage || 'An error occurred during login' };
+      // Ensure we do not leak a stale token on unexpected errors
+      try {
+        setUser(null);
+        setToken(null);
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        delete api.defaults.headers.common['Authorization'];
+      } catch (e) {}
+
+      return { success: false, message: backendMessage || 'An error occurred during login' };
     } finally {
       setIsLoading(false);
     }

@@ -1,0 +1,72 @@
+name: PR smoke - UI login
+
+on:
+  pull_request:
+
+jobs:
+  smoke-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Ensure JWT_SECRET
+        run: |
+          if [ -z "${{ secrets.JWT_SECRET }}" ]; then
+            echo "JWT_SECRET=$(openssl rand -hex 32)" >> $GITHUB_ENV
+          else
+            echo "JWT_SECRET=${{ secrets.JWT_SECRET }}" >> $GITHUB_ENV
+          fi
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install backend & frontend deps
+        run: npm run install-backend && npm run install-frontend
+
+      - name: Seed admin user
+        run: npm run seed-admin
+
+      - name: Start backend and frontend
+        run: |
+          nohup bash -lc 'cd backend && npm start' > backend.log 2>&1 &
+          nohup bash -lc 'cd frontend && npm start' > frontend.log 2>&1 &
+
+      - name: Wait for services to be healthy
+        run: |
+          set -e
+          echo "Waiting for backend (http://localhost:5000/api/health)"
+          for i in {1..40}; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:5000/api/health || echo 000)
+            if [ "$status" = "200" ]; then break; fi
+            sleep 1
+          done
+          echo "Waiting for frontend (http://localhost:3002/health)"
+          for i in {1..40}; do
+            status=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3002/health || echo 000)
+            if [ "$status" = "200" ]; then break; fi
+            sleep 1
+          done
+          echo "Backend health:"
+          curl -sS http://localhost:5000/api/health || true
+          echo "Frontend health:"
+          curl -sS http://localhost:3002/health || true
+
+      - name: Run smoke-ui (headless UI login + verify)
+        run: npm run smoke-ui
+
+      - name: Upload logs and token
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-ui-artifacts
+          path: |
+            scripts/ui-login.log
+            scripts/ui-login.token
+            backend.log
+            frontend.log

@@ -14,10 +14,20 @@ const LoginPage: React.FC = () => {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Redirect if already authenticated
+  // Redirect if already authenticated and user is admin.
+  // If the user is authenticated but not an admin, don't silently redirect to admin dashboard.
+  // This ensures clicking Admin Access always prompts for admin credentials unless the current user
+  // has the admin role.
   if (isAuthenticated) {
-    const from = (location.state as any)?.from?.pathname || '/admin/dashboard';
-    return <Navigate to={from} replace />;
+    // read user from localStorage to avoid extra hook dependencies; AuthContext keeps this in sync
+    let storedUser: any = null;
+    try { storedUser = JSON.parse(localStorage.getItem('user') || 'null'); } catch(e) { storedUser = null; }
+    const isAdmin = storedUser && storedUser.role === 'admin';
+    if (isAdmin) {
+      const from = (location.state as any)?.from?.pathname || '/admin/dashboard';
+      return <Navigate to={from} replace />;
+    }
+    // If authenticated but not admin, fall through to show the login form so admin credentials can be supplied.
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -38,7 +48,11 @@ const LoginPage: React.FC = () => {
     try {
       const result = await login(formData.username, formData.password);
       if (!result || !result.success) {
-        setError(result && result.message ? result.message : 'Invalid username or password');
+  setError(result && result.message ? result.message : 'Invalid username or password');
+  // Clear password and focus username input for immediate retry
+  setFormData(prev => ({ ...prev, password: '' }));
+  const el = document.getElementById('username') as HTMLInputElement | null;
+  if (el) { el.focus(); el.select(); }
       }
     } catch (err) {
       setError('An error occurred during login. Please try again.');
