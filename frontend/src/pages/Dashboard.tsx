@@ -6,6 +6,12 @@ import { Leaf, AlertTriangle, Thermometer, Droplets, Sprout, Battery, RefreshCw,
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import DarkModeToggle from '../components/DarkModeToggle';
+import Hero from '../components/ui/Hero';
+import SensorCard from '../components/ui/SensorCard';
+import AlertsPanel from '../components/ui/AlertsPanel';
+import Timeline from '../components/ui/Timeline';
+import SmartTips from '../components/ui/SmartTips';
+import Graphs from '../components/ui/Graphs';
 
 interface DashboardProps {
   // No props needed - role checking via AuthContext
@@ -145,13 +151,15 @@ const Dashboard: React.FC<DashboardProps> = () => {
                         {user?.role} - Admin Dashboard
                       </p>
                     </div>
-                    <button
-                      onClick={logout}
-                      className="p-2 text-espresso-400 hover:text-danger-600 transition-colors"
-                      title="Logout"
-                    >
-                      <LogOut className="h-5 w-5" />
-                    </button>
+                    <div className="flex items-center space-x-2">
+                      <button
+                        onClick={logout}
+                        className="p-2 text-espresso-400 hover:text-danger-600 transition-colors"
+                        title="Logout"
+                      >
+                        <LogOut className="h-5 w-5" />
+                      </button>
+                    </div>
                   </>
                 ) : (
                   // Public mode - show login link or regular user info
@@ -202,7 +210,8 @@ const Dashboard: React.FC<DashboardProps> = () => {
       {/* Navigation Tabs */}
       <nav className="bg-white shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-8">
+          <div className="flex items-center justify-between">
+            <div className="flex space-x-8">
             {[
               { id: 'overview', label: 'Overview', icon: TrendingUp },
               { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
@@ -227,12 +236,29 @@ const Dashboard: React.FC<DashboardProps> = () => {
                 )}
               </button>
             ))}
+            </div>
+
+            {/* Compact admin-only control on the nav bar */}
+            <div>
+              {isAdmin && (
+                <button
+                  id="btn-home-assistant"
+                  aria-label="Open SmartBin Console"
+                  onClick={() => { window.location.href = '/home-assistant'; }}
+                  className="ml-4 px-2 py-1 text-sm bg-primary-100 text-primary-700 rounded hover:bg-primary-200 transition-colors"
+                  title="SmartBin Console"
+                >
+                  SmartBin Console
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </nav>
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto py-6 px-4 sm:px-6 lg:px-8">
+        <Hero />
         {activeTab === 'overview' && (
           <div className="space-y-6">
             {/* Premium Glass Stats Cards */}
@@ -319,63 +345,28 @@ const Dashboard: React.FC<DashboardProps> = () => {
               </div>
             </div>
 
-            {/* Latest Manila Sensor Data */}
-            <div className="card">
-              <div className="card-header">
-                <h3 className="card-title">Latest Manila Weather Readings</h3>
-                <p className="text-sm text-gray-500 mt-1">Real-time environmental data from Manila Metro Area</p>
+            {/* Latest Sensor Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {latestSensorData.length === 0 ? (
+                <div className="col-span-full p-6 bg-gray-50 rounded-lg text-center text-gray-500">
+                  <Thermometer className="h-12 w-12 text-gray-400 mx-auto mb-2" />
+                  No sensor data available — click "Load Weather" to fetch data
+                </div>
+              ) : (
+                latestSensorData.slice(0, 9).map((d: SensorData) => (
+                  <SensorCard key={d._id || d.deviceId} data={d} />
+                ))
+              )}
+            </div>
+
+            {/* Graphs + Alerts + Timeline */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              <div className="lg:col-span-2">
+                <Graphs data={latestSensorData as any} />
               </div>
-              <div className="p-6">
-                {latestSensorData.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
-                    <div className="mb-4">
-                      <Thermometer className="h-12 w-12 text-gray-400 mx-auto mb-2" />
-                    </div>
-                    <p>No Manila weather data available</p>
-                    <p className="text-xs mt-2">Click "Load Weather" to fetch real-time Manila data</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {latestSensorData.slice(0, 5).map((data: SensorData) => (
-                      <div key={data._id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                        <div className="flex items-center space-x-4">
-                          <div className="flex-shrink-0">
-                            <div className={`w-3 h-3 rounded-full ${getStatusColor(data.status).replace('text-', 'bg-').replace('bg-', 'bg-')}`}></div>
-                          </div>
-                          <div>
-                            <p className="font-medium text-gray-900">{data.deviceId}</p>
-                            <p className="text-sm text-gray-500">
-                              Manila • {format(new Date(data.timestamp), 'MMM dd, yyyy HH:mm')}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center space-x-6 text-sm">
-                          <div className="text-center">
-                            <p className="text-gray-500">Temp</p>
-                            <p className="font-medium">{data.temperature}°C</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-gray-500">Humidity</p>
-                            <p className="font-medium">{data.humidity}%</p>
-                          </div>
-                          <div className="text-center">
-                            <p className="text-gray-500">Moisture</p>
-                            <p className="font-medium">{data.moisture}%</p>
-                          </div>
-                          {data.batteryLevel && (
-                            <div className="text-center">
-                              <p className="text-gray-500">Battery</p>
-                              <div className="flex items-center">
-                                <Battery className="h-4 w-4 mr-1" />
-                                <span className="font-medium">{data.batteryLevel}%</span>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              <div className="lg:col-span-1 space-y-4">
+                <AlertsPanel alerts={recentAlerts} />
+                <SmartTips />
               </div>
             </div>
 
