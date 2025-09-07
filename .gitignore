@@ -1,3 +1,31 @@
+# Node
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and runtime
+*.log
+*.err
+*.out
+
+# Local DB and sensor stream
+backend/data/*.sqlite
+backend/data/*.jsonl
+
+# Scripts and tokens
+scripts/*.token
+scripts/*.png
+check-console-visibility*.png
+check-console-visibility*.json
+
+# IDE
+.vscode/
+
+# Session artifacts
+.session_saved
+WORKSPACE_SNAPSHOT.md
 node_modules
 backend/.env
 frontend/.env
