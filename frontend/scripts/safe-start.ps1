@@ -26,7 +26,10 @@ try {
         Write-Host "[safe-start] No process listening on port $port"
     }
 
-    Write-Host "[safe-start] Starting frontend dev server..."
+        # Ensure the dev server binds to all interfaces so localhost (IPv4/IPv6) resolves
+        $env:HOST = '0.0.0.0'
+        Write-Host "[safe-start] HOST set to $env:HOST (0.0.0.0 binds to all interfaces)"
+        Write-Host "[safe-start] Starting frontend dev server..."
     # Run the actual start script which calls react-scripts start
     # Use exec so the npm child inherits the console and stays attached
     # This will block until the dev server exits

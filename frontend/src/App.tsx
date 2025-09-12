@@ -21,6 +21,7 @@ import EnhancedDashboard from './pages/EnhancedDashboard';
 import ContactPage from './pages/Contact';
 import HomeAssistant from './pages/HomeAssistant';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminDashboard from './pages/AdminDashboard';
 import './App.css';
 
 // Temporary inline HomePage component to bypass import issues
@@ -453,13 +454,13 @@ function App() {
               <Route path="/home-assistant" element={<HomeAssistant />} />
               
               {/* Protected admin dashboard with full features */}
-              <Route 
-                path="/admin/dashboard" 
+              <Route
+                path="/admin/dashboard"
                 element={
                   <ProtectedRoute adminOnly={true}>
-                    <Dashboard />
+                    <AdminDashboard />
                   </ProtectedRoute>
-                } 
+                }
               />
             </Routes>
           </div>

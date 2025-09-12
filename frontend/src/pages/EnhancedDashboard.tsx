@@ -36,6 +36,7 @@ const EnhancedDashboard: React.FC = () => {
 
   // Generate mock historical data for demonstration
   const [historicalData, setHistoricalData] = useState<any[]>([]);
+  const [manilaSummary, setManilaSummary] = useState<any | null>(null);
 
   useEffect(() => {
     // Generate sample historical data
@@ -107,6 +108,17 @@ const EnhancedDashboard: React.FC = () => {
     };
 
     loadWeatherData();
+    // Load Manila summary snapshot
+    let mounted = true;
+    (async () => {
+      try {
+        const sum = await weatherService.getManilaWeatherSummary();
+        if (mounted) setManilaSummary(sum);
+      } catch (err) {
+        console.warn('EnhancedDashboard: Manila summary load failed', err);
+      }
+    })();
+    return () => { mounted = false; };
   }, []);
 
   // Calculate alert summary for pie chart
@@ -134,6 +146,17 @@ const EnhancedDashboard: React.FC = () => {
     
     const latest = historicalData[historicalData.length - 1];
     return latest;
+  }, [historicalData]);
+
+  // derive a latest pH from historicalData or recent alerts if available
+  const latestPh = useMemo(() => {
+    // historicalData is weather-derived and may include 'ph' if enriched
+    const arr = historicalData.slice().reverse();
+    for (const d of arr) {
+      if (typeof (d as any).ph === 'number') return (d as any).ph;
+    }
+    // fallback to null
+    return null;
   }, [historicalData]);
 
   const getStatusColor = (status: string) => {
@@ -274,63 +297,59 @@ const EnhancedDashboard: React.FC = () => {
                 {/* Temperature Card */}
                 <div className="group relative overflow-hidden h-full">
                   <div className="absolute inset-0 bg-gradient-to-br from-red-500/20 to-letran-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-red-900/40 dark:to-letran-900/40"></div>
-                  <div className="relative bg-white/80 dark:bg-gray-800 backdrop-blur-lg border border-white/50 dark:border-gray-700 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
+                  <div className="relative bg-white/80 dark:bg-gray-800 backdrop-blur-lg border border-white/50 dark:border-gray-700 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-letran-500 rounded-t-2xl"></div>
 
-                    <div className="flex items-center mb-4">
-                      <div className="bg-gradient-to-br from-red-100 to-red-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500 dark:bg-gray-700">
-                        <Thermometer className="h-8 w-8 text-red-600 dark:text-red-300" />
+                      <div className="flex items-center mb-4">
+                        <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-red-100 to-red-50 shadow-lg group-hover:rotate-12 transition-transform duration-500 dark:bg-gray-700">
+                          <Thermometer className="h-6 w-6 text-red-600 dark:text-red-300" />
+                        </div>
+                        <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                          <div className="mb-2"><p className="text-sm font-medium text-coffee-600 dark:text-gray-300">Temperature</p></div>
+                          <p className="text-3xl font-bold text-coffee-900 dark:text-white group-hover:text-letran-600 transition-colors">{latestReadings.temperature.toFixed(1)}°C</p>
+                        </div>
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-coffee-600 dark:text-gray-300 mb-1">Temperature</p>
-                        <p className="text-3xl font-bold text-coffee-900 dark:text-white group-hover:text-letran-600 transition-colors">
-                          {latestReadings.temperature.toFixed(1)}°C
-                        </p>
-                      </div>
-                    </div>
 
                     <div className="flex-1 min-h-[140px]"></div>
                   </div>
                 </div>
+
+                    {/* Manila weather snapshot removed from EnhancedDashboard per request */}
 
                 {/* Humidity Card */}
                 <div className="group relative overflow-hidden h-full">
                   <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-primary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-blue-900/40 dark:to-primary-900/40"></div>
-                  <div className="relative bg-white/80 dark:bg-gray-800 backdrop-blur-lg border border-white/50 dark:border-gray-700 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
+                  <div className="relative bg-white/80 dark:bg-gray-800 backdrop-blur-lg border border-white/50 dark:border-gray-700 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-primary-500 rounded-t-2xl"></div>
 
                     <div className="flex items-center mb-4">
-                      <div className="bg-gradient-to-br from-blue-100 to-blue-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500 dark:bg-gray-700">
-                        <Droplets className="h-8 w-8 text-blue-600 dark:text-blue-300" />
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-blue-100 to-blue-50 shadow-lg group-hover:rotate-12 transition-transform duration-500 dark:bg-gray-700">
+                        <Droplets className="h-6 w-6 text-blue-600 dark:text-blue-300" />
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-coffee-600 dark:text-gray-300 mb-1">Humidity</p>
-                        <p className="text-3xl font-bold text-coffee-900 dark:text-white group-hover:text-letran-600 transition-colors">
-                          {latestReadings.humidity.toFixed(1)}%
-                        </p>
-                      </div>
+                        <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                          <div className="mb-2"><p className="text-sm font-medium text-coffee-600 dark:text-gray-300">Humidity</p></div>
+                          <p className="text-3xl font-bold text-coffee-900 dark:text-white group-hover:text-letran-600 transition-colors">{latestReadings.humidity.toFixed(1)}%</p>
+                        </div>
                     </div>
 
                     <div className="flex-1 min-h-[140px]"></div>
                   </div>
                 </div>
 
-                {/* Moisture Card */}
+                {/* pH Card (replaces Moisture per request) */}
                 <div className="group relative overflow-hidden h-full">
-                  <div className="absolute inset-0 bg-gradient-to-br from-green-500/20 to-success-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-green-900/40 dark:to-success-900/40"></div>
-                  <div className="relative bg-white/80 dark:bg-gray-800 backdrop-blur-lg border border-white/50 dark:border-gray-700 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 to-success-500 rounded-t-2xl"></div>
+                  <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 to-amber-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-amber-900/40 dark:to-amber-800/40"></div>
+                  <div className="relative bg-white/80 dark:bg-gray-800 backdrop-blur-lg border border-white/50 dark:border-gray-700 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 to-amber-400 rounded-t-2xl"></div>
 
                     <div className="flex items-center mb-4">
-                      <div className="bg-gradient-to-br from-green-100 to-green-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500 dark:bg-gray-700">
-                        <Sprout className="h-8 w-8 text-green-600 dark:text-green-300" />
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-amber-100 to-amber-50 shadow-lg group-hover:rotate-12 transition-transform duration-500 dark:bg-gray-700">
+                        <Droplets className="h-6 w-6 text-amber-600 dark:text-amber-300" />
                       </div>
-                      <div>
-                        <p className="text-sm font-medium text-coffee-600 dark:text-gray-300 mb-1">Moisture</p>
-                        <p className="text-3xl font-bold text-coffee-900 dark:text-white group-hover:text-letran-600 transition-colors">
-                          {latestReadings.moisture.toFixed(1)}%
-                        </p>
-                      </div>
+                        <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                          <div className="mb-2"><p className="text-sm font-medium text-coffee-600 dark:text-gray-300">pH</p></div>
+                          <p className="text-3xl font-bold text-coffee-900 dark:text-white group-hover:text-letran-600 transition-colors">{(latestReadings.ph ?? NaN) && !Number.isNaN(latestReadings.ph) ? latestReadings.ph.toFixed(2) : '—'}</p>
+                        </div>
                     </div>
 
                     <div className="flex-1 min-h-[140px]"></div>
@@ -340,7 +359,7 @@ const EnhancedDashboard: React.FC = () => {
                 {/* Battery Card */}
                 <div className="group relative overflow-hidden h-full">
                   <div className="absolute inset-0 bg-gradient-to-br from-secondary-500/20 to-secondary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-secondary-900/40 dark:to-secondary-900/40"></div>
-                  <div className="relative bg-white/80 dark:bg-gray-800 backdrop-blur-lg border border-white/50 dark:border-gray-700 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
+                  <div className="relative bg-white/80 dark:bg-gray-800 backdrop-blur-lg border border-white/50 dark:border-gray-700 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-secondary-500 to-secondary-500 rounded-t-2xl"></div>
                     <div className="flex items-center flex-1">
                       <div className="bg-gradient-to-br from-secondary-100 to-secondary-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500 dark:bg-gray-700">
@@ -518,6 +537,12 @@ const EnhancedDashboard: React.FC = () => {
                           <span className="text-coffee-600 dark:text-gray-300">Moisture:</span>
                           <span className="font-medium text-coffee-900 dark:text-white">{latestData.moisture.toFixed(1)}%</span>
                         </div>
+                        {typeof latestPh === 'number' && (
+                          <div className="flex justify-between">
+                            <span className="text-coffee-600 dark:text-gray-300">pH:</span>
+                            <span className="font-medium text-coffee-900 dark:text-white">{latestPh.toFixed(2)}</span>
+                          </div>
+                        )}
                         {latestData.batteryLevel && (
                           <div className="flex justify-between">
                             <span className="text-coffee-600 dark:text-gray-300">Battery:</span>

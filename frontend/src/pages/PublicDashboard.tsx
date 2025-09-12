@@ -3,6 +3,9 @@ import { Leaf, AlertTriangle, Thermometer, Droplets, Sprout, RefreshCw, Trending
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import DarkModeToggle from '../components/DarkModeToggle';
+import weatherService from '../services/weatherService';
+import { useEffect } from 'react';
+import { useData } from '../contexts/DataContext';
 
 // Hardcoded sample data to avoid any refresh loops or API issues
 const sampleSensorData = [
@@ -66,9 +69,39 @@ const PublicDashboard: React.FC = () => {
   const avgTemperature = Math.round(sampleSensorData.reduce((sum, d) => sum + d.temperature, 0) / sampleSensorData.length);
   const avgHumidity = Math.round(sampleSensorData.reduce((sum, d) => sum + d.humidity, 0) / sampleSensorData.length);
   const avgMoisture = Math.round(sampleSensorData.reduce((sum, d) => sum + d.moisture, 0) / sampleSensorData.length);
+  const [manilaWeather, setManilaWeather] = React.useState<any | null>(null);
+  const { latestSensorData } = useData();
+
+  // compute latest pH if available (use latestSensorData array)
+  const latestPh = React.useMemo(() => {
+    if (!Array.isArray(latestSensorData) || latestSensorData.length === 0) return null;
+    // prefer the most recent reading that includes ph
+    for (let i = latestSensorData.length - 1; i >= 0; i--) {
+      const d = latestSensorData[i] as any;
+      if (typeof d.ph === 'number') return d.ph;
+    }
+    // fallback: compute average of available ph values
+    const phVals = latestSensorData.map((d: any) => d.ph).filter((v: any) => typeof v === 'number');
+    if (phVals.length === 0) return null;
+    return phVals.reduce((s: number, v: number) => s + v, 0) / phVals.length;
+  }, [latestSensorData]);
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const summary = await weatherService.getManilaWeatherSummary();
+        if (mounted) setManilaWeather(summary);
+      } catch (err) {
+        console.warn('PublicDashboard: could not load Manila weather', err);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   return (
     <div className="min-h-screen bg-coffee-50 dark:bg-gray-900">
+  {/* header typography cleaned by site-title/site-subtitle/site-badge styles */}
       {/* Header */}
       <header className="bg-white dark:bg-gray-800 shadow-lg border-b border-coffee-200 dark:border-gray-700 letran-nav-accent">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -78,11 +111,11 @@ const PublicDashboard: React.FC = () => {
                 <Leaf className="h-6 w-6 text-white" />
               </Link>
               <div>
-                <h1 className="text-xl font-semibold text-espresso-900 dark:text-white">
-                  Bean<span className="text-letran-500">To</span>Bin
+                <h1 className="site-title dark:site-title">
+                  Bean<span className="site-accent">To</span>Bin
                 </h1>
-                <p className="text-sm text-espresso-600 dark:text-gray-300">
-                  Environmental Monitoring Dashboard <span className="letran-badge">(Public Access)</span>
+                <p className="site-subtitle">
+                  Environmental Monitoring Dashboard <span className="site-badge">Public Access</span>
                 </p>
               </div>
             </div>
@@ -152,7 +185,7 @@ const PublicDashboard: React.FC = () => {
               {/* Average Temperature Card */}
               <div className="group relative overflow-hidden h-full">
                 <div className="absolute inset-0 bg-gradient-to-br from-letran-500/20 to-red-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
+                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-letran-500 to-red-500 rounded-t-2xl"></div>
 
                   {/* Header */}
@@ -178,7 +211,7 @@ const PublicDashboard: React.FC = () => {
               {/* Average Humidity Card */}
               <div className="group relative overflow-hidden h-full">
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-primary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
+                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-primary-500 rounded-t-2xl"></div>
 
                   {/* Header */}
@@ -204,7 +237,7 @@ const PublicDashboard: React.FC = () => {
               {/* Average Moisture Card */}
               <div className="group relative overflow-hidden h-full">
                 <div className="absolute inset-0 bg-gradient-to-br from-secondary-500/20 to-secondary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
+                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-secondary-500 to-secondary-500 rounded-t-2xl"></div>
 
                   {/* Header */}
@@ -226,17 +259,36 @@ const PublicDashboard: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* pH Card (live when available) */}
+              <div className="group relative overflow-hidden h-full">
+                <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/20 to-purple-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-t-2xl"></div>
+                  <div className="flex items-center mb-4">
+                    <div className="bg-gradient-to-br from-indigo-100 to-purple-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                      <svg className="h-8 w-8 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v6"/><path d="M7 8v6a5 5 0 0 0 10 0V8"/></svg>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Soil pH</p>
+                      <p className="text-3xl font-bold text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{latestPh !== null ? Number(latestPh).toFixed(2) : '—'}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{latestPh !== null ? 'Live reading' : 'No pH data available'}</p>
+                    </div>
+                  </div>
+                  <div className="flex-1 min-h-[160px]"></div>
+                </div>
+              </div>
             </div>
 
             {/* Latest Sensor Data */}
-            <div className="coffee-card-alt dark:bg-gray-800">
+            <div className="coffee-card-alt" data-theme="dark-panel">
               <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                 <h3 className="text-lg font-medium text-gray-900 dark:text-white">Latest Sensor Readings</h3>
               </div>
-              <div className="p-6">
-                <div className="space-y-4">
-                  {sampleSensorData.map((data) => (
-                    <div key={data._id} className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+        <div className="p-6">
+        <div className="space-y-4">
+          {sampleSensorData.map((data) => (
+          <div key={data._id} className="flex items-center justify-between p-4 rounded-lg dashboard-row">
                       <div className="flex items-center space-x-4">
                         <div className="flex-shrink-0">
                           <div className={`w-3 h-3 rounded-full ${getStatusColor(data.status).replace('text-', 'bg-').replace('bg-', 'bg-')}`}></div>
@@ -271,7 +323,7 @@ const PublicDashboard: React.FC = () => {
         )}
 
         {activeTab === 'alerts' && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
+          <div className="rounded-lg shadow">
             <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <h3 className="text-lg font-medium text-gray-900 dark:text-white">Recent Alerts</h3>
             </div>
@@ -284,14 +336,14 @@ const PublicDashboard: React.FC = () => {
         )}
 
         {activeTab === 'sensors' && (
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow">
+          <div className="rounded-lg shadow">
             <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <h3 className="text-lg font-medium text-gray-900 dark:text-white">Sensor Status</h3>
             </div>
             <div className="p-6">
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {sampleSensorData.map((sensor) => (
-                  <div key={sensor._id} className="border dark:border-gray-600 rounded-lg p-4 bg-white dark:bg-gray-700">
+                  <div key={sensor._id} className="border dark:border-gray-600 rounded-lg p-4">
                     <div className="flex items-center justify-between mb-3">
                       <h4 className="font-medium text-gray-900 dark:text-white">{sensor.deviceId}</h4>
                       <span className={`px-2 py-1 text-xs rounded-full ${getStatusColor(sensor.status)}`}>

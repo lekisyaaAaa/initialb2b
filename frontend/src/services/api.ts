@@ -3,11 +3,14 @@ import { ApiResponse, PaginatedResponse, SensorData, Alert, Settings, SensorStat
 
 // Create axios instance with base configuration
 const api: AxiosInstance = axios.create({
-  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:5000/api',
+  // prefer IPv4 loopback in dev to avoid browsers resolving 'localhost' to ::1 (IPv6)
+  baseURL: process.env.REACT_APP_API_URL || 'http://127.0.0.1:5000/api',
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
   },
+  // explicit: do not send cookies by default for token-based auth; this also makes browser CORS behavior clearer
+  withCredentials: false,
 });
 
 // Request interceptor to add auth token

@@ -13,6 +13,7 @@ import AlertsPanel from '../components/ui/AlertsPanel';
 import SmartTips from '../components/ui/SmartTips';
 import Graphs from '../components/ui/Graphs';
 import ErrorBanner from '../components/ui/ErrorBanner';
+import weatherService from '../services/weatherService';
 
 // Top-level WebSocketStatus component (uses hooks at top level)
 const WebSocketStatus: React.FC = () => {
@@ -50,6 +51,31 @@ const Dashboard: React.FC<DashboardProps> = () => {
   // Store refreshData in a ref to prevent re-renders from affecting the interval
   const refreshDataRef = useRef(refreshData);
   refreshDataRef.current = refreshData;
+
+  const [manilaSummary, setManilaSummary] = React.useState<any | null>(null);
+  // compute latest pH reading from the DataContext-provided latestSensorData
+  const latestPh = React.useMemo(() => {
+    if (!Array.isArray(latestSensorData) || latestSensorData.length === 0) return null;
+    for (let i = latestSensorData.length - 1; i >= 0; i--) {
+      const d = latestSensorData[i] as any;
+      if (typeof d.ph === 'number') return d.ph;
+    }
+    const phVals = latestSensorData.map((d: any) => d.ph).filter((v: any) => typeof v === 'number');
+    if (phVals.length === 0) return null;
+    return phVals.reduce((s: number, v: number) => s + v, 0) / phVals.length;
+  }, [latestSensorData]);
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const sum = await weatherService.getManilaWeatherSummary();
+        if (mounted) setManilaSummary(sum);
+      } catch (err) {
+        console.warn('Dashboard: failed fetching Manila summary', err);
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
 
   // REMOVED: One-time data load to prevent refresh loops
   // Users can manually click "Load Weather" button to get data
@@ -99,6 +125,7 @@ const Dashboard: React.FC<DashboardProps> = () => {
 
   return (
     <div className="min-h-screen bg-coffee-50 dark:bg-gray-900">
+  {/* noop: rebuild trigger for CSS changes */}
       {/* Header */}
       <header className="bg-white dark:bg-gray-800 shadow-lg border-b border-coffee-200 dark:border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -146,7 +173,7 @@ const Dashboard: React.FC<DashboardProps> = () => {
                   console.log('Manual weather load clicked');
                   refreshData();
                 }}
-                className="px-3 py-1 text-xs bg-primary-100 text-primary-700 rounded hover:bg-primary-200 transition-colors"
+                className="panel-button panel-button--primary"
                 title="Load Weather Data"
               >
                 Load Weather
@@ -262,7 +289,7 @@ const Dashboard: React.FC<DashboardProps> = () => {
                   id="btn-home-assistant"
                   aria-label="Open SmartBin Console"
                   onClick={() => { window.location.href = '/home-assistant'; }}
-                  className="ml-4 px-2 py-1 text-sm bg-primary-100 text-primary-700 rounded hover:bg-primary-200 transition-colors"
+                  className="ml-4 panel-button panel-button--primary"
                   title="SmartBin Console"
                 >
                   SmartBin Console
@@ -284,17 +311,17 @@ const Dashboard: React.FC<DashboardProps> = () => {
               {/* Active Devices Card */}
               <div className="group relative overflow-hidden h-full">
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-letran-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
+                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-letran-500 rounded-t-2xl"></div>
+                  <div className="mb-2">
+                    <p className="text-sm font-medium text-espresso-600">Active Devices</p>
+                  </div>
                   <div className="flex items-center flex-1">
-                    <div className="bg-gradient-to-br from-blue-100 to-blue-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
-                      <Thermometer className="h-8 w-8 text-blue-600" />
+                    <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl bg-gradient-to-br from-blue-100 to-blue-50 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                      <Thermometer className="h-6 w-6 text-blue-600" />
                     </div>
-                    <div>
-                      <p className="text-sm font-medium text-espresso-600 mb-1">Active Devices</p>
-                      <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">
-                        {safeLatestSensorData.length}
-                      </p>
+                    <div className="ml-4 flex items-center justify-center flex-1 min-h-[72px]">
+                      <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">{safeLatestSensorData.length}</p>
                     </div>
                   </div>
                 </div>
@@ -303,17 +330,17 @@ const Dashboard: React.FC<DashboardProps> = () => {
               {/* Active Alerts Card */}
               <div className="group relative overflow-hidden h-full">
                 <div className="absolute inset-0 bg-gradient-to-br from-red-500/20 to-letran-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
+                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-letran-500 rounded-t-2xl"></div>
+                  <div className="mb-2">
+                    <p className="text-sm font-medium text-espresso-600">Active Alerts</p>
+                  </div>
                   <div className="flex items-center flex-1">
-                    <div className="bg-gradient-to-br from-red-100 to-red-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
-                      <AlertTriangle className="h-8 w-8 text-red-600" />
+                    <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl bg-gradient-to-br from-red-100 to-red-50 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                      <AlertTriangle className="h-6 w-6 text-red-600" />
                     </div>
-                    <div>
-                      <p className="text-sm font-medium text-espresso-600 mb-1">Active Alerts</p>
-                      <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">
-                        {unresolvedAlerts.length}
-                      </p>
+                    <div className="ml-4 flex items-center justify-center flex-1 min-h-[72px]">
+                      <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">{unresolvedAlerts.length}</p>
                     </div>
                   </div>
                 </div>
@@ -322,21 +349,17 @@ const Dashboard: React.FC<DashboardProps> = () => {
               {/* Average Humidity Card */}
               <div className="group relative overflow-hidden h-full">
                 <div className="absolute inset-0 bg-gradient-to-br from-coffee-500/20 to-primary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
+                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-coffee-500 to-primary-500 rounded-t-2xl"></div>
 
                   {/* Header */}
                   <div className="flex items-center mb-4">
-                    <div className="bg-gradient-to-br from-coffee-200 to-coffee-100 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
-                      <Droplets className="h-8 w-8 text-primary-600" />
+                    <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-coffee-200 to-coffee-100 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                      <Droplets className="h-6 w-6 text-primary-600" />
                     </div>
-                    <div>
+                    <div className="flex flex-col justify-center flex-1 min-h-[72px]">
                       <p className="text-sm font-medium text-espresso-600 mb-1">Avg Humidity</p>
-                      <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">
-                        {safeLatestSensorData.length > 0
-                          ? Math.round(safeLatestSensorData.reduce((sum: number, d: SensorData) => sum + (d.humidity || 0), 0) / safeLatestSensorData.length)
-                          : 0}%
-                      </p>
+                      <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">{safeLatestSensorData.length > 0 ? Math.round(safeLatestSensorData.reduce((sum: number, d: SensorData) => sum + (d.humidity || 0), 0) / safeLatestSensorData.length) : 0}%</p>
                     </div>
                   </div>
 
@@ -348,21 +371,17 @@ const Dashboard: React.FC<DashboardProps> = () => {
               {/* Average Moisture Card */}
               <div className="group relative overflow-hidden h-full">
                 <div className="absolute inset-0 bg-gradient-to-br from-secondary-500/20 to-secondary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full">
+                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                   <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-secondary-500 to-secondary-500 rounded-t-2xl"></div>
 
                   {/* Header */}
                   <div className="flex items-center mb-4">
-                    <div className="bg-gradient-to-br from-secondary-100 to-secondary-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
-                      <Sprout className="h-8 w-8 text-secondary-600" />
+                    <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-secondary-100 to-secondary-50 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                      <Sprout className="h-6 w-6 text-secondary-600" />
                     </div>
-                    <div>
+                    <div className="flex flex-col justify-center flex-1 min-h-[72px]">
                       <p className="text-sm font-medium text-espresso-600 mb-1">Avg Moisture</p>
-                      <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">
-                        {safeLatestSensorData.length > 0
-                          ? Math.round(safeLatestSensorData.reduce((sum: number, d: SensorData) => sum + (d.moisture || 0), 0) / safeLatestSensorData.length)
-                          : 0}%
-                      </p>
+                      <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">{safeLatestSensorData.length > 0 ? Math.round(safeLatestSensorData.reduce((sum: number, d: SensorData) => sum + (d.moisture || 0), 0) / safeLatestSensorData.length) : 0}%</p>
                     </div>
                   </div>
 
@@ -370,12 +389,52 @@ const Dashboard: React.FC<DashboardProps> = () => {
                   <div className="flex-1 min-h-[140px]"></div>
                 </div>
               </div>
+              
+              {/* pH Quick Stat Card */}
+              <div className="group relative overflow-hidden h-full">
+                <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-t-2xl"></div>
+                  <div className="mb-2">
+                    <p className="text-sm font-medium text-espresso-600">Soil pH (sample)</p>
+                  </div>
+                  <div className="flex items-center flex-1">
+                    <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-50 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                      <svg className="h-6 w-6 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v6"/><path d="M7 8v6a5 5 0 0 0 10 0V8"/></svg>
+                    </div>
+                    <div className="ml-4 flex items-center justify-center flex-1 min-h-[72px]">
+                      <p className="text-3xl font-bold text-espresso-900">6.8</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Manila Weather Snapshot (if loaded) */}
+              {manilaSummary && (
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-yellow-500/10 to-orange-500/10 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                  <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-t-2xl"></div>
+                    <div className="mb-2">
+                      <p className="text-sm font-medium text-espresso-600">Manila Weather (avg)</p>
+                    </div>
+                    <div className="flex items-center flex-1">
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl bg-gradient-to-br from-yellow-100 to-orange-50 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                        <Thermometer className="h-6 w-6 text-yellow-600" />
+                      </div>
+                      <div className="ml-4 flex items-center justify-center flex-1 min-h-[72px]">
+                        <p className="text-3xl font-bold text-espresso-900">{manilaSummary.averageTemp}°C • {manilaSummary.averageHumidity}%</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Latest Sensor Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {safeLatestSensorData.length === 0 ? (
-                <div className="col-span-full p-6 bg-gray-50 rounded-lg text-center text-gray-500">
+                <div className="col-span-full p-6 admin-empty-card rounded-lg text-center text-gray-500">
                   <Thermometer className="h-12 w-12 text-gray-400 mx-auto mb-2" />
                   No sensor data available — click "Load Weather" to fetch data
                 </div>

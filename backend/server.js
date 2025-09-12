@@ -57,16 +57,30 @@ app.use(compression());
 
 // app.use('/api/', limiter); // Disabled for development
 
-// CORS configuration
+// CORS configuration - allow common local dev origins dynamically to avoid brittle lists
 const corsOptions = {
-  origin: process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : [
-    'http://localhost:3000', 
-    'http://localhost:3002',
-    'http://localhost:3003',
-    'http://127.0.0.1:3000',
-    'http://127.0.0.1:3002',
-    'http://127.0.0.1:3003'
-  ],
+  origin: function(origin, callback) {
+    // If no origin (e.g., same-origin or curl), allow it
+    if (!origin) return callback(null, true);
+    // Allow explicit list from env if provided
+    if (process.env.CORS_ORIGINS) {
+      const allowed = process.env.CORS_ORIGINS.split(',').map(s => s.trim());
+      if (allowed.includes(origin)) return callback(null, true);
+    }
+    // Allow localhost and 127.0.0.1 on any port during development
+    try {
+      const u = new URL(origin);
+      // allow IPv4 and IPv6 localhost variants during development
+      const hostname = u.hostname;
+      if ((hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') && (process.env.NODE_ENV || 'development') !== 'production') {
+        return callback(null, true);
+      }
+    } catch (e) {
+      // ignore parse errors and fallthrough
+    }
+    // Fallback: block other origins
+    return callback(new Error('Not allowed by CORS'));
+  },
   credentials: true,
   optionsSuccessStatus: 200
 };
@@ -120,11 +134,28 @@ const corsOptions = {
         console.warn('\u26A0\uFE0F Postgres initialization failed - running without DB:', err && err.message ? err.message : err);
       }
     })();
-app.use(cors(corsOptions));
+// In development, prefer a permissive CORS policy to avoid brittle origin checks
+if ((process.env.NODE_ENV || 'development') !== 'production') {
+  console.log('Development mode: enabling permissive CORS for all origins');
+  app.use(cors());
+} else {
+  app.use(cors(corsOptions));
+}
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Friendly JSON parse error handler: body-parser throws a SyntaxError which would
+// surface to the generic error handler. Catch it early and return a clear 400
+// without crashing or producing confusing stack traces in logs.
+app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.parse.failed') {
+    console.warn('JSON parse failed for request', req.method, req.originalUrl, 'raw body begins with:', (req && req.body && typeof req.body === 'string') ? req.body.slice(0,80) : typeof req.body);
+    return res.status(400).json({ success: false, message: 'Invalid JSON in request body' });
+  }
+  next(err);
+});
 
 
 // Sequelize/Postgres: No MongoDB connection needed
@@ -224,7 +255,9 @@ server.on('error', (err) => {
   }
 });
 
-server.listen(PORT, '127.0.0.1', () => {
+// Bind to 0.0.0.0 in development so localhost resolves (IPv4/IPv6) from browsers reliably
+const BIND_HOST = (process.env.BIND_HOST || '0.0.0.0');
+server.listen(PORT, BIND_HOST, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🔌 WebSocket server running on ws://localhost:${PORT}`);

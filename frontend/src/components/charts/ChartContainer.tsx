@@ -4,6 +4,7 @@ import { SensorData } from '../../types';
 import TemperatureChart from './TemperatureChart';
 import HumidityChart from './HumidityChart';
 import MoistureChart from './MoistureChart';
+import PhChart from './PhChart';
 import MultiSensorChart from './MultiSensorChart';
 import { useData } from '../../contexts/DataContext';
 
@@ -25,7 +26,7 @@ interface ChartContainerProps {
 }
 
 type TimeRange = '1h' | '6h' | '24h' | '7d' | '30d';
-type ChartType = 'temperature' | 'humidity' | 'moisture' | 'multi';
+type ChartType = 'temperature' | 'humidity' | 'moisture' | 'ph' | 'multi';
 
 const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }) => {
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
@@ -70,7 +71,8 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
     { value: 'multi', label: 'All Sensors', icon: BarChart3 },
     { value: 'temperature', label: 'Temperature', icon: TrendingUp },
     { value: 'humidity', label: 'Humidity', icon: TrendingUp },
-    { value: 'moisture', label: 'Moisture', icon: TrendingUp },
+  { value: 'moisture', label: 'Moisture', icon: TrendingUp },
+  { value: 'ph', label: 'pH', icon: TrendingUp },
   ];
 
   const renderChart = () => {
@@ -83,6 +85,8 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
         return <HumidityChart data={filteredData} height={chartHeight} className="h-full" />;
       case 'moisture':
         return <MoistureChart data={filteredData} height={chartHeight} className="h-full" />;
+      case 'ph':
+        return <PhChart data={filteredData} height={chartHeight} className="h-full" />;
       case 'multi':
       default:
         return <MultiSensorChart data={filteredData} height={chartHeight} className="h-full" />;

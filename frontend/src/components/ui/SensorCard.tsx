@@ -32,6 +32,17 @@ const SensorCard: React.FC<Props> = ({ data }) => {
           <span>{data.batteryLevel ?? 'N/A'}%</span>
         </div>
       </div>
+
+      {/* pH Row (if available) */}
+      {typeof data.ph === 'number' && (
+        <div className="mt-3 text-sm">
+          <div className="flex items-center space-x-2">
+            <svg className="w-4 h-4 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v6"/><path d="M7 8v6a5 5 0 0 0 10 0V8"/></svg>
+            <span className="text-coffee-600 dark:text-gray-300">pH</span>
+            <span className="ml-2 font-medium text-coffee-900 dark:text-white">{data.ph.toFixed(2)}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

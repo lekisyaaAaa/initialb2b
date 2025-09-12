@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Phone, 
@@ -26,32 +26,60 @@ const ContactPage: React.FC = () => {
   const contacts: ContactInfo[] = [
     {
       name: "Aranda, Trishia Nicolein D.",
-      position: "Environmental Systems Manager",
-      department: "Environmental Monitoring Division",
+      position: "Documentation Specialist",
+      department: "Research & Documentation Unit",
       phone: "+63 917 123 4567",
       email: "trishianicolein.aranda@letran.edu.ph",
-      address: "Environmental Building, 123 Science Avenue, Quezon City",
+      address: "Colegio de San Juan de Letran",
       availability: "Monday to Friday, 8:00 AM - 5:00 PM"
     },
     {
       name: "De Silva, Justine Erickson M.",
-      position: "Senior Technical Specialist",
-      department: "Sensor Technology Unit",
+      position: "IoT Hardware Engineer",
+      department: "IoT Hardware & Sensor Technology Division",
       phone: "+63 928 987 6543",
       email: "justineerickson.desilva@letran.edu.ph",
-      address: "Technology Center, 456 Innovation Street, Makati City",
-      availability: "Monday to Saturday, 9:00 AM - 6:00 PM"
+      address: "Colegio de San Juan de Letran",
+      availability: "Monday to Friday, 8:00 AM - 5:00 PM"
     },
     {
       name: "Dubouzet, Ranzheskha Lequixia L.",
-      position: "Data Analytics Coordinator",
-      department: "Information Systems Department",
+      position: "Full Stack Web Developer",
+      department: "Information & Communications Technology (ICT) Department",
       phone: "+63 939 555 7890",
       email: "ranzheskhalequixia.dubouzet@letran.edu.ph",
-      address: "Data Center Building, 789 Digital Plaza, Taguig City",
-      availability: "Monday to Friday, 7:00 AM - 4:00 PM"
+      address: "Colegio de San Juan de Letran",
+      availability: "Monday to Friday, 8:00 AM - 5:00 PM"
     }
   ];
+
+  // Toast state for copy feedback
+  const [toast, setToast] = useState<string | null>(null);
+  const toastTimer = useRef<number | null>(null);
+  const toastClearTimer = useRef<number | null>(null);
+  const [toastActive, setToastActive] = useState(false);
+
+  const showToast = (msg: string, ms = 2500) => {
+    setToast(msg);
+    setToastActive(true);
+    // clear any existing timers
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    if (toastClearTimer.current) window.clearTimeout(toastClearTimer.current);
+
+    // After ms, start hide animation then clear toast after animation duration
+    toastTimer.current = window.setTimeout(() => {
+      setToastActive(false);
+      // allow animation (300ms) to finish before removing from DOM
+      toastClearTimer.current = window.setTimeout(() => setToast(null), 300) as unknown as number;
+    }, ms) as unknown as number;
+  };
+
+  useEffect(() => {
+    return () => {
+      if (toastTimer.current) window.clearTimeout(toastTimer.current);
+      if (toastClearTimer.current) window.clearTimeout(toastClearTimer.current);
+    };
+  }, []);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-coffee-50 to-coffee-100 dark:from-gray-900 dark:to-gray-800">
@@ -74,7 +102,7 @@ const ContactPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {contacts.map((contact, index) => (
             <div 
               key={index}
@@ -118,9 +146,16 @@ const ContactPage: React.FC = () => {
           <Mail className="w-5 h-5 text-coffee-600 mr-3 mt-1 flex-shrink-0 dark:text-gray-300" />
                   <div>
                     <p className="text-sm text-coffee-500 font-medium">Email</p>
-                    <a 
-                      href={`mailto:${contact.email}`}
-            className="text-coffee-800 hover:text-coffee-600 transition-colors break-all dark:text-gray-200 dark:hover:text-white"
+                    <a
+                      href={`mailto:${contact.email}?subject=${encodeURIComponent('Inquiry about Environmental Monitoring')}&body=${encodeURIComponent(`Hello ${contact.name},%0D%0A%0D%0AI would like to ask about...`)}`}
+                      className="text-coffee-800 hover:text-coffee-600 transition-colors break-all dark:text-gray-200 dark:hover:text-white"
+                      aria-label={`Email ${contact.name}`}
+                      onClick={(e) => {
+                        // Use in-page mailto navigation to avoid opening webmail in a new tab
+                        e.preventDefault();
+                        const mailto = `mailto:${contact.email}?subject=${encodeURIComponent('Inquiry about Environmental Monitoring')}&body=${encodeURIComponent(`Hello ${contact.name},\r\n\r\nI would like to ask about...`)}`;
+                        window.location.href = mailto;
+                      }}
                     >
                       {contact.email}
                     </a>
@@ -146,18 +181,60 @@ const ContactPage: React.FC = () => {
 
       <div className="bg-coffee-50 dark:bg-gray-900 px-6 py-4">
                 <div className="flex space-x-3">
-                  <a
-                    href={`tel:${contact.phone}`}
-        className="flex-1 bg-coffee-600 text-white text-center py-2 px-4 rounded-lg hover:bg-coffee-700 transition-colors dark:bg-coffee-700 dark:hover:bg-coffee-800"
+                  {/* Replace direct call/email actions with copy actions to avoid triggering external apps */}
+      <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        if (navigator?.clipboard?.writeText) {
+                          await navigator.clipboard.writeText(contact.phone);
+                        } else {
+                          const ta = document.createElement('textarea');
+                          ta.value = contact.phone;
+                          ta.style.position = 'fixed';
+                          document.body.appendChild(ta);
+                          ta.focus();
+                          ta.select();
+                          document.execCommand('copy');
+                          document.body.removeChild(ta);
+                        }
+        showToast('Phone copied to clipboard');
+                      } catch (err) {
+                        console.error('Failed to copy phone:', err);
+                      }
+                    }}
+                    aria-label={`Copy phone number for ${contact.name}`}
+                    className="flex-1 bg-coffee-600 text-white text-center py-2 px-4 rounded-lg hover:bg-coffee-700 transition-colors dark:bg-coffee-700 dark:hover:bg-coffee-800"
                   >
-                    Call
-                  </a>
-                  <a
-                    href={`mailto:${contact.email}`}
-        className="flex-1 bg-coffee-200 text-coffee-800 text-center py-2 px-4 rounded-lg hover:bg-coffee-300 transition-colors dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
+                    Copy Phone
+                  </button>
+
+      <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        if (navigator?.clipboard?.writeText) {
+                          await navigator.clipboard.writeText(contact.email);
+                        } else {
+                          const ta = document.createElement('textarea');
+                          ta.value = contact.email;
+                          ta.style.position = 'fixed';
+                          document.body.appendChild(ta);
+                          ta.focus();
+                          ta.select();
+                          document.execCommand('copy');
+                          document.body.removeChild(ta);
+                        }
+        showToast('Email copied to clipboard');
+                      } catch (err) {
+                        console.error('Failed to copy email:', err);
+                      }
+                    }}
+                    aria-label={`Copy email address for ${contact.name}`}
+                    className="flex-1 bg-coffee-200 text-coffee-800 text-center py-2 px-4 rounded-lg hover:bg-coffee-300 transition-colors dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600"
                   >
-                    Email
-                  </a>
+                    Copy Email
+                  </button>
                 </div>
               </div>
             </div>
@@ -212,6 +289,12 @@ const ContactPage: React.FC = () => {
           </div>
         </div>
       </div>
+      {/* Toast / snackbar */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none">
+          <div className={`pointer-events-auto bg-black text-white px-4 py-2 rounded-lg shadow-lg opacity-0 transform translate-y-4 ${toastActive ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'} transition-all duration-300`}>{toast}</div>
+        </div>
+      )}
     </div>
   );
 };

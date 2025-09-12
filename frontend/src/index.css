@@ -128,10 +128,73 @@
   color: #8E44AD;
   }
 
+  /* Cleaner site title and subtitle for header (perfectionist UI) */
+  .site-title {
+    /* responsive, slightly larger on wider screens but constrained */
+    font-size: clamp(1.125rem, 1.8vw, 1.375rem); /* 18px -> 22px max */
+    font-weight: 800;
+    letter-spacing: -0.0125em;
+    color: var(--heading, #111827);
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    line-height: 1;
+  }
+
+  /* Accent inside the title — subtle pill for brand color without overwhelming */
+  .site-title .site-accent {
+    color: var(--tertiary-accent, #8E44AD);
+    font-weight: 800;
+    background: linear-gradient(90deg, rgba(142,68,173,0.06), transparent);
+    padding: 0.06rem 0.35rem;
+    border-radius: 6px;
+    font-size: 0.92em;
+    display: inline-block;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .site-subtitle {
+    font-size: 0.875rem; /* 14px */
+    color: rgba(55,65,81,0.66); /* muted slate */
+    margin-top: 0.125rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    line-height: 1.08;
+  }
+
+  .site-badge {
+    display: inline-block;
+    padding: 0.125rem 0.45rem;
+    font-size: 0.68rem; /* slightly smaller, tighter */
+    border-radius: 9999px;
+    background: rgba(142,68,173,0.06);
+    color: var(--tertiary-accent, #8E44AD);
+    border: 1px solid rgba(142,68,173,0.08);
+    box-shadow: none;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  /* Dark-mode adjustments for header typography */
+  .dark .site-title { color: var(--heading); }
+  .dark .site-title .site-accent {
+    color: var(--tertiary-accent);
+    background: rgba(142,68,173,0.06);
+    padding: 0.06rem 0.36rem;
+    border-radius: 6px;
+  }
+  .dark .site-subtitle { color: rgba(226,234,248,0.82); }
+  .dark .site-badge { background: rgba(142,68,173,0.12); color: #fff; border-color: rgba(255,255,255,0.06); }
+
   .letran-alert {
-  @apply p-4 rounded-r-lg;
-  border-left: 4px solid #8E44AD;
-  background-color: rgba(142,68,173,0.04);
+    padding: 1rem; /* p-4 */
+    border-top-right-radius: 0.5rem; /* rounded-r-lg -> right corners */
+    border-bottom-right-radius: 0.5rem;
+    border-left: 4px solid #8E44AD;
+    background-color: rgba(142,68,173,0.04);
   }
 
   /* Premium Glass Card Effects */
@@ -295,7 +358,21 @@
   border-left: 4px solid rgba(0,191,166,0.12); /* subtle teal accent */
   }
 
-  .dark .coffee-card-alt { border-top: 3px solid rgba(3,169,244,0.10); }
+  /* Ensure the alternate coffee card switches fully to the dark palette (override light gradient) */
+  .dark .coffee-card-alt {
+    background: linear-gradient(180deg, var(--card) 0%, var(--card-2) 100%) !important;
+    color: var(--text) !important;
+    border-top: 3px solid rgba(3,169,244,0.10);
+    box-shadow: 0 12px 30px rgba(0,0,0,0.6) !important;
+  }
+
+  /* Target the header and body inside .coffee-card-alt without referencing Tailwind utility class names
+     (referencing utility class selectors like `.p-6` can trigger PostCSS/Tailwind circular @apply errors).
+     Using a structural selector avoids the circular dependency while making immediate children transparent. */
+  .dark .coffee-card-alt > * {
+    background-color: transparent !important;
+    color: var(--text) !important;
+  }
 
   /* Buttons and interactive elements */
   .dark .btn,
@@ -307,6 +384,24 @@
   }
 
   .dark .btn-primary {
+    .dark .bg-gray-50 {
+      background-color: rgba(11,18,32,0.55) !important;
+      color: #e6eef8 !important;
+    }
+
+    .dark .bg-gray-100 {
+      background-color: rgba(15,21,30,0.62) !important;
+      color: #e6eef8 !important;
+    }
+
+    .dark .bg-coffee-50 {
+      background-color: rgba(13,18,26,0.5) !important;
+      color: #e6eef8 !important;
+    }
+
+    .dark .border-coffee-200 {
+      border-color: rgba(255,255,255,0.04) !important;
+    }
     background: linear-gradient(90deg, rgba(0,191,166,0.12), rgba(0,191,166,0.06));
     border: 1px solid rgba(0,191,166,0.18);
     color: var(--heading);
@@ -343,6 +438,19 @@
   /* Glass and premium shimmer tweaks */
   .dark .glass-card { background: rgba(255,255,255,0.02); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.04); }
   .dark .premium-shimmer::before { background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent); }
+
+  /* Dashboard specific tweaks: only apply in dark mode to avoid changing light theme */
+  .dark .dashboard-card {
+    background: linear-gradient(180deg, rgba(20,24,30,0.88), rgba(18,20,26,0.95)) !important;
+    border-color: rgba(255,255,255,0.04) !important;
+    box-shadow: 0 12px 30px rgba(3, 6, 12, 0.6) !important;
+  }
+
+  .dark .dashboard-row {
+    background-color: rgba(42,48,58,0.9) !important; /* matches the site's dark slate tone */
+    color: var(--text) !important;
+    border-radius: 0.5rem; /* keep rounded look */
+  }
 
   /* Headings and text */
   .dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6 { color: var(--heading); }
@@ -386,10 +494,114 @@
 /* Subtle background for card-like elements using backdrop blur */
 .dark .backdrop-blur-sm { background-color: rgba(17,24,39,0.4) !important; }
 
+/* Highest specificity fallback: ensure the big outer panels flip to dark when html has .dark */
+html.dark .coffee-card-alt {
+  background: linear-gradient(180deg, #111217 0%, #16161a 100%) !important;
+  color: #e6eef8 !important;
+  border-top-color: rgba(3,169,244,0.08) !important;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.6) !important;
+}
+
+/* Final failsafe: target the specific panel instance with a data attribute so this rule always wins */
+html.dark [data-theme="dark-panel"] {
+  background: linear-gradient(180deg, #0f1216 0%, #17181c 100%) !important;
+  color: #e6eef8 !important;
+  border-top-color: rgba(3,169,244,0.08) !important;
+  box-shadow: 0 28px 60px rgba(0,0,0,0.7) !important;
+}
+
+/* Admin dashboard empty-state card: not-too-dark tone for readability */
+html.dark .admin-empty-card {
+  background: linear-gradient(180deg, rgba(34,40,49,0.85), rgba(30,34,40,0.9)) !important;
+  color: rgba(230,238,248,0.95) !important;
+  border: 1px solid rgba(255,255,255,0.04) !important;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.55) !important;
+}
+
+html.dark .admin-empty-card .text-gray-500 { color: rgba(190,200,210,0.75) !important; }
+html.dark .admin-empty-card svg { color: rgba(160,170,180,0.9) !important; }
+
+/* Ensure glass-style dashboard cards become dark-only in dark mode (high specificity fallback) */
+html.dark .dashboard-card {
+  background: linear-gradient(180deg, rgba(14,18,26,0.86), rgba(10,14,20,0.95)) !important;
+  color: #e6eef8 !important;
+  border-color: rgba(255,255,255,0.04) !important;
+  box-shadow: 0 18px 44px rgba(0,0,0,0.7) !important;
+}
+
 /* Ensure placeholder/light text flips to readable color in dark */
 .dark .text-espresso-900, .dark .text-espresso-800 { color: #e6eef8 !important; }
 .dark .text-gray-900 { color: #e6eef8 !important; }
 
 /* Buttons that used light backgrounds should get darker complements */
 .dark .btn-secondary, .dark .btn-primary, .dark .btn { color: #f8fafc !important; }
+
+  /* Reusable panel button used for small nav-panel actions (Load Weather, SmartBin Console).
+     Polished spacing, typography and subtle shadows for a clean, consistent header. */
+  .panel-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.35rem 0.9rem; /* balanced touch target */
+    min-height: 32px;
+    font-size: 0.8125rem; /* 13px - slightly larger than text-xs for readability */
+    line-height: 1;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+    color: #0b1220;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfbfb 100%);
+    border: 1px solid rgba(9,10,14,0.06);
+    border-radius: 0.5rem;
+    transition: box-shadow 180ms ease, transform 150ms ease, background-color 180ms ease, color 180ms ease;
+    text-decoration: none;
+    cursor: pointer;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .panel-button:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(0,191,166,0.12);
+  }
+
+  .panel-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 20px rgba(3,6,12,0.06);
+  }
+
+  /* Variant for primary/light accent when shown in the header (keeps semantics but no heavy color conflicts) */
+  .panel-button--primary {
+    background: linear-gradient(180deg, #fffaf6 0%, #fff7f0 100%);
+    border-color: rgba(142,68,173,0.08);
+    color: #2b2b2b;
+  }
+
+  /* Neutral/ghost variant (used for small icon toggles) */
+  .panel-button--ghost {
+    background: transparent;
+    border: 1px solid rgba(11,18,32,0.04);
+    color: inherit;
+    padding: 0.25rem 0.6rem;
+  }
+
+  /* Dark-mode base overrides */
+  .dark .panel-button {
+    background: linear-gradient(180deg, rgba(28,32,38,0.92), rgba(18,20,24,0.96));
+    color: var(--heading);
+    border: 1px solid rgba(255,255,255,0.04);
+    box-shadow: 0 6px 18px rgba(0,0,0,0.65);
+  }
+
+  .dark .panel-button--primary {
+    background: linear-gradient(180deg, rgba(30,34,40,0.92), rgba(22,26,32,0.96));
+    color: var(--heading);
+    border-color: rgba(255,255,255,0.045);
+  }
+
+  /* Highest-specificity fallback when html has .dark */
+  html.dark .panel-button {
+    background: linear-gradient(180deg, #0f1216 0%, #17181c 100%) !important;
+    color: #e6eef8 !important;
+    border-color: rgba(255,255,255,0.04) !important;
+    box-shadow: 0 18px 44px rgba(0,0,0,0.72) !important;
+  }
 

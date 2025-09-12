@@ -21,6 +21,7 @@ export interface SensorData {
   temperature: number;
   humidity: number;
   moisture: number;
+  ph?: number;
   timestamp: string;
   status: 'normal' | 'warning' | 'critical';
   batteryLevel?: number;
