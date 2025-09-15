@@ -22,6 +22,11 @@ export interface SensorData {
   humidity: number;
   moisture: number;
   ph?: number;
+  ec?: number;
+  nitrogen?: number;
+  phosphorus?: number;
+  potassium?: number;
+  waterLevel?: number;
   timestamp: string;
   status: 'normal' | 'warning' | 'critical';
   batteryLevel?: number;
@@ -31,7 +36,7 @@ export interface SensorData {
 
 export interface Alert {
   _id: string;
-  type: 'temperature' | 'humidity' | 'moisture' | 'device_offline' | 'device_online' | 'battery_low';
+  type: 'temperature' | 'humidity' | 'moisture' | 'device_offline' | 'device_online' | 'battery_low' | 'ph' | 'ec' | 'nitrogen' | 'phosphorus' | 'potassium' | 'water_level';
   severity: 'low' | 'medium' | 'high' | 'critical';
   message: string;
   deviceId: string;
@@ -58,6 +63,31 @@ export interface Settings {
     };
     batteryLevel: {
       warning: number;
+      critical: number;
+    };
+    ph: {
+      minWarning: number;
+      minCritical: number;
+      maxWarning: number;
+      maxCritical: number;
+    };
+    ec: {
+      warning: number;
+      critical: number;
+    };
+    nitrogen: {
+      minWarning: number;
+      minCritical: number;
+    };
+    phosphorus: {
+      minWarning: number;
+      minCritical: number;
+    };
+    potassium: {
+      minWarning: number;
+      minCritical: number;
+    };
+    waterLevel: {
       critical: number;
     };
   };

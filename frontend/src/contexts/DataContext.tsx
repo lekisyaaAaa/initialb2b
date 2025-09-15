@@ -213,6 +213,12 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
           temperature: weather.temperature,
           humidity: weather.humidity,
           moisture: weather.moisture,
+          ph: weather.ph,
+          ec: weather.ec,
+          nitrogen: weather.nitrogen,
+          phosphorus: weather.phosphorus,
+          potassium: weather.potassium,
+          waterLevel: weather.waterLevel,
           timestamp: weather.timestamp,
           status: weather.status,
           batteryLevel: weather.batteryLevel,
@@ -291,20 +297,63 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   }, []); // EMPTY dependency array to prevent loops
   */
 
-  // Periodic data refresh - DISABLED AGAIN to stop refresh loop
-  /*
+  // Periodic data refresh with graceful failure handling
   useEffect(() => {
-    const intervalId = setInterval(() => {
-      if (!isCurrentlyLoading.current && !cooldownActive.current) {
-        console.log('DataContext: Periodic refresh triggered');
-        refreshData();
-      }
-    }, 300000); // Refresh every 5 minutes (300 seconds) for conservative updates
+    let intervalId: NodeJS.Timeout;
+    let consecutiveFailures = 0;
+    const maxConsecutiveFailures = 5;
+    const baseInterval = 5000; // 5 seconds
+    const maxInterval = 60000; // 1 minute max backoff
 
-    return () => clearInterval(intervalId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // EMPTY dependency array to prevent loops
-  */
+    const pollData = async () => {
+      try {
+        // Only poll if we have a valid token (user is logged in)
+        const token = localStorage.getItem('token');
+        if (!token) {
+          console.log('DataContext: No auth token, skipping poll');
+          return;
+        }
+
+        await refreshData();
+        consecutiveFailures = 0; // Reset on success
+
+        // Schedule next poll
+        intervalId = setTimeout(pollData, baseInterval);
+
+      } catch (error: any) {
+        consecutiveFailures++;
+        console.warn(`DataContext: Poll failed (${consecutiveFailures}/${maxConsecutiveFailures})`, error.message);
+
+        // If too many consecutive failures, increase interval (exponential backoff)
+        if (consecutiveFailures >= maxConsecutiveFailures) {
+          const backoffInterval = Math.min(baseInterval * Math.pow(2, consecutiveFailures - maxConsecutiveFailures), maxInterval);
+          console.warn(`DataContext: Too many failures, backing off to ${backoffInterval}ms`);
+          intervalId = setTimeout(pollData, backoffInterval);
+        } else {
+          // Retry sooner for initial failures
+          intervalId = setTimeout(pollData, baseInterval);
+        }
+
+        // If network error, mark as disconnected
+        if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT') {
+          setIsConnected(false);
+        }
+      }
+    };
+
+    // Start polling after a brief delay
+    const startPolling = () => {
+      intervalId = setTimeout(pollData, 2000);
+    };
+
+    startPolling();
+
+    return () => {
+      if (intervalId) {
+        clearTimeout(intervalId);
+      }
+    };
+  }, []); // Empty dependency array - this should only run once
 
   const value: DataContextType = {
     latestSensorData,

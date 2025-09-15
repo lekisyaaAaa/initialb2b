@@ -14,6 +14,7 @@ const authRoutes = require('./routes/auth');
 const sensorRoutes = require('./routes/sensors');
 const alertRoutes = require('./routes/alerts');
 const settingsRoutes = require('./routes/settings');
+const actuatorRoutes = require('./routes/actuators');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -161,14 +162,38 @@ app.use((err, req, res, next) => {
 // Sequelize/Postgres: No MongoDB connection needed
 // Database is initialized via Sequelize models and scripts
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
-  res.status(200).json({
-    status: 'OK',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development'
-  });
+// Health check endpoint with database status
+app.get('/api/health', async (req, res) => {
+  try {
+    // Check database connection
+    const sequelize = require('./services/database_pg');
+    await sequelize.authenticate();
+
+    res.status(200).json({
+      success: true,
+      status: 'OK',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      environment: process.env.NODE_ENV || 'development',
+      database: {
+        status: 'connected',
+        dialect: 'postgresql'
+      }
+    });
+  } catch (dbError) {
+    console.error('Health check - Database error:', dbError.message);
+    res.status(503).json({
+      success: false,
+      status: 'Database unavailable',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      environment: process.env.NODE_ENV || 'development',
+      database: {
+        status: 'disconnected',
+        error: dbError.message
+      }
+    });
+  }
 });
 
 // Lightweight internal ping for debugging connectivity (temporary)
@@ -181,16 +206,17 @@ app.use('/api/auth', authRoutes);
 app.use('/api/sensors', sensorRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/actuators', actuatorRoutes);
 
-// 404 handler
+// 404 handler for unknown routes
 app.use('*', (req, res) => {
   res.status(404).json({
     success: false,
-    message: 'Route not found'
+    message: `Route ${req.originalUrl} not found`
   });
 });
 
-// Error handling middleware
+// Error handling middleware (must be last)
 app.use(errorHandler);
 
 // Start the server

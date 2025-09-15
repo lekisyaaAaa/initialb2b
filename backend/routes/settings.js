@@ -56,7 +56,20 @@ router.put('/thresholds', [auth, adminOnly], [
   body('moisture.warning').optional().isFloat({ min: 0, max: 100 }).withMessage('Moisture warning must be between 0 and 100'),
   body('moisture.critical').optional().isFloat({ min: 0, max: 100 }).withMessage('Moisture critical must be between 0 and 100'),
   body('batteryLevel.warning').optional().isFloat({ min: 0, max: 100 }).withMessage('Battery warning must be between 0 and 100'),
-  body('batteryLevel.critical').optional().isFloat({ min: 0, max: 100 }).withMessage('Battery critical must be between 0 and 100')
+  body('batteryLevel.critical').optional().isFloat({ min: 0, max: 100 }).withMessage('Battery critical must be between 0 and 100'),
+  body('ph.minWarning').optional().isFloat({ min: 0, max: 14 }).withMessage('pH min warning must be between 0 and 14'),
+  body('ph.minCritical').optional().isFloat({ min: 0, max: 14 }).withMessage('pH min critical must be between 0 and 14'),
+  body('ph.maxWarning').optional().isFloat({ min: 0, max: 14 }).withMessage('pH max warning must be between 0 and 14'),
+  body('ph.maxCritical').optional().isFloat({ min: 0, max: 14 }).withMessage('pH max critical must be between 0 and 14'),
+  body('ec.warning').optional().isFloat({ min: 0 }).withMessage('EC warning must be positive'),
+  body('ec.critical').optional().isFloat({ min: 0 }).withMessage('EC critical must be positive'),
+  body('nitrogen.minWarning').optional().isFloat({ min: 0 }).withMessage('Nitrogen min warning must be positive'),
+  body('nitrogen.minCritical').optional().isFloat({ min: 0 }).withMessage('Nitrogen min critical must be positive'),
+  body('phosphorus.minWarning').optional().isFloat({ min: 0 }).withMessage('Phosphorus min warning must be positive'),
+  body('phosphorus.minCritical').optional().isFloat({ min: 0 }).withMessage('Phosphorus min critical must be positive'),
+  body('potassium.minWarning').optional().isFloat({ min: 0 }).withMessage('Potassium min warning must be positive'),
+  body('potassium.minCritical').optional().isFloat({ min: 0 }).withMessage('Potassium min critical must be positive'),
+  body('waterLevel.critical').optional().isInt({ min: 0, max: 1 }).withMessage('Water level critical must be 0 or 1')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -85,6 +98,24 @@ router.put('/thresholds', [auth, adminOnly], [
     if (req.body.batteryLevel) {
       newThresholds.batteryLevel = { ...newThresholds.batteryLevel, ...req.body.batteryLevel };
     }
+    if (req.body.ph) {
+      newThresholds.ph = { ...newThresholds.ph, ...req.body.ph };
+    }
+    if (req.body.ec) {
+      newThresholds.ec = { ...newThresholds.ec, ...req.body.ec };
+    }
+    if (req.body.nitrogen) {
+      newThresholds.nitrogen = { ...newThresholds.nitrogen, ...req.body.nitrogen };
+    }
+    if (req.body.phosphorus) {
+      newThresholds.phosphorus = { ...newThresholds.phosphorus, ...req.body.phosphorus };
+    }
+    if (req.body.potassium) {
+      newThresholds.potassium = { ...newThresholds.potassium, ...req.body.potassium };
+    }
+    if (req.body.waterLevel) {
+      newThresholds.waterLevel = { ...newThresholds.waterLevel, ...req.body.waterLevel };
+    }
 
     // Validate that critical thresholds are more restrictive than warning thresholds
     const validationErrors = [];
@@ -100,6 +131,24 @@ router.put('/thresholds', [auth, adminOnly], [
     }
     if (newThresholds.batteryLevel.critical >= newThresholds.batteryLevel.warning) {
       validationErrors.push('Battery critical threshold must be lower than warning threshold');
+    }
+    if (newThresholds.ph.minCritical >= newThresholds.ph.minWarning) {
+      validationErrors.push('pH min critical threshold must be lower than min warning threshold');
+    }
+    if (newThresholds.ph.maxCritical <= newThresholds.ph.maxWarning) {
+      validationErrors.push('pH max critical threshold must be higher than max warning threshold');
+    }
+    if (newThresholds.ec.critical <= newThresholds.ec.warning) {
+      validationErrors.push('EC critical threshold must be higher than warning threshold');
+    }
+    if (newThresholds.nitrogen.minCritical >= newThresholds.nitrogen.minWarning) {
+      validationErrors.push('Nitrogen min critical threshold must be lower than min warning threshold');
+    }
+    if (newThresholds.phosphorus.minCritical >= newThresholds.phosphorus.minWarning) {
+      validationErrors.push('Phosphorus min critical threshold must be lower than min warning threshold');
+    }
+    if (newThresholds.potassium.minCritical >= newThresholds.potassium.minWarning) {
+      validationErrors.push('Potassium min critical threshold must be lower than min warning threshold');
     }
 
     if (validationErrors.length > 0) {

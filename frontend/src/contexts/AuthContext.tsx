@@ -54,12 +54,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     let lastError: any = null;
     setIsLoading(true);
 
-  // No preflight health check here: directly attempt login and rely on targeted error handling.
+    // First, check server health to avoid generic network errors
+    try {
+      await api.get('/health');
+    } catch (healthError: any) {
+      setIsLoading(false);
+      if (healthError.code === 'ECONNREFUSED' || healthError.code === 'ENOTFOUND' || healthError.code === 'ETIMEDOUT') {
+        return { success: false, message: 'Server offline. Please check if the backend is running.' };
+      }
+      return { success: false, message: 'Unable to connect to server. Please try again.' };
+    }
 
+    // Attempt login with retry logic
     while (attempt < maxAttempts) {
       attempt += 1;
       try {
-        // centralized auth call (respects baseURL and interceptors)
         const resp = await authService.login({ username, password });
         if (resp?.data?.success && resp.data.data) {
           const newToken = resp.data.data.token;
@@ -73,43 +82,42 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           return { success: true };
         }
 
-  const backendMessage = resp?.data?.message || (resp?.data as any)?.error?.message || 'Invalid credentials';
+        const backendMessage = resp?.data?.message || 'Invalid credentials';
         setIsLoading(false);
         return { success: false, message: backendMessage };
       } catch (err: any) {
         lastError = err;
-        const status = err?.response?.status;
 
-        // handle explicit backend auth failures without retrying
-        if (status === 400 || status === 401 || status === 403) {
-          const backendMessage = err?.response?.data?.message || (err?.response?.data as any)?.error?.message || (status === 401 ? 'Invalid username or password' : 'Invalid request');
+        // Handle specific error types
+        if (err.response?.status === 401) {
           setIsLoading(false);
-          // notify other windows/components if auth expired
-          if (status === 401 && typeof window !== 'undefined') {
-            try { window.dispatchEvent(new CustomEvent('auth:expired')); } catch (_) { /* ignore */ }
-          }
-          return { success: false, message: backendMessage };
+          return { success: false, message: 'Invalid username or password' };
         }
 
-        // network errors (no response) — retry with backoff
-        if (!err?.response) {
-          const backoff = 300 * Math.pow(2, attempt - 1);
-          // eslint-disable-next-line no-await-in-loop
-          await new Promise((r) => setTimeout(r, backoff));
+        if (err.response?.status === 503) {
+          setIsLoading(false);
+          return { success: false, message: 'Server temporarily unavailable. Please try again later.' };
+        }
+
+        // Network error - retry if attempts remaining
+        if ((err.code === 'ECONNREFUSED' || err.code === 'ENOTFOUND' || err.code === 'ETIMEDOUT') && attempt < maxAttempts) {
+          console.warn(`Login attempt ${attempt} failed, retrying in 2s...`, err.message);
+          await new Promise(resolve => setTimeout(resolve, 2000));
           continue;
         }
 
-        // unknown error - break and surface friendly message
-        break;
+        // Final attempt failed
+        if (attempt >= maxAttempts) {
+          break;
+        }
       }
     }
 
+    // All attempts failed
     setIsLoading(false);
-    let friendly = 'An error occurred during login';
-    if (lastError?.response?.data?.message) friendly = lastError.response.data.message;
-    else if (lastError?.code === 'ECONNREFUSED') friendly = 'Cannot reach authentication server (connection refused)';
-    else if (lastError?.message && /network|timeout/i.test(lastError.message)) friendly = 'Network error communicating with server';
-    return { success: false, message: friendly };
+    const errorMessage = lastError?.response?.data?.message ||
+                        (lastError?.code === 'ECONNREFUSED' || lastError?.code === 'ENOTFOUND' ? 'Network error. Please check your connection.' : 'Login failed. Please try again.');
+    return { success: false, message: errorMessage };
   };
 
   const logout = () => {

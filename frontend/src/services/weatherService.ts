@@ -13,6 +13,12 @@ interface WeatherData {
   temperature: number;
   humidity: number;
   moisture: number;
+  ph?: number;
+  ec?: number;
+  nitrogen?: number;
+  phosphorus?: number;
+  potassium?: number;
+  waterLevel?: number;
   timestamp: string;
   status: 'normal' | 'warning' | 'critical';
   batteryLevel?: number;
@@ -203,6 +209,12 @@ class WeatherService {
       temperature,
       humidity: Math.round(humidity),
       moisture: this.calculateMoisture(humidity, temperature),
+      ph: Math.round((6.5 + Math.random() * 1.5) * 10) / 10, // pH 6.5-8.0
+      ec: Math.round((0.8 + Math.random() * 1.2) * 10) / 10, // EC 0.8-2.0 mS/cm
+      nitrogen: Math.floor(30 + Math.random() * 40), // N 30-70 mg/kg
+      phosphorus: Math.floor(20 + Math.random() * 30), // P 20-50 mg/kg
+      potassium: Math.floor(150 + Math.random() * 100), // K 150-250 mg/kg
+      waterLevel: Math.random() > 0.3 ? 1 : 0, // 70% chance of water present
       timestamp: new Date().toISOString(),
       status: this.determineStatus(temperature, humidity),
       batteryLevel: 85 + Math.floor(Math.random() * 15),

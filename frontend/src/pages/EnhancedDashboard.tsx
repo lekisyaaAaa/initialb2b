@@ -92,6 +92,12 @@ const EnhancedDashboard: React.FC = () => {
           temperature: Math.round((baseTemp + (Math.random() - 0.5) * 4) * 10) / 10,
           humidity: Math.max(20, Math.min(95, Math.round(baseHumidity + (Math.random() - 0.5) * 10))),
           moisture: Math.max(10, Math.min(80, Math.round(baseMoisture + (Math.random() - 0.5) * 15))),
+          ph: Math.round((6.5 + Math.random() * 1.5) * 10) / 10, // pH 6.5-8.0
+          ec: Math.round((0.8 + Math.random() * 1.2) * 10) / 10, // EC 0.8-2.0 mS/cm
+          nitrogen: Math.floor(30 + Math.random() * 40), // N 30-70 mg/kg
+          phosphorus: Math.floor(20 + Math.random() * 30), // P 20-50 mg/kg
+          potassium: Math.floor(150 + Math.random() * 100), // K 150-250 mg/kg
+          waterLevel: Math.random() > 0.3 ? 1 : 0, // 70% chance of water present
           timestamp: timestamp.toISOString(),
           status: Math.random() > 0.85 ? 'warning' : 'normal' as const,
           batteryLevel: Math.max(75, 100 - (i * 0.5) + (Math.random() - 0.5) * 10),
@@ -181,36 +187,70 @@ const EnhancedDashboard: React.FC = () => {
   const unresolvedAlerts = recentAlerts.filter((alert: Alert) => !alert.isResolved);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-coffee-50 to-coffee-100 dark:from-gray-900 dark:to-gray-800">
-      {/* Header */}
-  <header className="bg-white dark:bg-gray-900 shadow-lg border-b border-coffee-200 dark:border-gray-700">
+    <div className="min-h-screen bg-coffee-50 dark:bg-gray-900">
+      {/* Enhanced Header with Modern Design */}
+      <header className="bg-gradient-to-r from-white via-coffee-50 to-white dark:from-gray-800 dark:via-gray-800 dark:to-gray-800 shadow-xl border-b border-coffee-200/50 dark:border-gray-700/50 backdrop-blur-sm bg-opacity-95">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-4">
-            <div className="flex items-center">
-              <Link to="/" className="bg-coffee-600 dark:bg-coffee-700 rounded-lg p-2 mr-3 hover:bg-coffee-700 dark:hover:bg-coffee-800 transition-colors">
-                <Leaf className="h-6 w-6 text-white" />
+          <div className="flex justify-between items-center py-6">
+            {/* Brand Section */}
+            <div className="flex items-center space-x-4">
+              {/* Enhanced Logo */}
+              <Link to="/" className="group relative">
+                <div className="letran-coffee-gradient rounded-xl p-3 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 group-hover:rotate-3">
+                  <Leaf className="h-7 w-7 text-white drop-shadow-sm" />
+                </div>
+                <div className="absolute -inset-1 bg-gradient-to-r from-coffee-400 to-teal-400 rounded-xl blur opacity-25 group-hover:opacity-40 transition-opacity duration-200"></div>
               </Link>
-              <div>
-                <h1 className="text-xl font-semibold text-coffee-900 dark:text-white">BeanToBin Dashboard</h1>
-                <p className="text-sm text-coffee-600 dark:text-gray-300">Environmental Monitoring System</p>
+
+              {/* Brand Text */}
+              <div className="flex flex-col">
+                <div className="flex items-center space-x-2">
+                  <h1 className="site-title dark:site-title text-2xl font-bold">
+                    Bean<span className="site-accent bg-gradient-to-r from-teal-500 to-purple-600 bg-clip-text text-transparent">To</span>Bin
+                  </h1>
+                  <div className="hidden sm:flex items-center space-x-1">
+                    <div className="live-indicator">
+                      <div className="pulse-dot"></div>
+                      <span>Live</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-3 mt-1">
+                  <p className="site-subtitle text-sm font-medium">
+                    Environmental Monitoring System
+                  </p>
+                  <div className="site-badge bg-gradient-to-r from-teal-50 to-purple-50 dark:from-teal-900/20 dark:to-purple-900/20 border-teal-200 dark:border-teal-700 text-teal-700 dark:text-teal-300 shadow-sm">
+                    <Activity className="w-3 h-3" />
+                    <span>Enhanced Dashboard</span>
+                  </div>
+                </div>
               </div>
             </div>
 
-              <div className="flex items-center space-x-4">
+            {/* Status & Controls */}
+            <div className="flex items-center space-x-6">
               {/* Connection Status */}
-              <div className="flex items-center">
-                {isConnected ? (
-                  <Wifi className="w-5 h-5 text-green-400 dark:text-green-300 mr-2" />
-                ) : (
-                  <WifiOff className="w-5 h-5 text-red-400 dark:text-red-300 mr-2" />
-                )}
-                <span className="text-sm text-coffee-600 dark:text-gray-300">
-                  {isConnected ? 'Connected' : 'Disconnected'}
-                </span>
+              <div className="hidden md:flex items-center space-x-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-full border border-green-200 dark:border-green-800">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-sm"></div>
+                <span className="text-sm font-medium text-green-700 dark:text-green-300">System Online</span>
+              </div>
+
+              {/* Quick Stats */}
+              <div className="hidden lg:flex items-center space-x-4 text-sm">
+                <div className="flex items-center space-x-1 text-gray-600 dark:text-gray-300">
+                  <Thermometer className="w-4 h-4 text-red-500" />
+                  <span className="font-medium">Live Data</span>
+                </div>
+                <div className="flex items-center space-x-1 text-gray-600 dark:text-gray-300">
+                  <Activity className="w-4 h-4 text-teal-500" />
+                  <span className="font-medium">Real-time</span>
+                </div>
               </div>
 
               {/* Dark Mode Toggle */}
-              <DarkModeToggle />
+              <div className="flex items-center">
+                <DarkModeToggle />
+              </div>
 
               {/* Refresh Button */}
               <button
@@ -252,39 +292,37 @@ const EnhancedDashboard: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* Subtle accent line */}
+        <div className="h-px bg-gradient-to-r from-transparent via-teal-300 dark:via-teal-600 to-transparent opacity-50"></div>
       </header>
 
       {/* Navigation Tabs */}
-  <div className="bg-white dark:bg-gray-900 border-b border-coffee-200 dark:border-gray-700 transition-colors">
+      <nav className="bg-white dark:bg-gray-800 shadow-sm">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <nav className="flex space-x-8">
+          <div className="flex space-x-8">
             {[
               { id: 'overview', label: 'Overview', icon: Activity },
               { id: 'charts', label: 'Data Visualization', icon: BarChart3 },
               { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
               { id: 'sensors', label: 'Sensors', icon: Settings },
-            ].map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id as any)}
-                  className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                    activeTab === tab.id
-                      ? 'border-coffee-500 text-coffee-600 dark:text-white'
-                      : 'border-transparent text-coffee-500 hover:text-coffee-700 hover:border-coffee-300 dark:text-gray-300 dark:hover:text-white'
-                  }`}
-                >
-                  <div className="flex items-center space-x-2">
-                    <Icon className="w-4 h-4" />
-                    <span>{tab.label}</span>
-                  </div>
-                </button>
-              );
-            })}
-          </nav>
+            ].map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id as 'overview' | 'charts' | 'alerts' | 'sensors')}
+                className={`flex items-center space-x-2 px-4 py-4 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === id
+                    ? 'border-teal-500 text-teal-600 dark:text-teal-400'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                <span>{label}</span>
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      </nav>
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -292,21 +330,21 @@ const EnhancedDashboard: React.FC = () => {
           <div className="space-y-8">
             {/* Premium Glass Quick Stats */}
             {latestReadings && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch w-full">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch w-full">
                 
                 {/* Temperature Card */}
                 <div className="group relative overflow-hidden h-full">
                   <div className="absolute inset-0 bg-gradient-to-br from-red-500/20 to-letran-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-red-900/40 dark:to-letran-900/40"></div>
-                  <div className="relative bg-white/80 dark:bg-gray-800 backdrop-blur-lg border border-white/50 dark:border-gray-700 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                  <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-letran-500 rounded-t-2xl"></div>
 
                       <div className="flex items-center mb-4">
-                        <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-red-100 to-red-50 shadow-lg group-hover:rotate-12 transition-transform duration-500 dark:bg-gray-700">
+                        <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-red-100 to-red-50 dark:from-red-800 dark:to-red-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
                           <Thermometer className="h-6 w-6 text-red-600 dark:text-red-300" />
                         </div>
                         <div className="flex flex-col justify-center flex-1 min-h-[72px]">
-                          <div className="mb-2"><p className="text-sm font-medium text-coffee-600 dark:text-gray-300">Temperature</p></div>
-                          <p className="text-3xl font-bold text-coffee-900 dark:text-white group-hover:text-letran-600 transition-colors">{latestReadings.temperature.toFixed(1)}°C</p>
+                          <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">Temperature</p></div>
+                          <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">{latestReadings.temperature.toFixed(1)}°C</p>
                         </div>
                       </div>
 
@@ -319,16 +357,16 @@ const EnhancedDashboard: React.FC = () => {
                 {/* Humidity Card */}
                 <div className="group relative overflow-hidden h-full">
                   <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-primary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-blue-900/40 dark:to-primary-900/40"></div>
-                  <div className="relative bg-white/80 dark:bg-gray-800 backdrop-blur-lg border border-white/50 dark:border-gray-700 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                  <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-primary-500 rounded-t-2xl"></div>
 
                     <div className="flex items-center mb-4">
-                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-blue-100 to-blue-50 shadow-lg group-hover:rotate-12 transition-transform duration-500 dark:bg-gray-700">
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-800 dark:to-blue-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
                         <Droplets className="h-6 w-6 text-blue-600 dark:text-blue-300" />
                       </div>
                         <div className="flex flex-col justify-center flex-1 min-h-[72px]">
-                          <div className="mb-2"><p className="text-sm font-medium text-coffee-600 dark:text-gray-300">Humidity</p></div>
-                          <p className="text-3xl font-bold text-coffee-900 dark:text-white group-hover:text-letran-600 transition-colors">{latestReadings.humidity.toFixed(1)}%</p>
+                          <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">Humidity</p></div>
+                          <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">{latestReadings.humidity.toFixed(1)}%</p>
                         </div>
                     </div>
 
@@ -339,16 +377,16 @@ const EnhancedDashboard: React.FC = () => {
                 {/* pH Card (replaces Moisture per request) */}
                 <div className="group relative overflow-hidden h-full">
                   <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 to-amber-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-amber-900/40 dark:to-amber-800/40"></div>
-                  <div className="relative bg-white/80 dark:bg-gray-800 backdrop-blur-lg border border-white/50 dark:border-gray-700 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                  <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 to-amber-400 rounded-t-2xl"></div>
 
                     <div className="flex items-center mb-4">
-                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-amber-100 to-amber-50 shadow-lg group-hover:rotate-12 transition-transform duration-500 dark:bg-gray-700">
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-amber-100 to-amber-50 dark:from-amber-800 dark:to-amber-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
                         <Droplets className="h-6 w-6 text-amber-600 dark:text-amber-300" />
                       </div>
                         <div className="flex flex-col justify-center flex-1 min-h-[72px]">
-                          <div className="mb-2"><p className="text-sm font-medium text-coffee-600 dark:text-gray-300">pH</p></div>
-                          <p className="text-3xl font-bold text-coffee-900 dark:text-white group-hover:text-letran-600 transition-colors">{(latestReadings.ph ?? NaN) && !Number.isNaN(latestReadings.ph) ? latestReadings.ph.toFixed(2) : '—'}</p>
+                          <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">pH</p></div>
+                          <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">{(latestReadings.ph ?? NaN) && !Number.isNaN(latestReadings.ph) ? latestReadings.ph.toFixed(2) : '—'}</p>
                         </div>
                     </div>
 
@@ -359,19 +397,85 @@ const EnhancedDashboard: React.FC = () => {
                 {/* Battery Card */}
                 <div className="group relative overflow-hidden h-full">
                   <div className="absolute inset-0 bg-gradient-to-br from-secondary-500/20 to-secondary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-secondary-900/40 dark:to-secondary-900/40"></div>
-                  <div className="relative bg-white/80 dark:bg-gray-800 backdrop-blur-lg border border-white/50 dark:border-gray-700 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                  <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-secondary-500 to-secondary-500 rounded-t-2xl"></div>
                     <div className="flex items-center flex-1">
-                      <div className="bg-gradient-to-br from-secondary-100 to-secondary-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500 dark:bg-gray-700">
+                      <div className="bg-gradient-to-br from-secondary-100 to-secondary-50 dark:from-secondary-800 dark:to-secondary-700 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
                         <Battery className="h-8 w-8 text-secondary-600 dark:text-secondary-300" />
                       </div>
                       <div>
-                        <p className="text-sm font-medium text-coffee-600 dark:text-gray-300 mb-1">Battery</p>
-                        <p className="text-3xl font-bold text-coffee-900 dark:text-white group-hover:text-letran-600 transition-colors">
+                        <p className="text-sm font-medium text-espresso-600 dark:text-gray-300 mb-1">Battery</p>
+                        <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">
                           {latestReadings.batteryLevel?.toFixed(0) || 'N/A'}%
                         </p>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                {/* EC Card */}
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-purple-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-purple-900/40 dark:to-purple-800/40"></div>
+                  <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-purple-400 rounded-t-2xl"></div>
+
+                    <div className="flex items-center mb-4">
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-purple-100 to-purple-50 dark:from-purple-800 dark:to-purple-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                        <Droplets className="h-6 w-6 text-purple-600 dark:text-purple-300" />
+                      </div>
+                        <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                          <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">EC</p></div>
+                          <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">{(latestReadings.ec ?? NaN) && !Number.isNaN(latestReadings.ec) ? latestReadings.ec.toFixed(2) : '—'} mS/cm</p>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 min-h-[140px]"></div>
+                  </div>
+                </div>
+
+                {/* NPK Card */}
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-green-500/20 to-green-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-green-900/40 dark:to-green-800/40"></div>
+                  <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 to-green-400 rounded-t-2xl"></div>
+
+                    <div className="flex items-center mb-4">
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-green-100 to-green-50 dark:from-green-800 dark:to-green-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                        <Sprout className="h-6 w-6 text-green-600 dark:text-green-300" />
+                      </div>
+                        <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                          <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">NPK</p></div>
+                          <div className="text-sm text-espresso-900 dark:text-white">
+                            <div>N: {(latestReadings.nitrogen ?? NaN) && !Number.isNaN(latestReadings.nitrogen) ? latestReadings.nitrogen.toFixed(0) : '—'}</div>
+                            <div>P: {(latestReadings.phosphorus ?? NaN) && !Number.isNaN(latestReadings.phosphorus) ? latestReadings.phosphorus.toFixed(0) : '—'}</div>
+                            <div>K: {(latestReadings.potassium ?? NaN) && !Number.isNaN(latestReadings.potassium) ? latestReadings.potassium.toFixed(0) : '—'}</div>
+                          </div>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 min-h-[140px]"></div>
+                  </div>
+                </div>
+
+                {/* Water Level Card */}
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/20 to-cyan-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-cyan-900/40 dark:to-cyan-800/40"></div>
+                  <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-cyan-400 rounded-t-2xl"></div>
+
+                    <div className="flex items-center mb-4">
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-cyan-100 to-cyan-50 dark:from-cyan-800 dark:to-cyan-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                        <Droplets className="h-6 w-6 text-cyan-600 dark:text-cyan-300" />
+                      </div>
+                        <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                          <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">Water Level</p></div>
+                          <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">
+                            {(latestReadings.waterLevel ?? null) !== null ? (latestReadings.waterLevel === 1 ? 'Present' : 'Low') : '—'}
+                          </p>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 min-h-[140px]"></div>
                   </div>
                 </div>
               </div>
@@ -509,54 +613,122 @@ const EnhancedDashboard: React.FC = () => {
 
         {activeTab === 'sensors' && (
           <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-coffee-900 dark:text-white mb-2">Sensor Devices</h2>
+              <p className="text-coffee-600 dark:text-gray-300">Real-time status and readings from all connected sensors</p>
+            </div>
+
+            <div className="grid grid-cols-4 gap-6">
               {deviceIds.map(deviceId => {
                 const deviceData = historicalData.filter(d => d.deviceId === deviceId);
                 const latestData = deviceData[deviceData.length - 1];
-                
+
                 return (
-                  <div key={deviceId} className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-coffee-200 dark:border-gray-700 p-6">
+                  <div key={deviceId} className="group relative overflow-hidden h-full">
+                    <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-teal-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-blue-900/40 dark:to-teal-900/40"></div>
+                    <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-teal-500 rounded-t-2xl"></div>
+
                       <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-lg font-semibold text-coffee-900 dark:text-white">{deviceId}</h3>
-                        <div className={`px-3 py-1 rounded-full text-sm ${getStatusColor(latestData?.status || 'unknown')}`}>
+                        <div className="flex items-center space-x-2">
+                          <div className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-xl bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-800 dark:to-blue-700 shadow-lg">
+                            <Activity className="h-5 w-5 text-blue-600 dark:text-blue-300" />
+                          </div>
+                          <h3 className="text-lg font-semibold text-espresso-900 dark:text-white">{deviceId}</h3>
+                        </div>
+                        <div className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusColor(latestData?.status || 'unknown')}`}>
                           {latestData?.status || 'Unknown'}
                         </div>
                       </div>
-                    
-                    {latestData && (
-                      <div className="space-y-3">
-                        <div className="flex justify-between">
-                          <span className="text-coffee-600 dark:text-gray-300">Temperature:</span>
-                          <span className="font-medium text-coffee-900 dark:text-white">{latestData.temperature.toFixed(1)}°C</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-coffee-600 dark:text-gray-300">Humidity:</span>
-                          <span className="font-medium text-coffee-900 dark:text-white">{latestData.humidity.toFixed(1)}%</span>
-                        </div>
-                        <div className="flex justify-between">
-                          <span className="text-coffee-600 dark:text-gray-300">Moisture:</span>
-                          <span className="font-medium text-coffee-900 dark:text-white">{latestData.moisture.toFixed(1)}%</span>
-                        </div>
-                        {typeof latestPh === 'number' && (
-                          <div className="flex justify-between">
-                            <span className="text-coffee-600 dark:text-gray-300">pH:</span>
-                            <span className="font-medium text-coffee-900 dark:text-white">{latestPh.toFixed(2)}</span>
+
+                      {latestData && (
+                        <div className="space-y-3 flex-1">
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-gradient-to-r from-red-50 to-red-25 dark:from-red-900/20 dark:to-red-800/20">
+                            <div className="flex items-center space-x-2">
+                              <Thermometer className="h-4 w-4 text-red-500" />
+                              <span className="text-sm font-medium text-espresso-600 dark:text-gray-300">Temperature</span>
+                            </div>
+                            <span className="font-bold text-espresso-900 dark:text-white">{latestData.temperature.toFixed(1)}°C</span>
                           </div>
-                        )}
-                        {latestData.batteryLevel && (
-                          <div className="flex justify-between">
-                            <span className="text-coffee-600 dark:text-gray-300">Battery:</span>
-                              <span className="font-medium text-coffee-900 dark:text-white">{latestData.batteryLevel.toFixed(0)}%</span>
+
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-gradient-to-r from-blue-50 to-blue-25 dark:from-blue-900/20 dark:to-blue-800/20">
+                            <div className="flex items-center space-x-2">
+                              <Droplets className="h-4 w-4 text-blue-500" />
+                              <span className="text-sm font-medium text-espresso-600 dark:text-gray-300">Humidity</span>
+                            </div>
+                            <span className="font-bold text-espresso-900 dark:text-white">{latestData.humidity.toFixed(1)}%</span>
                           </div>
-                        )}
-                        <div className="flex justify-between">
-                          <span className="text-coffee-600 dark:text-gray-300">Last Update:</span>
-                          <span className="font-medium text-sm text-coffee-900 dark:text-white">
-                            {format(new Date(latestData.timestamp), 'HH:mm:ss')}
-                          </span>
+
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-gradient-to-r from-green-50 to-green-25 dark:from-green-900/20 dark:to-green-800/20">
+                            <div className="flex items-center space-x-2">
+                              <Sprout className="h-4 w-4 text-green-500" />
+                              <span className="text-sm font-medium text-espresso-600 dark:text-gray-300">Moisture</span>
+                            </div>
+                            <span className="font-bold text-espresso-900 dark:text-white">{latestData.moisture.toFixed(1)}%</span>
+                          </div>
+
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-gradient-to-r from-amber-50 to-amber-25 dark:from-amber-900/20 dark:to-amber-800/20">
+                            <div className="flex items-center space-x-2">
+                              <Droplets className="h-4 w-4 text-amber-500" />
+                              <span className="text-sm font-medium text-espresso-600 dark:text-gray-300">pH</span>
+                            </div>
+                            <span className="font-bold text-espresso-900 dark:text-white">{(latestData.ph ?? NaN) && !Number.isNaN(latestData.ph) ? latestData.ph.toFixed(2) : '—'}</span>
+                          </div>
+
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-gradient-to-r from-purple-50 to-purple-25 dark:from-purple-900/20 dark:to-purple-800/20">
+                            <div className="flex items-center space-x-2">
+                              <Droplets className="h-4 w-4 text-purple-500" />
+                              <span className="text-sm font-medium text-espresso-600 dark:text-gray-300">EC</span>
+                            </div>
+                            <span className="font-bold text-espresso-900 dark:text-white">{(latestData.ec ?? NaN) && !Number.isNaN(latestData.ec) ? latestData.ec.toFixed(2) : '—'} mS/cm</span>
+                          </div>
+
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-gradient-to-r from-emerald-50 to-emerald-25 dark:from-emerald-900/20 dark:to-emerald-800/20">
+                            <div className="flex items-center space-x-2">
+                              <Sprout className="h-4 w-4 text-emerald-500" />
+                              <span className="text-sm font-medium text-espresso-600 dark:text-gray-300">NPK</span>
+                            </div>
+                            <div className="text-xs text-espresso-900 dark:text-white text-right">
+                              <div>N: {(latestData.nitrogen ?? NaN) && !Number.isNaN(latestData.nitrogen) ? latestData.nitrogen.toFixed(0) : '—'}</div>
+                              <div>P: {(latestData.phosphorus ?? NaN) && !Number.isNaN(latestData.phosphorus) ? latestData.phosphorus.toFixed(0) : '—'}</div>
+                              <div>K: {(latestData.potassium ?? NaN) && !Number.isNaN(latestData.potassium) ? latestData.potassium.toFixed(0) : '—'}</div>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-gradient-to-r from-cyan-50 to-cyan-25 dark:from-cyan-900/20 dark:to-cyan-800/20">
+                            <div className="flex items-center space-x-2">
+                              <Droplets className="h-4 w-4 text-cyan-500" />
+                              <span className="text-sm font-medium text-espresso-600 dark:text-gray-300">Water Level</span>
+                            </div>
+                            <span className="font-bold text-espresso-900 dark:text-white">
+                              {(latestData.waterLevel ?? null) !== null ? (latestData.waterLevel === 1 ? 'Present' : 'Low') : '—'}
+                            </span>
+                          </div>
+
+                          {latestData.batteryLevel && (
+                            <div className="flex items-center justify-between p-2 rounded-lg bg-gradient-to-r from-secondary-50 to-secondary-25 dark:from-secondary-900/20 dark:to-secondary-800/20">
+                              <div className="flex items-center space-x-2">
+                                <Battery className="h-4 w-4 text-secondary-500" />
+                                <span className="text-sm font-medium text-espresso-600 dark:text-gray-300">Battery</span>
+                              </div>
+                              <span className="font-bold text-espresso-900 dark:text-white">{latestData.batteryLevel.toFixed(0)}%</span>
+                            </div>
+                          )}
+
+                          <div className="flex items-center justify-between p-2 rounded-lg bg-gradient-to-r from-gray-50 to-gray-25 dark:from-gray-900/20 dark:to-gray-800/20">
+                            <div className="flex items-center space-x-2">
+                              <RefreshCw className="h-4 w-4 text-gray-500" />
+                              <span className="text-sm font-medium text-espresso-600 dark:text-gray-300">Last Update</span>
+                            </div>
+                            <span className="font-bold text-xs text-espresso-900 dark:text-white">
+                              {format(new Date(latestData.timestamp), 'HH:mm:ss')}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      )}
+
+                      <div className="flex-1 min-h-[20px]"></div>
+                    </div>
                   </div>
                 );
               })}

@@ -5,6 +5,9 @@ import TemperatureChart from './TemperatureChart';
 import HumidityChart from './HumidityChart';
 import MoistureChart from './MoistureChart';
 import PhChart from './PhChart';
+import EcChart from './EcChart';
+import NpkChart from './NpkChart';
+import WaterLevelChart from './WaterLevelChart';
 import MultiSensorChart from './MultiSensorChart';
 import { useData } from '../../contexts/DataContext';
 
@@ -26,7 +29,7 @@ interface ChartContainerProps {
 }
 
 type TimeRange = '1h' | '6h' | '24h' | '7d' | '30d';
-type ChartType = 'temperature' | 'humidity' | 'moisture' | 'ph' | 'multi';
+type ChartType = 'temperature' | 'humidity' | 'moisture' | 'ph' | 'ec' | 'npk' | 'waterLevel' | 'multi';
 
 const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }) => {
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
@@ -73,6 +76,9 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
     { value: 'humidity', label: 'Humidity', icon: TrendingUp },
   { value: 'moisture', label: 'Moisture', icon: TrendingUp },
   { value: 'ph', label: 'pH', icon: TrendingUp },
+  { value: 'ec', label: 'EC', icon: TrendingUp },
+  { value: 'npk', label: 'NPK', icon: TrendingUp },
+  { value: 'waterLevel', label: 'Water Level', icon: TrendingUp },
   ];
 
   const renderChart = () => {
@@ -87,6 +93,12 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
         return <MoistureChart data={filteredData} height={chartHeight} className="h-full" />;
       case 'ph':
         return <PhChart data={filteredData} height={chartHeight} className="h-full" />;
+      case 'ec':
+        return <EcChart data={filteredData} height={chartHeight} className="h-full" />;
+      case 'npk':
+        return <NpkChart data={filteredData} height={chartHeight} className="h-full" />;
+      case 'waterLevel':
+        return <WaterLevelChart data={filteredData} height={chartHeight} className="h-full" />;
       case 'multi':
       default:
         return <MultiSensorChart data={filteredData} height={chartHeight} className="h-full" />;

@@ -104,6 +104,135 @@ const checkThresholds = async (sensorData) => {
       });
     }
     
+    // Check pH level
+    if (plainSensor.ph !== undefined) {
+      if (plainSensor.ph < thresholds.ph.minCritical || plainSensor.ph > thresholds.ph.maxCritical) {
+        alerts.push({
+          type: 'ph',
+          severity: 'critical',
+          message: `Critical pH level: ${plainSensor.ph} (threshold: ${thresholds.ph.minCritical}-${thresholds.ph.maxCritical})`,
+          deviceId: plainSensor.deviceId,
+          sensorData: plainSensor,
+          threshold: { value: [thresholds.ph.minCritical, thresholds.ph.maxCritical], operator: 'outside' }
+        });
+      } else if (plainSensor.ph < thresholds.ph.minWarning || plainSensor.ph > thresholds.ph.maxWarning) {
+        alerts.push({
+          type: 'ph',
+          severity: 'high',
+          message: `Warning pH level: ${plainSensor.ph} (threshold: ${thresholds.ph.minWarning}-${thresholds.ph.maxWarning})`,
+          deviceId: plainSensor.deviceId,
+          sensorData: plainSensor,
+          threshold: { value: [thresholds.ph.minWarning, thresholds.ph.maxWarning], operator: 'outside' }
+        });
+      }
+    }
+    
+    // Check EC level
+    if (plainSensor.ec !== undefined) {
+      if (plainSensor.ec > thresholds.ec.critical) {
+        alerts.push({
+          type: 'ec',
+          severity: 'critical',
+          message: `Critical EC level: ${plainSensor.ec} mS/cm (threshold: ${thresholds.ec.critical} mS/cm)`,
+          deviceId: plainSensor.deviceId,
+          sensorData: plainSensor,
+          threshold: { value: thresholds.ec.critical, operator: '>' }
+        });
+      } else if (plainSensor.ec > thresholds.ec.warning) {
+        alerts.push({
+          type: 'ec',
+          severity: 'high',
+          message: `High EC level: ${plainSensor.ec} mS/cm (threshold: ${thresholds.ec.warning} mS/cm)`,
+          deviceId: plainSensor.deviceId,
+          sensorData: plainSensor,
+          threshold: { value: thresholds.ec.warning, operator: '>' }
+        });
+      }
+    }
+    
+    // Check nitrogen level
+    if (plainSensor.nitrogen !== undefined) {
+      if (plainSensor.nitrogen < thresholds.nitrogen.minCritical) {
+        alerts.push({
+          type: 'nitrogen',
+          severity: 'critical',
+          message: `Critical low nitrogen: ${plainSensor.nitrogen} mg/kg (threshold: ${thresholds.nitrogen.minCritical} mg/kg)`,
+          deviceId: plainSensor.deviceId,
+          sensorData: plainSensor,
+          threshold: { value: thresholds.nitrogen.minCritical, operator: '<' }
+        });
+      } else if (plainSensor.nitrogen < thresholds.nitrogen.minWarning) {
+        alerts.push({
+          type: 'nitrogen',
+          severity: 'medium',
+          message: `Low nitrogen: ${plainSensor.nitrogen} mg/kg (threshold: ${thresholds.nitrogen.minWarning} mg/kg)`,
+          deviceId: plainSensor.deviceId,
+          sensorData: plainSensor,
+          threshold: { value: thresholds.nitrogen.minWarning, operator: '<' }
+        });
+      }
+    }
+    
+    // Check phosphorus level
+    if (plainSensor.phosphorus !== undefined) {
+      if (plainSensor.phosphorus < thresholds.phosphorus.minCritical) {
+        alerts.push({
+          type: 'phosphorus',
+          severity: 'critical',
+          message: `Critical low phosphorus: ${plainSensor.phosphorus} mg/kg (threshold: ${thresholds.phosphorus.minCritical} mg/kg)`,
+          deviceId: plainSensor.deviceId,
+          sensorData: plainSensor,
+          threshold: { value: thresholds.phosphorus.minCritical, operator: '<' }
+        });
+      } else if (plainSensor.phosphorus < thresholds.phosphorus.minWarning) {
+        alerts.push({
+          type: 'phosphorus',
+          severity: 'medium',
+          message: `Low phosphorus: ${plainSensor.phosphorus} mg/kg (threshold: ${thresholds.phosphorus.minWarning} mg/kg)`,
+          deviceId: plainSensor.deviceId,
+          sensorData: plainSensor,
+          threshold: { value: thresholds.phosphorus.minWarning, operator: '<' }
+        });
+      }
+    }
+    
+    // Check potassium level
+    if (plainSensor.potassium !== undefined) {
+      if (plainSensor.potassium < thresholds.potassium.minCritical) {
+        alerts.push({
+          type: 'potassium',
+          severity: 'critical',
+          message: `Critical low potassium: ${plainSensor.potassium} mg/kg (threshold: ${thresholds.potassium.minCritical} mg/kg)`,
+          deviceId: plainSensor.deviceId,
+          sensorData: plainSensor,
+          threshold: { value: thresholds.potassium.minCritical, operator: '<' }
+        });
+      } else if (plainSensor.potassium < thresholds.potassium.minWarning) {
+        alerts.push({
+          type: 'potassium',
+          severity: 'medium',
+          message: `Low potassium: ${plainSensor.potassium} mg/kg (threshold: ${thresholds.potassium.minWarning} mg/kg)`,
+          deviceId: plainSensor.deviceId,
+          sensorData: plainSensor,
+          threshold: { value: thresholds.potassium.minWarning, operator: '<' }
+        });
+      }
+    }
+    
+    // Check water level
+    if (plainSensor.waterLevel !== undefined) {
+      if (plainSensor.waterLevel === thresholds.waterLevel.critical) {
+        alerts.push({
+          type: 'water_level',
+          severity: 'critical',
+          message: `Critical water level: No water detected`,
+          deviceId: plainSensor.deviceId,
+          sensorData: plainSensor,
+          threshold: { value: thresholds.waterLevel.critical, operator: '==' }
+        });
+      }
+    }
+    
     // Check battery level if provided
     if (plainSensor.batteryLevel !== undefined) {
       if (plainSensor.batteryLevel < thresholds.batteryLevel.critical) {
@@ -144,9 +273,15 @@ const checkThresholds = async (sensorData) => {
 // @access  Public (ESP32 doesn't authenticate)
 router.post('/', [
   body('deviceId').notEmpty().withMessage('Device ID is required'),
-  body('temperature').isNumeric().withMessage('Temperature must be a number'),
-  body('humidity').isNumeric().withMessage('Humidity must be a number'),
-  body('moisture').isNumeric().withMessage('Moisture must be a number'),
+  body('temperature').optional().isNumeric().withMessage('Temperature must be a number'),
+  body('humidity').optional().isNumeric().withMessage('Humidity must be a number'),
+  body('moisture').optional().isNumeric().withMessage('Moisture must be a number'),
+  body('ph').optional().isNumeric().withMessage('pH must be a number'),
+  body('ec').optional().isNumeric().withMessage('EC must be a number'),
+  body('nitrogen').optional().isNumeric().withMessage('Nitrogen must be a number'),
+  body('phosphorus').optional().isNumeric().withMessage('Phosphorus must be a number'),
+  body('potassium').optional().isNumeric().withMessage('Potassium must be a number'),
+  body('waterLevel').optional().isInt().withMessage('Water level must be an integer'),
   body('timestamp').optional().isISO8601().withMessage('Invalid timestamp format')
 ], async (req, res) => {
   try {
@@ -165,6 +300,12 @@ router.post('/', [
       temperature,
       humidity,
       moisture,
+      ph,
+      ec,
+      nitrogen,
+      phosphorus,
+      potassium,
+      waterLevel,
       timestamp,
       batteryLevel,
       signalStrength,
@@ -174,12 +315,18 @@ router.post('/', [
   // Create sensor data (Sequelize-compatible)
   const sensorData = await SensorData.create({
       deviceId,
-      temperature: parseFloat(temperature),
-      humidity: parseFloat(humidity),
-      moisture: parseFloat(moisture),
+      temperature: temperature !== undefined ? parseFloat(temperature) : undefined,
+      humidity: humidity !== undefined ? parseFloat(humidity) : undefined,
+      moisture: moisture !== undefined ? parseFloat(moisture) : undefined,
+      ph: ph !== undefined ? parseFloat(ph) : undefined,
+      ec: ec !== undefined ? parseFloat(ec) : undefined,
+      nitrogen: nitrogen !== undefined ? parseFloat(nitrogen) : undefined,
+      phosphorus: phosphorus !== undefined ? parseFloat(phosphorus) : undefined,
+      potassium: potassium !== undefined ? parseFloat(potassium) : undefined,
+      waterLevel: waterLevel !== undefined ? parseInt(waterLevel) : undefined,
       timestamp: timestamp ? new Date(timestamp) : new Date(),
-      batteryLevel: batteryLevel ? parseFloat(batteryLevel) : undefined,
-      signalStrength: signalStrength ? parseFloat(signalStrength) : undefined,
+      batteryLevel: batteryLevel !== undefined ? parseFloat(batteryLevel) : undefined,
+      signalStrength: signalStrength !== undefined ? parseFloat(signalStrength) : undefined,
       isOfflineData
     });
 

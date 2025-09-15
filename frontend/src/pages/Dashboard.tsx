@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
 import { SensorData, Alert } from '../types';
-import { Leaf, AlertTriangle, Thermometer, Droplets, Sprout, RefreshCw, Settings, TrendingUp, LogOut, User, ArrowRight } from 'lucide-react';
+import { Leaf, AlertTriangle, Thermometer, Droplets, Sprout, Battery, RefreshCw, Settings, TrendingUp, LogOut, User, ArrowRight } from 'lucide-react';
 import { format } from 'date-fns';
 import { Link } from 'react-router-dom';
 import DarkModeToggle from '../components/DarkModeToggle';
@@ -305,112 +305,177 @@ const Dashboard: React.FC<DashboardProps> = () => {
         <Hero />
         {activeTab === 'overview' && (
           <div className="space-y-6">
-            {/* Premium Glass Stats Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch w-full">
-              
-              {/* Active Devices Card */}
-              <div className="group relative overflow-hidden h-full">
-                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-letran-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-letran-500 rounded-t-2xl"></div>
-                  <div className="mb-2">
-                    <p className="text-sm font-medium text-espresso-600">Active Devices</p>
+            {/* Premium Glass Quick Stats */}
+            {safeLatestSensorData.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-6 items-stretch w-full">
+                
+                {/* Temperature Card */}
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-red-500/20 to-letran-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                  <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-letran-500 rounded-t-2xl"></div>
+
+                      <div className="flex items-center mb-4">
+                        <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-red-100 to-red-50 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                          <Thermometer className="h-6 w-6 text-red-600" />
+                        </div>
+                        <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                          <div className="mb-2"><p className="text-sm font-medium text-espresso-600">Temperature</p></div>
+                          <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">{safeLatestSensorData.length > 0 ? (safeLatestSensorData[safeLatestSensorData.length - 1].temperature || 0).toFixed(1) : '—'}°C</p>
+                        </div>
+                      </div>
+
+                    <div className="flex-1 min-h-[140px]"></div>
                   </div>
-                  <div className="flex items-center flex-1">
-                    <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl bg-gradient-to-br from-blue-100 to-blue-50 shadow-lg group-hover:rotate-12 transition-transform duration-500">
-                      <Thermometer className="h-6 w-6 text-blue-600" />
+                </div>
+
+                {/* Humidity Card */}
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-primary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                  <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-primary-500 rounded-t-2xl"></div>
+
+                    <div className="flex items-center mb-4">
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-blue-100 to-blue-50 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                        <Droplets className="h-6 w-6 text-blue-600" />
+                      </div>
+                        <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                          <div className="mb-2"><p className="text-sm font-medium text-espresso-600">Humidity</p></div>
+                          <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">{safeLatestSensorData.length > 0 ? (safeLatestSensorData[safeLatestSensorData.length - 1].humidity || 0).toFixed(1) : '—'}%</p>
+                        </div>
                     </div>
-                    <div className="ml-4 flex items-center justify-center flex-1 min-h-[72px]">
-                      <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">{safeLatestSensorData.length}</p>
+
+                    <div className="flex-1 min-h-[140px]"></div>
+                  </div>
+                </div>
+
+                {/* pH Card */}
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 to-amber-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                  <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 to-amber-400 rounded-t-2xl"></div>
+
+                    <div className="flex items-center mb-4">
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-amber-100 to-amber-50 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                        <Droplets className="h-6 w-6 text-amber-600" />
+                      </div>
+                        <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                          <div className="mb-2"><p className="text-sm font-medium text-espresso-600">pH</p></div>
+                          <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">{latestPh !== null ? latestPh.toFixed(2) : '—'}</p>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 min-h-[140px]"></div>
+                  </div>
+                </div>
+
+                {/* Battery Card */}
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-secondary-500/20 to-secondary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                  <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-secondary-500 to-secondary-500 rounded-t-2xl"></div>
+                    <div className="flex items-center flex-1">
+                      <div className="bg-gradient-to-br from-secondary-100 to-secondary-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                        <Battery className="h-8 w-8 text-secondary-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-espresso-600 mb-1">Battery</p>
+                        <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">
+                          {safeLatestSensorData.length > 0 ? (safeLatestSensorData[safeLatestSensorData.length - 1].batteryLevel || 0).toFixed(0) : '—'}%
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* EC Card */}
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-purple-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                  <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-purple-400 rounded-t-2xl"></div>
+
+                    <div className="flex items-center mb-4">
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-purple-100 to-purple-50 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                        <Droplets className="h-6 w-6 text-purple-600" />
+                      </div>
+                        <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                          <div className="mb-2"><p className="text-sm font-medium text-espresso-600">EC</p></div>
+                          <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">{safeLatestSensorData.length > 0 && (safeLatestSensorData[safeLatestSensorData.length - 1] as any).ec ? ((safeLatestSensorData[safeLatestSensorData.length - 1] as any).ec).toFixed(2) : '—'} mS/cm</p>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 min-h-[140px]"></div>
+                  </div>
+                </div>
+
+                {/* NPK Card */}
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-green-500/20 to-green-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                  <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 to-green-400 rounded-t-2xl"></div>
+
+                    <div className="flex items-center mb-4">
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-green-100 to-green-50 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                        <Sprout className="h-6 w-6 text-green-600" />
+                      </div>
+                        <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                          <div className="mb-2"><p className="text-sm font-medium text-espresso-600">NPK</p></div>
+                          <div className="text-sm text-espresso-900">
+                            <div>N: {safeLatestSensorData.length > 0 && (safeLatestSensorData[safeLatestSensorData.length - 1] as any).nitrogen ? ((safeLatestSensorData[safeLatestSensorData.length - 1] as any).nitrogen).toFixed(0) : '—'}</div>
+                            <div>P: {safeLatestSensorData.length > 0 && (safeLatestSensorData[safeLatestSensorData.length - 1] as any).phosphorus ? ((safeLatestSensorData[safeLatestSensorData.length - 1] as any).phosphorus).toFixed(0) : '—'}</div>
+                            <div>K: {safeLatestSensorData.length > 0 && (safeLatestSensorData[safeLatestSensorData.length - 1] as any).potassium ? ((safeLatestSensorData[safeLatestSensorData.length - 1] as any).potassium).toFixed(0) : '—'}</div>
+                          </div>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 min-h-[140px]"></div>
+                  </div>
+                </div>
+
+                {/* Water Level Card */}
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/20 to-cyan-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                  <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-cyan-400 rounded-t-2xl"></div>
+
+                    <div className="flex items-center mb-4">
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-cyan-100 to-cyan-50 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                        <Droplets className="h-6 w-6 text-cyan-600" />
+                      </div>
+                        <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                          <div className="mb-2"><p className="text-sm font-medium text-espresso-600">Water Level</p></div>
+                          <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">
+                            {safeLatestSensorData.length > 0 && (safeLatestSensorData[safeLatestSensorData.length - 1] as any).waterLevel !== undefined ? ((safeLatestSensorData[safeLatestSensorData.length - 1] as any).waterLevel === 1 ? 'Present' : 'Low') : '—'}
+                          </p>
+                        </div>
+                    </div>
+
+                    <div className="flex-1 min-h-[140px]"></div>
+                  </div>
+                </div>
+
+                {/* Active Devices Card */}
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-letran-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                  <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-letran-500 rounded-t-2xl"></div>
+                    <div className="flex items-center flex-1">
+                      <div className="bg-gradient-to-br from-blue-100 to-blue-50 rounded-2xl p-4 mr-4 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                        <Thermometer className="h-8 w-8 text-blue-600" />
+                      </div>
+                      <div>
+                        <p className="text-sm font-medium text-espresso-600 mb-1">Active Devices</p>
+                        <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">{safeLatestSensorData.length}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
+            )}
 
-              {/* Active Alerts Card */}
-              <div className="group relative overflow-hidden h-full">
-                <div className="absolute inset-0 bg-gradient-to-br from-red-500/20 to-letran-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-letran-500 rounded-t-2xl"></div>
-                  <div className="mb-2">
-                    <p className="text-sm font-medium text-espresso-600">Active Alerts</p>
-                  </div>
-                  <div className="flex items-center flex-1">
-                    <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl bg-gradient-to-br from-red-100 to-red-50 shadow-lg group-hover:rotate-12 transition-transform duration-500">
-                      <AlertTriangle className="h-6 w-6 text-red-600" />
-                    </div>
-                    <div className="ml-4 flex items-center justify-center flex-1 min-h-[72px]">
-                      <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">{unresolvedAlerts.length}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Average Humidity Card */}
-              <div className="group relative overflow-hidden h-full">
-                <div className="absolute inset-0 bg-gradient-to-br from-coffee-500/20 to-primary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-coffee-500 to-primary-500 rounded-t-2xl"></div>
-
-                  {/* Header */}
-                  <div className="flex items-center mb-4">
-                    <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-coffee-200 to-coffee-100 shadow-lg group-hover:rotate-12 transition-transform duration-500">
-                      <Droplets className="h-6 w-6 text-primary-600" />
-                    </div>
-                    <div className="flex flex-col justify-center flex-1 min-h-[72px]">
-                      <p className="text-sm font-medium text-espresso-600 mb-1">Avg Humidity</p>
-                      <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">{safeLatestSensorData.length > 0 ? Math.round(safeLatestSensorData.reduce((sum: number, d: SensorData) => sum + (d.humidity || 0), 0) / safeLatestSensorData.length) : 0}%</p>
-                    </div>
-                  </div>
-
-                  {/* Content / chart area */}
-                  <div className="flex-1 min-h-[140px]"></div>
-                </div>
-              </div>
-
-              {/* Average Moisture Card */}
-              <div className="group relative overflow-hidden h-full">
-                <div className="absolute inset-0 bg-gradient-to-br from-secondary-500/20 to-secondary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-secondary-500 to-secondary-500 rounded-t-2xl"></div>
-
-                  {/* Header */}
-                  <div className="flex items-center mb-4">
-                    <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-secondary-100 to-secondary-50 shadow-lg group-hover:rotate-12 transition-transform duration-500">
-                      <Sprout className="h-6 w-6 text-secondary-600" />
-                    </div>
-                    <div className="flex flex-col justify-center flex-1 min-h-[72px]">
-                      <p className="text-sm font-medium text-espresso-600 mb-1">Avg Moisture</p>
-                      <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">{safeLatestSensorData.length > 0 ? Math.round(safeLatestSensorData.reduce((sum: number, d: SensorData) => sum + (d.moisture || 0), 0) / safeLatestSensorData.length) : 0}%</p>
-                    </div>
-                  </div>
-
-                  {/* Content / chart area */}
-                  <div className="flex-1 min-h-[140px]"></div>
-                </div>
-              </div>
-              
-              {/* pH Quick Stat Card */}
-              <div className="group relative overflow-hidden h-full">
-                <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/10 to-purple-500/10 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
-                <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
-                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-t-2xl"></div>
-                  <div className="mb-2">
-                    <p className="text-sm font-medium text-espresso-600">Soil pH (sample)</p>
-                  </div>
-                  <div className="flex items-center flex-1">
-                    <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-100 to-purple-50 shadow-lg group-hover:rotate-12 transition-transform duration-500">
-                      <svg className="h-6 w-6 text-indigo-600" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v6"/><path d="M7 8v6a5 5 0 0 0 10 0V8"/></svg>
-                    </div>
-                    <div className="ml-4 flex items-center justify-center flex-1 min-h-[72px]">
-                      <p className="text-3xl font-bold text-espresso-900">6.8</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Manila Weather Snapshot (if loaded) */}
-              {manilaSummary && (
+            {/* Manila Weather Snapshot (if loaded) */}
+            {manilaSummary && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
                 <div className="group relative overflow-hidden h-full">
                   <div className="absolute inset-0 bg-gradient-to-br from-yellow-500/10 to-orange-500/10 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
                   <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
@@ -428,8 +493,8 @@ const Dashboard: React.FC<DashboardProps> = () => {
                     </div>
                   </div>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Latest Sensor Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

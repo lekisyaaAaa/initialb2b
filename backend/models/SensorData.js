@@ -19,6 +19,30 @@ const SensorData = sequelize.define('SensorData', {
     type: DataTypes.FLOAT,
     allowNull: true,
   },
+  ph: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  ec: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  nitrogen: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  phosphorus: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  potassium: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+  },
+  waterLevel: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
   batteryLevel: {
     type: DataTypes.FLOAT,
     allowNull: true,

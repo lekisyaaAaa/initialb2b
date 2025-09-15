@@ -128,7 +128,6 @@
   color: #8E44AD;
   }
 
-  /* Cleaner site title and subtitle for header (perfectionist UI) */
   .site-title {
     /* responsive, slightly larger on wider screens but constrained */
     font-size: clamp(1.125rem, 1.8vw, 1.375rem); /* 18px -> 22px max */
@@ -142,7 +141,7 @@
     line-height: 1;
   }
 
-  /* Accent inside the title — subtle pill for brand color without overwhelming */
+  /* Enhanced accent for the title with gradient */
   .site-title .site-accent {
     color: var(--tertiary-accent, #8E44AD);
     font-weight: 800;
@@ -165,7 +164,9 @@
   }
 
   .site-badge {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
     padding: 0.125rem 0.45rem;
     font-size: 0.68rem; /* slightly smaller, tighter */
     border-radius: 9999px;
@@ -177,6 +178,41 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
   }
+
+  /* Live indicator styles */
+  .live-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.125rem 0.375rem;
+    font-size: 0.625rem;
+    border-radius: 9999px;
+    background: rgba(20, 184, 166, 0.1);
+    color: #0d9488;
+    border: 1px solid rgba(20, 184, 166, 0.2);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .live-indicator .pulse-dot {
+    width: 0.375rem;
+    height: 0.375rem;
+    border-radius: 50%;
+    background: #0d9488;
+    animation: pulse 2s infinite;
+  }
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.2);
+  }
+}
 
   /* Dark-mode adjustments for header typography */
   .dark .site-title { color: var(--heading); }

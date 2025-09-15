@@ -24,7 +24,9 @@ const LoginPage: React.FC = () => {
     try { storedUser = JSON.parse(localStorage.getItem('user') || 'null'); } catch(e) { storedUser = null; }
     const isAdmin = storedUser && storedUser.role === 'admin';
     if (isAdmin) {
-      const from = (location.state as any)?.from?.pathname || '/admin/dashboard';
+  // ProtectedRoute uses location.state.from when redirecting to login.
+  // Default to '/admin/dashboard' so users land on the dashboard after successful login.
+  const from = (location.state as any)?.from?.pathname || '/admin/dashboard';
       return <Navigate to={from} replace />;
     }
     // If authenticated but not admin, fall through to show the login form so admin credentials can be supplied.

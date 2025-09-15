@@ -12,7 +12,7 @@ router.get('/', auth, [
   query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
   query('severity').optional().isIn(['low', 'medium', 'high', 'critical']).withMessage('Invalid severity level'),
-  query('type').optional().isIn(['temperature', 'humidity', 'moisture', 'device_offline', 'device_online', 'battery_low']).withMessage('Invalid alert type'),
+  query('type').optional().isIn(['temperature', 'humidity', 'moisture', 'device_offline', 'device_online', 'battery_low', 'ph', 'ec', 'nitrogen', 'phosphorus', 'potassium', 'water_level']).withMessage('Invalid alert type'),
   query('deviceId').optional().notEmpty().withMessage('Device ID cannot be empty'),
   query('resolved').optional().isBoolean().withMessage('Resolved must be a boolean')
 ], async (req, res) => {

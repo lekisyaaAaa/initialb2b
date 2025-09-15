@@ -1,15 +1,11 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import weatherService from '../services/weatherService';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
+import SensorCharts from '../components/SensorCharts';
+import SystemHealth from '../components/SystemHealth';
+import SensorCard from '../components/SensorCard';
+import AlertsPanel from '../components/AlertsPanel';
+import ActuatorControls from '../components/ActuatorControls';
 import DarkModeToggle from '../components/DarkModeToggle';
-
-// AdminDashboard — improved, interactive environmental monitoring dashboard
-// Key goals implemented in this component:
-// - Prioritize Active Alerts visually with color/animation and prominent placement
-// - Integrate "Load Weather" into the overview area with concise context
-// - Add global filters (time range, sensor search/type) and optional local overrides
-// - Provide tooltips, threshold indicators, rotating smart tips and unified empty state
-// - Increase interactivity: filter, sort, drill-down into sensor details, export options
-// - Modern, minimal dark-mode aware Tailwind styling
+import weatherService from '../services/weatherService';
 
 type Sensor = {
   id: string;
@@ -18,547 +14,296 @@ type Sensor = {
   temperature?: number | null;
   humidity?: number | null;
   moisture?: number | null;
+  ph?: number | null;
+  ec?: number | null;
+  npk?: { n?: number; p?: number; k?: number } | null;
+  waterLevel?: number | null;
   batteryLevel?: number | null;
-  lastSeen?: string | null; // ISO timestamp
-  status?: 'normal' | 'warning' | 'critical';
+  lastSeen?: string | null;
 };
 
-type Alert = {
-  id: string;
-  title: string;
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  message?: string;
-  deviceId?: string;
-  createdAt: string; // ISO
-  acknowledged?: boolean;
-};
+type Alert = { id: string; title: string; severity: 'info' | 'warning' | 'critical'; message?: string; createdAt: string; acknowledged?: boolean };
 
-const DEFAULT_THRESHOLDS = {
-  humidity: { warning: 60, critical: 75 },
-  moisture: { warning: 40, critical: 60 },
-};
-
-const timeRanges = [
-  { key: '1h', label: 'Last hour' },
-  { key: '6h', label: '6 hours' },
-  { key: '24h', label: '24 hours' },
-  { key: '7d', label: '7 days' },
-];
-
-// Small helper: formatted relative time or fallback
-function fmtLastSeen(iso?: string | null) {
-  if (!iso) return 'No data';
-  const d = new Date(iso);
-  return d.toLocaleString();
-}
-
-export default function AdminDashboard() {
-  // UI state: global filters and UI controls
-  const [timeRange, setTimeRange] = useState<string>('24h');
-  const [query, setQuery] = useState<string>('');
-  const [onlyCritical, setOnlyCritical] = useState<boolean>(false);
-  const [exportFormat, setExportFormat] = useState<'csv' | 'json'>('csv');
-
-  // Data state (in a real app, fetch from API). We simulate loading and fetch attempts.
-  const [sensors, setSensors] = useState<Sensor[] | null>(null);
-  const [alerts, setAlerts] = useState<Alert[] | null>(null);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [lastFetchAttempt, setLastFetchAttempt] = useState<string | null>(null);
-  const [manilaWeather, setManilaWeather] = useState<any | null>(null);
-  const [loadingWeather, setLoadingWeather] = useState(false);
-
-  // UI helper: rotating smart tips
-  const tips = useMemo(
-    () => [
-      'Tip: Set humidity thresholds to reduce false positives during daytime.',
-      'Tip: Check battery level on devices with frequent disconnects.',
-      'Tip: Use export to create a quick CSV snapshot for offline analysis.',
-      'Tip: Pin important sensors to your dashboard for faster access.',
-    ],
-    []
-  );
-  const [tipIndex, setTipIndex] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setTipIndex((i) => (i + 1) % tips.length), 7000);
-    return () => clearInterval(t);
-  }, [tips.length]);
-
-  // Drill-down: show selected sensor details
+export default function AdminDashboard(): React.ReactElement {
+  const [latestSensor, setLatestSensor] = useState<Sensor | null>(null);
+  const [sensorHistory, setSensorHistory] = useState<Sensor[]>([]);
+  const cardClass = 'p-4 rounded-xl bg-white dark:bg-gray-900/80 border border-gray-100 dark:border-gray-800 shadow';
+  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [query, setQuery] = useState('');
   const [selectedSensor, setSelectedSensor] = useState<Sensor | null>(null);
+  const [weatherSummary, setWeatherSummary] = useState<any | null>(null);
+  const [systemStatus, setSystemStatus] = useState<{ server: string; database: string; apiLatency: number }>({ server: 'offline', database: 'offline', apiLatency: 0 });
+  const [healthStatus, setHealthStatus] = useState<any | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Real fetch: use backend endpoints. Include token from localStorage if present.
-  async function fetchData() {
-    setLoading(true);
-    setLastFetchAttempt(new Date().toISOString());
-    const token = localStorage.getItem('token');
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-
-    try {
-      // parallel fetch sensors + alerts
-      const [sRes, aRes] = await Promise.all([
-        fetch('/api/sensors', { headers }),
-        fetch('/api/alerts', { headers }),
-      ]);
-
-      // handle auth errors
-      if (sRes.status === 401 || aRes.status === 401) {
-        // redirect to login — keep behavior simple here
-        window.location.href = '/admin/login';
-        return;
-      }
-
-      if (!sRes.ok) throw new Error(`Sensors fetch failed: ${sRes.status}`);
-      if (!aRes.ok) throw new Error(`Alerts fetch failed: ${aRes.status}`);
-
-      const sJson = await sRes.json();
-      const aJson = await aRes.json();
-
-      // Expect arrays; defensive conversion
-      setSensors(Array.isArray(sJson) ? sJson : []);
-      setAlerts(Array.isArray(aJson) ? aJson : []);
-    } catch (err: any) {
-      console.error('fetchData error', err);
-      // keep existing data but surface empties when network fails
-      setSensors((prev) => prev ?? []);
-      setAlerts((prev) => prev ?? []);
-    } finally {
-      setLoading(false);
-    }
-  }
+  function fmtLastSeen(iso?: string | null) { if (!iso) return 'No data'; try { return new Date(iso).toLocaleString(); } catch { return String(iso); } }
 
   useEffect(() => {
-    // initial load
-    fetchData();
-    // keep polling every minute for demo purposes
-    const id = setInterval(fetchData, 60_000);
-    return () => clearInterval(id);
+    let mounted = true;
+    async function loadLatest() {
+      try {
+        const start = Date.now();
+        const res = await fetch('/api/sensors/latest');
+        const end = Date.now();
+        if (!mounted) return;
+        if (res.ok) {
+          const data = await res.json();
+          const s = data && data.data ? (data.data as Sensor) : null;
+          if (s) {
+            setLatestSensor(s);
+            setSensorHistory(prev => [...prev.slice(-199), s]);
+            setSystemStatus(prev => ({ ...prev, server: 'online', database: 'online', apiLatency: end - start }));
+          }
+        } else {
+          setSystemStatus(prev => ({ ...prev, server: 'offline', apiLatency: end - start }));
+        }
+      } catch (e) {
+        setSystemStatus(prev => ({ ...prev, server: 'offline', database: 'offline', apiLatency: 0 }));
+      }
+    }
+
+    async function loadAlerts() {
+      try {
+        const res = await fetch('/api/alerts');
+        if (!mounted) return;
+        if (res.ok) {
+          const data = await res.json();
+          setAlerts(Array.isArray(data) ? data : []);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    async function loadHealth() {
+      try {
+        const res = await fetch('/api/health');
+        if (!mounted) return;
+        if (res.ok) {
+          const data = await res.json();
+          setHealthStatus(data);
+        }
+      } catch (e) { setHealthStatus(null); }
+    }
+
+    loadLatest(); loadAlerts(); loadHealth();
+    const id1 = setInterval(loadLatest, 5000);
+    const id2 = setInterval(loadAlerts, 15000);
+    const id3 = setInterval(loadHealth, 10000);
+    return () => { mounted = false; clearInterval(id1); clearInterval(id2); clearInterval(id3); };
   }, []);
 
-  // Derived filtered sensors according to global filters
-  const filteredSensors = useMemo(() => {
-    if (!sensors) return null;
-    let list = sensors.slice();
-    if (query) {
-      const q = query.trim().toLowerCase();
-      list = list.filter((s) => s.name.toLowerCase().includes(q) || s.deviceId.toLowerCase().includes(q));
-    }
-    if (onlyCritical) list = list.filter((s) => s.status === 'critical');
-    return list;
-  }, [sensors, query, onlyCritical]);
+  const filteredAlerts = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (!q) return alerts;
+    return alerts.filter(a => (a.title || '').toLowerCase().includes(q) || (a.message || '').toLowerCase().includes(q));
+  }, [alerts, query]);
 
-  // Export helper: create downloadable blob
-  function doExport() {
-    const payload = filteredSensors || sensors || [];
-    if (exportFormat === 'csv') {
-      const rows = ['id,name,deviceId,temperature,humidity,moisture,ph,battery,lastSeen,status'];
-      for (const s of payload) {
-        rows.push([
-          s.id,
-          s.name,
-          s.deviceId,
-          s.temperature ?? '',
-          s.humidity ?? '',
-          s.moisture ?? '',
-          // include pH if present
-          (s as any).ph ?? '',
-          s.batteryLevel ?? '',
-          s.lastSeen ?? '',
-          s.status ?? '',
-        ].join(','));
-      }
-      const blob = new Blob([rows.join('\n')], { type: 'text/csv' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `sensors_${new Date().toISOString()}.${exportFormat}`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } else {
-      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `sensors_${new Date().toISOString()}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    const results: Array<{ type: string; id: string; title: string; subtitle?: string }> = [];
+    results.push(...alerts.filter(a => (a.title || '').toLowerCase().includes(q) || (a.message || '').toLowerCase().includes(q)).map(a => ({ type: 'alert', id: String(a.id), title: a.title, subtitle: new Date(a.createdAt).toLocaleString() })));
+    if (latestSensor && ((latestSensor.name || '').toLowerCase().includes(q) || (latestSensor.deviceId || '').toLowerCase().includes(q))) {
+      results.push({ type: 'sensor', id: latestSensor.id || 'latest', title: latestSensor.name || latestSensor.deviceId || 'Sensor', subtitle: 'Latest reading' });
     }
+    return results.slice(0, 12);
+  }, [searchQuery, alerts, latestSensor]);
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setSearchOpen(false);
+      }
+      if (e.key === '/' && !(document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA'))) {
+        e.preventDefault();
+        setSearchOpen(true);
+        setTimeout(() => searchInputRef.current?.focus(), 50);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
+  async function loadWeather() {
+    try { const sum = await weatherService.getManilaWeatherSummary(); setWeatherSummary(sum); } catch (e) { setWeatherSummary(null); }
   }
 
-  // UI helpers for visual emphasis of alerts
-  const activeAlerts = (alerts || []).filter((a) => !a.acknowledged);
+  async function controlActuator(actuator: 'pump' | 'solenoid', state: boolean) {
+    try { await fetch('/api/actuators/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ actuator, state }) }); } catch (e) { /* ignore */ }
+  }
+
+  const chartData = sensorHistory.map((s, i) => ({ time: `${i * 5}s`, temperature: s.temperature ?? 0, humidity: s.humidity ?? 0, moisture: s.moisture ?? 0, ph: s.ph ?? 0, ec: s.ec ?? 0, waterLevel: s.waterLevel ?? 0 }));
 
   return (
-    <div className="p-6 bg-gray-50 dark:bg-gray-900 min-h-screen text-gray-900 dark:text-gray-100">
-      {/* Top bar: title + global filters */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-4">
-          <a href="/" className="inline-flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200 bg-white/60 dark:bg-gray-800/60 px-3 py-2 rounded shadow-sm hover:shadow-md transition">
-            <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M15 19l-7-7 7-7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>
-            Back to Home
-          </a>
-          <div>
-            <h1 className="text-2xl font-semibold">Admin Dashboard</h1>
-            <p className="text-sm text-gray-600 dark:text-gray-400">Overview · Environmental monitoring · Live</p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Visible dark mode toggle in header */}
-          <div className="flex items-center">
-            {/* import component dynamically-friendly usage */}
-            <div className="mr-2">
-              <DarkModeToggle />
+    <div className="min-h-screen p-6 bg-gray-50 dark:bg-gray-900">
+      {searchOpen && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center p-6">
+          <div className="w-full max-w-3xl bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-gray-200 dark:border-gray-700">
+            <div className="p-4">
+              <div className="flex items-center gap-3">
+                <input ref={searchInputRef} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Search alerts, sensors... (Press Esc to close)" className="w-full px-4 py-3 rounded-lg border text-sm bg-gray-50 dark:bg-gray-900/60" />
+                <button onClick={() => { setSearchOpen(false); setSearchQuery(''); }} className="px-3 py-2 text-sm rounded-md border">Close</button>
+              </div>
             </div>
-          </div>
-          {/* Time range global filter (single source of truth) */}
-          <div className="flex items-center gap-2 bg-white dark:bg-gray-800 px-3 py-2 rounded shadow-sm">
-            <label className="text-xs text-gray-500 dark:text-gray-300 mr-2">Time</label>
-            <select
-              aria-label="Global time range"
-              className="bg-transparent text-sm outline-none"
-              value={timeRange}
-              onChange={(e) => setTimeRange(e.target.value)}
-            >
-              {timeRanges.map((t) => (
-                <option key={t.key} value={t.key}>
-                  {t.label}
-                </option>
+            <div className="max-h-[60vh] overflow-auto border-t border-gray-100 dark:border-gray-700 p-4">
+              {searchResults.length === 0 && <div className="text-sm text-gray-500">No results</div>}
+              {searchResults.map(r => (
+                <div key={`${r.type}-${r.id}`} className="py-2 border-b border-gray-100 dark:border-gray-700">
+                  <div className="text-sm font-medium">{r.title}</div>
+                  <div className="text-xs text-gray-500">{r.type} • {r.subtitle}</div>
+                </div>
               ))}
-            </select>
-          </div>
-
-          {/* Search + filter */}
-          <div className="flex items-center gap-2 bg-white dark:bg-gray-800 px-3 py-2 rounded shadow-sm">
-            <input
-              placeholder="Search sensors or device id"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="bg-transparent text-sm outline-none w-52"
-              title="Search by sensor name or device id"
-            />
-            <button
-              className={`text-sm px-2 py-1 rounded ${onlyCritical ? 'bg-red-600 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}
-              onClick={() => setOnlyCritical((v) => !v)}
-              title="Toggle only critical sensors"
-            >
-              {onlyCritical ? 'Only Critical' : 'All'}
-            </button>
-          </div>
-
-          {/* Export button with clear formats */}
-          <div className="flex items-center gap-2">
-            <select className="bg-white dark:bg-gray-800 px-2 py-1 rounded" value={exportFormat} onChange={(e) => setExportFormat(e.target.value as any)}>
-              <option value="csv">CSV</option>
-              <option value="json">JSON</option>
-            </select>
-            <button onClick={doExport} className="bg-blue-600 text-white px-3 py-1 rounded" title="Export displayed sensor data">
-              Export
-            </button>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+      <header className="sticky top-4 z-30 mb-6">
+        <div className="max-w-7xl mx-auto flex items-center justify-between p-6 rounded-3xl bg-white dark:bg-gray-900/60 backdrop-blur-sm shadow-lg">
+          <div className="flex items-center gap-6">
+            <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 dark:text-gray-100">Admin Dashboard</h1>
+            <div className="hidden md:flex items-center gap-6 text-sm text-gray-600 dark:text-gray-300">
+              <div>Server: <span className={systemStatus.server === 'online' ? 'text-green-600' : 'text-red-600'}>{systemStatus.server}</span></div>
+              <div>DB: <span className={systemStatus.database === 'online' ? 'text-green-600' : 'text-red-600'}>{systemStatus.database}</span></div>
+              <div>Latency: {systemStatus.apiLatency}ms</div>
+              <div>Health: <span className={healthStatus?.status === 'healthy' ? 'text-green-600' : 'text-red-600'}>{healthStatus?.status ?? 'unknown'}</span></div>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <button onClick={() => window.location.href = '/'} title="Back to Home" className="px-3 py-2 text-sm rounded-lg border bg-gray-100 dark:bg-gray-800">Home</button>
+            <DarkModeToggle />
+          </div>
+        </div>
+      </header>
 
-      <div className="grid grid-cols-12 gap-6">
-        {/* Left column: Alerts + KPIs (prioritized) */}
-        <div className="col-span-12 lg:col-span-4 space-y-6">
-          {/* Active Alerts — visually prioritized: red card, pulse animation, sticky at top */}
-          <div className="sticky top-4">
-            <div className="p-4 rounded-lg shadow-lg bg-red-600 text-white ring-2 ring-red-400/40">
-              <div className="flex items-start justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold">Active Alerts</h2>
-                  <p className="text-sm opacity-90">Shows unacknowledged alerts — act quickly.</p>
-                </div>
-                <div className="ml-3">
-                  <span className="inline-flex items-center px-2 py-1 text-xs font-medium bg-white/20 rounded animate-pulse">{activeAlerts.length}</span>
-                </div>
+      <main className="relative max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Background accent */}
+        <div className="pointer-events-none absolute -top-20 left-1/2 transform -translate-x-1/2 w-[1100px] h-[300px] bg-gradient-to-r from-rose-200 via-yellow-100 to-indigo-100 opacity-30 blur-3xl rounded-full dark:opacity-20" />
+        {/* Left column: System health, alerts, actuators */}
+        <div className="space-y-4">
+          <div className="p-4 rounded-lg bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow">
+            <SystemHealth items={[
+              { label: 'Server', ok: systemStatus.server === 'online', details: `${systemStatus.apiLatency}ms` },
+              { label: 'Database', ok: systemStatus.database === 'online' },
+              { label: 'ESP32s', ok: !!latestSensor },
+              { label: 'Cloud API', ok: !!weatherSummary }
+            ]} />
+          </div>
+
+          <div className="p-4 rounded-lg bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow">
+            <AlertsPanel alerts={filteredAlerts.slice(0,6).map(a => ({ id: a.id, title: a.title, severity: a.severity }))} onAcknowledge={(id)=>{ setAlerts(prev => prev.map(x => x.id===id ? { ...x, acknowledged: true } : x)); }} onDismiss={(id)=>{ setAlerts(prev => prev.filter(x => x.id!==id)); }} />
+          </div>
+
+          <div className="p-4 rounded-lg bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow">
+            <ActuatorControls className="w-full" />
+          </div>
+        </div>
+
+        {/* Center column: Overview, Latest Sensor Data, Charts */}
+        <div className="space-y-6">
+          {/* Hero metrics - prominent, immediate values for Hakim-like visual impact */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className={`${cardClass} rounded-2xl flex flex-col items-start gap-2`}>
+              <div className="text-xs text-gray-500">Current Temperature</div>
+              <div className="text-4xl md:text-5xl font-extrabold text-rose-600">{latestSensor?.temperature != null ? `${latestSensor.temperature}°C` : '--'}</div>
+              <div className="text-sm text-gray-500">Sensor: <span className="font-medium">{latestSensor?.name ?? latestSensor?.deviceId ?? '—'}</span></div>
+            </div>
+            <div className={`${cardClass} rounded-2xl flex flex-col items-start gap-2`}>
+              <div className="text-xs text-gray-500">Humidity</div>
+              <div className="text-4xl md:text-5xl font-extrabold text-sky-600">{latestSensor?.humidity != null ? `${latestSensor.humidity}%` : '--'}</div>
+              <div className="text-sm text-gray-500">Last seen: <span className="font-medium">{fmtLastSeen(latestSensor?.lastSeen)}</span></div>
+            </div>
+            <div className={`${cardClass} rounded-2xl flex flex-col items-start gap-2`}>
+              <div className="text-xs text-gray-500">Soil Moisture</div>
+              <div className="text-4xl md:text-5xl font-extrabold text-green-600">{latestSensor?.moisture != null ? `${latestSensor.moisture}%` : '--'}</div>
+              <div className="text-sm text-gray-500">Water Level: <span className="font-medium">{latestSensor?.waterLevel ?? '—'}</span></div>
+            </div>
+          </div>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 min-h-[84px]">
+            <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">Overview</h2>
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div className="col-span-1">
+                <div className="text-sm text-gray-500">Active Alerts</div>
+                <div className="text-2xl font-bold text-red-600">{filteredAlerts.length}</div>
               </div>
-
-              <div className="mt-3">
-                {loading && <p className="text-sm">Loading alerts…</p>}
-                {!loading && activeAlerts.length === 0 && <p className="text-sm">No active alerts — system nominal.</p>}
-                {!loading && activeAlerts.length > 0 && (
-                  <ul className="mt-2 space-y-2">
-                    {activeAlerts.map((a) => (
-                      <li key={a.id} className="flex items-start gap-3 bg-white/10 p-2 rounded">
-                        <div className="w-2 h-8 rounded bg-white/30" />
-                        <div className="flex-1">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <div className="font-semibold">{a.title}</div>
-                              <div className="text-xs opacity-80">{a.message}</div>
-                            </div>
-                            <div className="text-xs text-gray-100">{new Date(a.createdAt).toLocaleTimeString()}</div>
-                          </div>
-                          <div className="mt-1 text-xs">
-                            <button
-                              onClick={() => {
-                                // acknowledge locally for demo; in prod call API then refresh
-                                setAlerts((prev) => (prev || []).map((x) => (x.id === a.id ? { ...x, acknowledged: true } : x)));
-                              }}
-                              className="text-xs text-blue-200 underline"
-                            >
-                              Acknowledge
-                            </button>
-                          </div>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+              <div className="col-span-1">
+                <div className="text-sm text-gray-500">Current Temp</div>
+                <div className="text-2xl font-bold">{latestSensor?.temperature != null ? `${latestSensor.temperature}°C` : '--'}</div>
+              </div>
+              <div className="col-span-1">
+                <div className="text-sm text-gray-500">Uptime / Latency</div>
+                <div className="text-2xl font-bold">{healthStatus?.uptime ?? `${systemStatus.apiLatency}ms`}</div>
               </div>
             </div>
           </div>
 
-          {/* KPIs / Overview cards */}
-          <div className="grid grid-cols-1 gap-4">
-            <div className="p-4 rounded-lg bg-white dark:bg-gray-800 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-gray-500 dark:text-gray-300">Overall Health</div>
-                  <div className="text-2xl font-semibold">{sensors ? sensors.length : '—'} devices</div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm text-gray-500">Last fetch</div>
-                  <div className="text-sm">{lastFetchAttempt ? new Date(lastFetchAttempt).toLocaleTimeString() : '—'}</div>
-                </div>
-              </div>
-
-              {/* Integrated Load Weather (contextual) */}
-              <div className="mt-3 border-t pt-3 text-sm text-gray-600 dark:text-gray-300 flex items-center justify-between">
-                <div>
-                  <div className="font-medium">Weather Snapshot</div>
-                  <div className="text-xs opacity-80">Click to load current conditions for the area — useful to correlate sensors</div>
-                </div>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={async () => {
-                      try {
-                        setLoadingWeather(true);
-                        const summary = await weatherService.getManilaWeatherSummary();
-                        setManilaWeather(summary);
-                      } catch (err) {
-                        console.warn('AdminDashboard: failed to load Manila weather', err);
-                        setManilaWeather(null);
-                      } finally {
-                        setLoadingWeather(false);
-                      }
-                    }}
-                    className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700 text-sm"
-                    title="Load weather for this site"
-                  >
-                    {loadingWeather ? 'Loading…' : 'Load Weather'}
-                  </button>
-                </div>
-              </div>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Latest Sensor Data</h3>
+              <div className="text-sm text-gray-500">Updated: <span className="font-medium">{latestSensor ? fmtLastSeen(latestSensor.lastSeen) : '--'}</span></div>
             </div>
 
-            {/* Unified empty state / sample chart preview: show a tiny sparkline-like preview */}
-            <div className="p-4 rounded-lg bg-white dark:bg-gray-800 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-sm text-gray-500">Sensor Activity (sample)</div>
-                  <div className="text-lg font-semibold">Recent readings</div>
-                </div>
-                <div className="text-sm text-gray-500">{timeRange}</div>
-              </div>
-              <div className="mt-3 h-20 flex items-center justify-center text-gray-400">{/* Placeholder for sparkline */}
-                <svg width="100%" height="48" viewBox="0 0 200 48" className="opacity-90">
-                  <polyline fill="none" stroke="#38bdf8" strokeWidth={2} points="0,30 20,20 40,22 60,12 80,18 100,10 120,12 140,6 160,12 180,8 200,14" />
-                </svg>
-              </div>
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              <SensorCard id="temp" label="Temperature" value={latestSensor?.temperature ?? null} unit="°C" icon={<span>🌡️</span>} thresholds={{ ok: [18,30], warn: [15,18], critical: [0,14] }} hint="Optimal 18–30°C" />
+              <SensorCard id="humidity" label="Humidity" value={latestSensor?.humidity ?? null} unit="%" icon={<span>💧</span>} thresholds={{ ok: [40,70], warn: [30,40], critical: [0,29] }} hint="Optimal 40–70%" />
+              <SensorCard id="moisture" label="Soil Moisture" value={latestSensor?.moisture ?? null} unit="%" icon={<span>🪴</span>} thresholds={{ ok: [30,60], warn: [15,29], critical: [0,14] }} hint="Keep moisture >30%" />
+              <SensorCard id="ph" label="pH" value={latestSensor?.ph ?? null} unit="" icon={<span>⚗️</span>} thresholds={{ ok: [6,8], warn: [5,6], critical: [0,4] }} hint="Target pH 6–8" />
+              <SensorCard id="ec" label="EC (µS/cm)" value={latestSensor?.ec ?? null} unit="µS/cm" icon={<span>🔌</span>} hint="Electrical Conductivity" />
+              <SensorCard id="npk" label="NPK (mg/kg)" value={latestSensor?.npk?.n ?? null} unit="mg/kg" icon={<span>🧪</span>} hint="NPK sample (show N)" />
             </div>
+          </div>
 
-            {/* Manila Weather Summary (appears after Load Weather) */}
-            {manilaWeather && (
-              <div className="p-4 rounded-lg bg-white dark:bg-gray-800 shadow-sm border">
-                <div className="flex items-center justify-between mb-2">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Sensor History</h3>
+            <div className="mt-3">
+              <SensorCharts data={chartData} keys={[ 'temperature','humidity','moisture','ph','ec','waterLevel' ]} />
+            </div>
+          </div>
+        </div>
+
+        {/* Right column: Reports, User management, Recent activity */}
+        <div className="space-y-6">
+          <div className="p-4 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow flex flex-col justify-between min-h-[140px]">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">Reports & Logs</h3>
+              <p className="text-sm text-gray-600">Compost production, vermitea output, irrigation history and sensor calibration logs will appear here.</p>
+            </div>
+            <div className="mt-4 flex gap-3 items-end">
+              <button title="Export as PDF" className="px-4 py-2 text-sm rounded-md bg-primary-600 text-white">Export PDF</button>
+              <button title="Export as CSV" className="px-4 py-2 text-sm rounded-md bg-gray-200 dark:bg-gray-700">Export CSV</button>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow flex flex-col justify-between min-h-[140px]">
+            <div>
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">User Management</h3>
+              <p className="text-sm text-gray-600">Admin functions to add/edit/delete users and assign roles.</p>
+            </div>
+            <div className="mt-4">
+              <button title="Manage users" className="w-full px-4 py-2 text-sm rounded-md bg-primary-600 text-white">Manage Users</button>
+            </div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow min-h-[140px]">
+            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">Recent Activity</h3>
+            <div className="text-sm text-gray-600">
+              {alerts.slice(0,6).map(a => (
+                <div key={a.id} className="flex items-start gap-2 py-1">
+                  <div className={`w-2 h-2 rounded-full ${a.severity === 'critical' ? 'bg-red-600' : a.severity === 'warning' ? 'bg-yellow-500' : 'bg-blue-400'}`} />
                   <div>
-                    <div className="text-sm text-gray-500">Manila Weather (avg)</div>
-                    <div className="text-lg font-semibold">{manilaWeather.status?.toUpperCase() || 'NORMAL'}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-sm text-gray-500">Last updated</div>
-                    <div className="text-sm">{new Date(manilaWeather.lastUpdated).toLocaleString()}</div>
+                    <div className="text-sm font-medium">{a.title}</div>
+                    <div className="text-xs text-gray-500">{new Date(a.createdAt).toLocaleString()}</div>
                   </div>
                 </div>
-
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded">
-                    <div className="text-xs text-gray-500">Avg Temp</div>
-                    <div className="text-2xl font-bold">{manilaWeather.averageTemp}°C</div>
-                  </div>
-                  <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded">
-                    <div className="text-xs text-gray-500">Avg Humidity</div>
-                    <div className="text-2xl font-bold">{manilaWeather.averageHumidity}%</div>
-                  </div>
-                  <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded">
-                    <div className="text-xs text-gray-500">Avg Moisture</div>
-                    <div className="text-2xl font-bold">{manilaWeather.averageMoisture}%</div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right column: sensors list + detail area */}
-        <div className="col-span-12 lg:col-span-8">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Sensor list card */}
-            <div className="col-span-1 p-4 rounded-lg bg-white dark:bg-gray-800 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h3 className="text-lg font-semibold">Sensors</h3>
-                  <div className="text-sm text-gray-500">Filter and drill-down into device readings</div>
-                </div>
-                <div className="text-sm text-gray-500">Showing {filteredSensors ? filteredSensors.length : '—'}</div>
-              </div>
-
-              <div className="mt-4 space-y-3 max-h-96 overflow-auto">
-                {loading && <div className="text-sm">Loading sensors…</div>}
-
-                {!loading && filteredSensors && filteredSensors.length === 0 && (
-                  <div className="p-6 rounded border-dashed border-2 border-gray-200 dark:border-gray-700 text-center">
-                    <div className="font-medium">No matching sensors</div>
-                    <div className="text-sm text-gray-500">Try clearing filters or adjust the global range.</div>
-                  </div>
-                )}
-
-                {!loading && filteredSensors && filteredSensors.map((s) => (
-                  <div
-                    key={s.id}
-                    className={`p-3 rounded flex items-center justify-between cursor-pointer hover:shadow-md transition ${
-                      s.status === 'critical'
-                        ? 'bg-red-50 dark:bg-red-900/30 border border-red-400'
-                        : s.status === 'warning'
-                        ? 'bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300'
-                        : 'bg-white dark:bg-gray-800'
-                    }`}
-                    onClick={() => setSelectedSensor(s)}
-                    title={`Click to view ${s.name} details`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-700 dark:text-gray-200 font-semibold">
-                        {s.name.split(' ').map((p) => p[0]).slice(0,2).join('')}
-                      </div>
-                      <div>
-                        <div className="font-medium">{s.name}</div>
-                        <div className="text-xs text-gray-500">{s.deviceId} · Last: {fmtLastSeen(s.lastSeen)}</div>
-                      </div>
-                    </div>
-
-                    <div className="text-right">
-                      <div className="text-sm">{s.temperature ?? '—'}°C</div>
-                      <div className="text-xs text-gray-500">H:{s.humidity ?? '—'} M:{s.moisture ?? '—'}</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Sensor detail / drill-down */}
-            <div className="col-span-1 p-4 rounded-lg bg-white dark:bg-gray-800 shadow-sm">
-              {selectedSensor ? (
-                <div>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <h3 className="text-lg font-semibold">{selectedSensor.name}</h3>
-                      <div className="text-sm text-gray-500">Device {selectedSensor.deviceId}</div>
-                    </div>
-                    <div className="text-sm text-gray-500">Last: {fmtLastSeen(selectedSensor.lastSeen)}</div>
-                  </div>
-
-                  {/* Threshold indicators with tooltips */}
-                  <div className="mt-4 grid grid-cols-3 gap-3">
-                    <div className="p-3 rounded bg-gray-50 dark:bg-gray-700">
-                      <div className="text-xs text-gray-500">Temperature</div>
-                      <div className="text-xl font-semibold">{selectedSensor.temperature ?? '—'}°C</div>
-                    </div>
-                    <div className="p-3 rounded bg-gray-50 dark:bg-gray-700">
-                      <div className="flex items-center justify-between">
-                        <div className="text-xs text-gray-500">Humidity</div>
-                        <div className="text-xs text-gray-400" title={`Warning: ${DEFAULT_THRESHOLDS.humidity.warning}%, Critical: ${DEFAULT_THRESHOLDS.humidity.critical}%`}>
-                          thresholds
-                        </div>
-                      </div>
-                      <div className="text-xl font-semibold">{selectedSensor.humidity ?? '—'}%</div>
-                      <div className="text-xs mt-1">
-                        <ThresholdBadge value={selectedSensor.humidity} thresholds={DEFAULT_THRESHOLDS.humidity} />
-                      </div>
-                    </div>
-                    <div className="p-3 rounded bg-gray-50 dark:bg-gray-700">
-                      <div className="text-xs text-gray-500">Moisture</div>
-                      <div className="text-xl font-semibold">{selectedSensor.moisture ?? '—'}%</div>
-                      <div className="text-xs mt-1">
-                        <ThresholdBadge value={selectedSensor.moisture} thresholds={DEFAULT_THRESHOLDS.moisture} />
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mt-4">
-                    <div className="text-sm text-gray-500">Sensor timeline (sample)</div>
-                    <div className="mt-2 h-36 bg-gray-100 dark:bg-gray-800 rounded flex items-center justify-center text-gray-400">Chart placeholder</div>
-                  </div>
-
-                  <div className="mt-4 flex items-center gap-2">
-                    <button onClick={() => setSelectedSensor(null)} className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-700">Close</button>
-                    <button onClick={() => alert('Open device log (demo)')} className="px-3 py-1 rounded bg-blue-600 text-white">
-                      Open Logs
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center text-gray-500">
-                  <div className="font-medium">No sensor selected</div>
-                  <div className="text-sm mt-2">Click a sensor from the list to inspect readings and thresholds.</div>
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Bottom: Smart Tips + system feedback */}
-          <div className="mt-6 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="p-4 rounded-lg bg-white dark:bg-gray-800 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-semibold">Smart Tips</h4>
-                  <div className="text-sm text-gray-500">Context-aware and rotating</div>
-                </div>
-                <div className="text-sm text-gray-400">{timeRange}</div>
-              </div>
-              <div className="mt-3 text-sm text-gray-700 dark:text-gray-200">{tips[tipIndex]}</div>
-            </div>
-
-            <div className="p-4 rounded-lg bg-white dark:bg-gray-800 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-semibold">System Status</h4>
-                  <div className="text-sm text-gray-500">Fetch attempts and feedback</div>
-                </div>
-                <div className="text-sm text-gray-400">{loading ? 'Loading' : 'Idle'}</div>
-              </div>
-              <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">
-                <div>Last fetch attempt: {lastFetchAttempt ? new Date(lastFetchAttempt).toLocaleString() : '—'}</div>
-                <div className="mt-2">Sensors: {sensors ? sensors.length : '—'} · Alerts: {alerts ? alerts.length : '—'}</div>
-                <div className="mt-2 text-xs text-gray-500">If network errors occur, the dashboard will retry and surface friendly messages here.</div>
-              </div>
+              ))}
             </div>
           </div>
         </div>
-      </div>
+      </main>
+  {/* remove FAB for Gary-Sheng clean layout */}
     </div>
   );
 }
 
-// Small component to display threshold status badges
-function ThresholdBadge({ value, thresholds }: { value?: number | null; thresholds: { warning: number; critical: number } }) {
-  if (value == null) return <span className="text-xs text-gray-400">No data</span>;
-  if (value >= thresholds.critical) return <span className="text-xs text-red-600 font-medium">Critical</span>;
-  if (value >= thresholds.warning) return <span className="text-xs text-yellow-600 font-medium">Warning</span>;
-  return <span className="text-xs text-green-600 font-medium">Normal</span>;
-}
-
-// ensure this file is treated as a module for TS --isolatedModules
-export {};
