@@ -30,3 +30,13 @@ node_modules
 backend/.env
 frontend/.env
 *.log
+/frontend/build/
+/logs/
+/backend/logs/
+/frontend/logs/
+cleanup-backup-*/
+tmp_*
+tmp*
+.env.local
+.env
+*.log
