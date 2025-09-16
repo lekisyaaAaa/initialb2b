@@ -15,10 +15,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   useEffect(() => {
     const init = async () => {
-      const storedToken = localStorage.getItem('token');
-      const storedUser = localStorage.getItem('user');
+    // Allow adminToken as an alternative key (used by admin login flow)
+    const storedToken = localStorage.getItem('token') || localStorage.getItem('adminToken');
+    const storedUser = localStorage.getItem('user');
 
-      if (storedToken && storedUser) {
+    if (storedToken && storedUser) {
         try {
           api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
           const verifyResp = await api.get('/auth/verify');

@@ -4,7 +4,7 @@ import { ApiResponse, PaginatedResponse, SensorData, Alert, Settings, SensorStat
 // Create axios instance with base configuration
 const api: AxiosInstance = axios.create({
   // prefer IPv4 loopback in dev to avoid browsers resolving 'localhost' to ::1 (IPv6)
-  baseURL: process.env.REACT_APP_API_URL || 'http://127.0.0.1:5000/api',
+  baseURL: (process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000') + '/api',
   timeout: 10000,
   headers: {
     'Content-Type': 'application/json',
@@ -64,6 +64,26 @@ export const authService = {
   
   verify: () =>
     api.get<ApiResponse<{ user: any }>>('/auth/verify'),
+};
+
+// Admin-specific login helper that talks to /api/admin/login and returns a simple shape
+export const adminAuthService = {
+  loginAdmin: async (username: string, password: string) => {
+    const API_BASE = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000';
+    try {
+      const resp = await axios.post(`${API_BASE}/api/admin/login`, { username, password }, { timeout: 8000 });
+      if (resp?.data?.success && resp.data.token) return { success: true, token: resp.data.token };
+      return { success: false, message: resp?.data?.message || 'Invalid username or password.' };
+    } catch (err: any) {
+      if (err.response) {
+        if (err.response.status === 401) return { success: false, message: 'Invalid username or password.' };
+        if (err.response.status >= 500) return { success: false, message: 'Internal server error' };
+        return { success: false, message: err.response.data?.message || 'Login failed' };
+      }
+      // Network or connection error
+      return { success: false, message: 'Unable to connect to server. Please try again.' };
+    }
+  }
 };
 
 export const sensorService = {

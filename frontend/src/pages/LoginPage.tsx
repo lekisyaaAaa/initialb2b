@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { adminAuthService } from '../services/api';
 import { AlertCircle, Leaf, Lock, User, ArrowRight } from 'lucide-react';
 import DarkModeToggle from '../components/DarkModeToggle';
 
@@ -48,19 +49,32 @@ const LoginPage: React.FC = () => {
     setIsSubmitting(true);
 
     try {
-      const result = await login(formData.username, formData.password);
-      if (!result || !result.success) {
-        setError(result && result.message ? result.message : 'Invalid username or password');
-        // Clear password and focus username input for immediate retry
+      // Prefer explicit admin login to the admin endpoint to keep UI and backend in sync
+      console.log('LoginPage: calling adminAuthService.loginAdmin', { url: (process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000') + '/api/admin/login' });
+      const result = await adminAuthService.loginAdmin(formData.username.trim(), formData.password);
+      console.log('LoginPage: admin login result', result);
+      if (!result.success) {
+        setError(result.message || 'Invalid username or password');
         setFormData(prev => ({ ...prev, password: '' }));
         const el = document.getElementById('username') as HTMLInputElement | null;
         if (el) { el.focus(); el.select(); }
+      } else {
+        // Success - store token and redirect to admin dashboard
+        try {
+          localStorage.setItem('adminToken', result.token);
+          // Also set Authorization header for api instance so subsequent calls work
+          localStorage.setItem('token', result.token);
+          (window as any).localStorage && console.log('LoginPage: token stored in localStorage (adminToken)');
+          window.location.href = '/admin/dashboard';
+        } catch (storeErr) {
+          console.error('LoginPage: failed to store token', storeErr);
+          setError('Internal error while saving session. Please try again.');
+        }
       }
     } catch (err: any) {
-      // Try to surface server-provided message (axios-like shape) and log raw error for debugging
-      const serverMsg = (err && err.response && err.response.data && err.response.data.message) || err?.message || 'An error occurred during login. Please try again.';
-      console.error('LoginPage: login error', err);
-      setError(serverMsg);
+      console.error('LoginPage: unexpected error during admin login', err);
+      const serverMsg = (err && err.response && err.response.data && err.response.data.message) || err?.message || 'Unable to connect to server. Please try again.';
+      setError(serverMsg.includes('connect') ? 'Unable to connect to server. Please try again.' : serverMsg);
     } finally {
       setIsSubmitting(false);
     }

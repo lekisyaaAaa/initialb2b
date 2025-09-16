@@ -201,6 +201,15 @@ app.get('/internal/ping', (req, res) => {
   res.status(200).send('pong');
 });
 
+app.use('/api/auth', authRoutes);
+app.use('/api/sensors', sensorRoutes);
+app.use('/api/alerts', alertRoutes);
+app.use('/api/settings', settingsRoutes);
+app.use('/api/actuators', actuatorRoutes);
+// Mount admin route for simple admin login (keeps compatibility with existing auth flows)
+const adminRoutes = require('./routes/admin');
+app.use('/api/admin', adminRoutes);
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/sensors', sensorRoutes);
@@ -220,7 +229,8 @@ app.use('*', (req, res) => {
 app.use(errorHandler);
 
 // Start the server
-const PORT = process.env.PORT || 5000;
+// Default to 8000 as requested for new deployments; keep override via PORT env var
+const PORT = process.env.PORT || 8000;
 
 // Improved error diagnostics for common startup issues (EADDRINUSE)
 let _triedAlternatePort = false;
