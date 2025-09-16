@@ -165,11 +165,10 @@ const HomePage: React.FC = () => {
             </p>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 items-start">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 items-start">
             
             {/* Sample feature cards with dark mode */}
             <div className="group relative h-full">
-              <div className="absolute -inset-1 bg-gradient-to-r from-success-500 to-letran-500 rounded-2xl blur opacity-25 group-hover:opacity-75 transition duration-500"></div>
               <div className="relative bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-gray-100 dark:border-gray-600 hover:shadow-2xl transition-all duration-500 group-hover:-translate-y-2 h-full flex flex-col min-h-[400px]">
                 <div className="bg-gradient-to-br from-success-100 to-success-200 dark:from-success-800 dark:to-success-700 rounded-2xl p-4 w-20 h-20 mx-auto mb-6 flex items-center justify-center shadow-lg group-hover:shadow-xl group-hover:scale-110 transition-all duration-300 flex-shrink-0">
                   <Leaf className="h-10 w-10 text-success-600 dark:text-success-200" />
@@ -186,7 +185,6 @@ const HomePage: React.FC = () => {
             </div>
 
             <div className="group relative h-full">
-              <div className="absolute -inset-1 bg-gradient-to-r from-letran-500 to-primary-500 rounded-2xl blur opacity-25 group-hover:opacity-75 transition duration-500"></div>
               <div className="relative bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-gray-100 dark:border-gray-600 hover:shadow-2xl transition-all duration-500 group-hover:-translate-y-2 h-full flex flex-col min-h-[400px]">
                 <div className="bg-gradient-to-br from-letran-100 to-letran-200 dark:from-letran-800 dark:to-letran-700 rounded-2xl p-4 w-20 h-20 mx-auto mb-6 flex items-center justify-center shadow-lg group-hover:shadow-xl group-hover:scale-110 transition-all duration-300 flex-shrink-0">
                   <TrendingUp className="h-10 w-10 text-letran-600 dark:text-letran-200" />
@@ -203,7 +201,6 @@ const HomePage: React.FC = () => {
             </div>
 
             <div className="group relative h-full">
-              <div className="absolute -inset-1 bg-gradient-to-r from-warning-500 to-coffee-500 rounded-2xl blur opacity-25 group-hover:opacity-75 transition duration-500"></div>
               <div className="relative bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-gray-100 dark:border-gray-600 hover:shadow-2xl transition-all duration-500 group-hover:-translate-y-2 h-full flex flex-col min-h-[400px]">
                 <div className="bg-gradient-to-br from-warning-100 to-warning-200 dark:from-warning-800 dark:to-warning-700 rounded-2xl p-4 w-20 h-20 mx-auto mb-6 flex items-center justify-center shadow-lg group-hover:shadow-xl group-hover:scale-110 transition-all duration-300 flex-shrink-0">
                   <Recycle className="h-10 w-10 text-warning-600 dark:text-warning-200" />

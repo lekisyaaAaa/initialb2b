@@ -131,7 +131,6 @@ const PublicDashboard: React.FC = () => {
                 <div className="letran-coffee-gradient rounded-xl p-3 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 group-hover:rotate-3">
                   <Leaf className="h-7 w-7 text-white drop-shadow-sm" />
                 </div>
-                <div className="absolute -inset-1 bg-gradient-to-r from-coffee-400 to-teal-400 rounded-xl blur opacity-25 group-hover:opacity-40 transition-opacity duration-200"></div>
               </Link>
 
               {/* Brand Text */}
@@ -222,7 +221,7 @@ const PublicDashboard: React.FC = () => {
         {activeTab === 'overview' && (
           <div className="space-y-6">
             {/* Premium Glass Overview Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-6 items-stretch w-full">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-8 items-stretch w-full">
               
               {/* Temperature Card */}
               <div className="group relative overflow-hidden h-full">

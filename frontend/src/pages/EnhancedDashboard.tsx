@@ -199,7 +199,6 @@ const EnhancedDashboard: React.FC = () => {
                 <div className="letran-coffee-gradient rounded-xl p-3 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 group-hover:rotate-3">
                   <Leaf className="h-7 w-7 text-white drop-shadow-sm" />
                 </div>
-                <div className="absolute -inset-1 bg-gradient-to-r from-coffee-400 to-teal-400 rounded-xl blur opacity-25 group-hover:opacity-40 transition-opacity duration-200"></div>
               </Link>
 
               {/* Brand Text */}
@@ -330,11 +329,10 @@ const EnhancedDashboard: React.FC = () => {
           <div className="space-y-8">
             {/* Premium Glass Quick Stats */}
             {latestReadings && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch w-full">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 items-stretch w-full">
                 
                 {/* Temperature Card */}
                 <div className="group relative overflow-hidden h-full">
-                  <div className="absolute inset-0 bg-gradient-to-br from-red-500/20 to-letran-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-red-900/40 dark:to-letran-900/40"></div>
                   <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-letran-500 rounded-t-2xl"></div>
 
@@ -356,7 +354,6 @@ const EnhancedDashboard: React.FC = () => {
 
                 {/* Humidity Card */}
                 <div className="group relative overflow-hidden h-full">
-                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-primary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-blue-900/40 dark:to-primary-900/40"></div>
                   <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-primary-500 rounded-t-2xl"></div>
 
@@ -376,7 +373,6 @@ const EnhancedDashboard: React.FC = () => {
 
                 {/* pH Card (replaces Moisture per request) */}
                 <div className="group relative overflow-hidden h-full">
-                  <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 to-amber-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-amber-900/40 dark:to-amber-800/40"></div>
                   <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 to-amber-400 rounded-t-2xl"></div>
 
@@ -396,7 +392,6 @@ const EnhancedDashboard: React.FC = () => {
 
                 {/* Battery Card */}
                 <div className="group relative overflow-hidden h-full">
-                  <div className="absolute inset-0 bg-gradient-to-br from-secondary-500/20 to-secondary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-secondary-900/40 dark:to-secondary-900/40"></div>
                   <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-secondary-500 to-secondary-500 rounded-t-2xl"></div>
                     <div className="flex items-center flex-1">
@@ -415,7 +410,6 @@ const EnhancedDashboard: React.FC = () => {
 
                 {/* EC Card */}
                 <div className="group relative overflow-hidden h-full">
-                  <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-purple-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-purple-900/40 dark:to-purple-800/40"></div>
                   <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-purple-400 rounded-t-2xl"></div>
 
@@ -435,7 +429,6 @@ const EnhancedDashboard: React.FC = () => {
 
                 {/* NPK Card */}
                 <div className="group relative overflow-hidden h-full">
-                  <div className="absolute inset-0 bg-gradient-to-br from-green-500/20 to-green-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-green-900/40 dark:to-green-800/40"></div>
                   <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 to-green-400 rounded-t-2xl"></div>
 
@@ -459,7 +452,6 @@ const EnhancedDashboard: React.FC = () => {
 
                 {/* Water Level Card */}
                 <div className="group relative overflow-hidden h-full">
-                  <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/20 to-cyan-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-cyan-900/40 dark:to-cyan-800/40"></div>
                   <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-cyan-400 rounded-t-2xl"></div>
 
@@ -624,9 +616,8 @@ const EnhancedDashboard: React.FC = () => {
                 const latestData = deviceData[deviceData.length - 1];
 
                 return (
-                  <div key={deviceId} className="group relative overflow-hidden h-full">
-                    <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-teal-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500 dark:from-blue-900/40 dark:to-teal-900/40"></div>
-                    <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+          <div key={deviceId} className="group relative overflow-hidden h-full">
+            <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-teal-500 rounded-t-2xl"></div>
 
                       <div className="flex items-center justify-between mb-4">

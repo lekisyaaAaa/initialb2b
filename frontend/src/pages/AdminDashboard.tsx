@@ -5,6 +5,7 @@ import SensorCard from '../components/SensorCard';
 import AlertsPanel from '../components/AlertsPanel';
 import ActuatorControls from '../components/ActuatorControls';
 import DarkModeToggle from '../components/DarkModeToggle';
+import { useAuth } from '../contexts/AuthContext';
 import weatherService from '../services/weatherService';
 
 type Sensor = {
@@ -25,6 +26,7 @@ type Sensor = {
 type Alert = { id: string; title: string; severity: 'info' | 'warning' | 'critical'; message?: string; createdAt: string; acknowledged?: boolean };
 
 export default function AdminDashboard(): React.ReactElement {
+  const { user, logout } = useAuth();
   const [latestSensor, setLatestSensor] = useState<Sensor | null>(null);
   const [sensorHistory, setSensorHistory] = useState<Sensor[]>([]);
   const cardClass = 'p-4 rounded-xl bg-white dark:bg-gray-900/80 border border-gray-100 dark:border-gray-800 shadow';
@@ -160,22 +162,73 @@ export default function AdminDashboard(): React.ReactElement {
           </div>
         </div>
       )}
-      <header className="sticky top-4 z-30 mb-6">
-        <div className="max-w-7xl mx-auto flex items-center justify-between p-6 rounded-3xl bg-white dark:bg-gray-900/60 backdrop-blur-sm shadow-lg">
-          <div className="flex items-center gap-6">
-            <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 dark:text-gray-100">Admin Dashboard</h1>
-            <div className="hidden md:flex items-center gap-6 text-sm text-gray-600 dark:text-gray-300">
-              <div>Server: <span className={systemStatus.server === 'online' ? 'text-green-600' : 'text-red-600'}>{systemStatus.server}</span></div>
-              <div>DB: <span className={systemStatus.database === 'online' ? 'text-green-600' : 'text-red-600'}>{systemStatus.database}</span></div>
-              <div>Latency: {systemStatus.apiLatency}ms</div>
-              <div>Health: <span className={healthStatus?.status === 'healthy' ? 'text-green-600' : 'text-red-600'}>{healthStatus?.status ?? 'unknown'}</span></div>
+      <header className="bg-gradient-to-r from-white via-coffee-50 to-white dark:from-gray-800 dark:via-gray-800 dark:to-gray-800 shadow-xl border-b border-coffee-200/50 dark:border-gray-700/50 backdrop-blur-sm bg-opacity-95 sticky top-0 z-30">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex justify-between items-center py-6">
+            {/* Brand Section - match PublicDashboard */}
+            <div className="flex items-center space-x-4">
+              <a href="/" className="group relative">
+                <div className="letran-coffee-gradient rounded-xl p-3 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 group-hover:rotate-3">
+                  <svg viewBox="0 0 24 24" className="h-7 w-7 text-white drop-shadow-sm" fill="currentColor"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z" /></svg>
+                </div>
+              </a>
+
+              <div className="flex flex-col">
+                <div className="flex items-center space-x-2">
+                  <h1 className="site-title dark:site-title text-2xl font-bold">
+                    Bean<span className="site-accent bg-gradient-to-r from-teal-500 to-purple-600 bg-clip-text text-transparent">To</span>Bin
+                  </h1>
+                  <div className="hidden sm:flex items-center space-x-1">
+                    <div className="live-indicator">
+                      <div className="pulse-dot"></div>
+                      <span>Admin</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-3 mt-1">
+                  <p className="site-subtitle text-sm font-medium">Environmental Monitoring System</p>
+                  <div className="site-badge bg-gradient-to-r from-teal-50 to-purple-50 dark:from-teal-900/20 dark:to-purple-900/20 border-teal-200 dark:border-teal-700 text-teal-700 dark:text-teal-300 shadow-sm">
+                    <span>Admin Dashboard</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Status & Controls - include admin info */}
+            <div className="flex items-center space-x-6">
+              <div className="hidden md:flex items-center space-x-3 px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-full border border-green-200 dark:border-green-800">
+                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-sm" />
+                <span className="text-sm font-medium text-green-700 dark:text-green-300">System Online</span>
+              </div>
+
+              <div className="hidden lg:flex items-center space-x-4 text-sm">
+                <div className="flex items-center space-x-1 text-gray-600 dark:text-gray-300">
+                  <span className="font-medium">Server:</span>
+                  <span className={systemStatus.server === 'online' ? 'text-green-600' : 'text-red-600'}>{systemStatus.server}</span>
+                </div>
+                <div className="flex items-center space-x-1 text-gray-600 dark:text-gray-300">
+                  <span className="font-medium">DB:</span>
+                  <span className={systemStatus.database === 'online' ? 'text-green-600' : 'text-red-600'}>{systemStatus.database}</span>
+                </div>
+                <div className="flex items-center space-x-1 text-gray-600 dark:text-gray-300">
+                  <span className="font-medium">Latency:</span>
+                  <span>{systemStatus.apiLatency}ms</span>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-4">
+                <div className="hidden md:flex flex-col text-right text-sm pr-2">
+                  <span className="font-medium text-gray-800 dark:text-gray-100">{user?.username ?? 'Admin'}</span>
+                  <span className="text-xs text-gray-500 dark:text-gray-300">{user?.role ? (user.role.charAt(0).toUpperCase() + user.role.slice(1)) : 'Administrator'}</span>
+                </div>
+                <button title="Logout" onClick={() => { logout(); window.location.href = '/login'; }} className="px-3 py-2 rounded-lg border bg-gray-100 dark:bg-gray-800 text-sm">Logout</button>
+                <DarkModeToggle />
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <button onClick={() => window.location.href = '/'} title="Back to Home" className="px-3 py-2 text-sm rounded-lg border bg-gray-100 dark:bg-gray-800">Home</button>
-            <DarkModeToggle />
-          </div>
         </div>
+
+        <div className="h-px bg-gradient-to-r from-transparent via-teal-300 dark:via-teal-600 to-transparent opacity-50"></div>
       </header>
 
       <main className="relative max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -245,7 +298,7 @@ export default function AdminDashboard(): React.ReactElement {
               <div className="text-sm text-gray-500">Updated: <span className="font-medium">{latestSensor ? fmtLastSeen(latestSensor.lastSeen) : '--'}</span></div>
             </div>
 
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
               <SensorCard id="temp" label="Temperature" value={latestSensor?.temperature ?? null} unit="°C" icon={<span>🌡️</span>} thresholds={{ ok: [18,30], warn: [15,18], critical: [0,14] }} hint="Optimal 18–30°C" />
               <SensorCard id="humidity" label="Humidity" value={latestSensor?.humidity ?? null} unit="%" icon={<span>💧</span>} thresholds={{ ok: [40,70], warn: [30,40], critical: [0,29] }} hint="Optimal 40–70%" />
               <SensorCard id="moisture" label="Soil Moisture" value={latestSensor?.moisture ?? null} unit="%" icon={<span>🪴</span>} thresholds={{ ok: [30,60], warn: [15,29], critical: [0,14] }} hint="Keep moisture >30%" />
