@@ -166,53 +166,137 @@ const HomePage: React.FC = () => {
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 items-start">
-            
             {/* Sample feature cards with dark mode */}
-            <div className="group relative h-full">
-              <div className="relative bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-gray-100 dark:border-gray-600 hover:shadow-2xl transition-all duration-500 group-hover:-translate-y-2 h-full flex flex-col min-h-[400px]">
-                <div className="bg-gradient-to-br from-success-100 to-success-200 dark:from-success-800 dark:to-success-700 rounded-2xl p-4 w-20 h-20 mx-auto mb-6 flex items-center justify-center shadow-lg group-hover:shadow-xl group-hover:scale-110 transition-all duration-300 flex-shrink-0">
-                  <Leaf className="h-10 w-10 text-success-600 dark:text-success-200" />
-                </div>
-                <div className="text-center flex flex-col flex-grow">
-                  <h3 className="text-2xl font-bold text-espresso-900 dark:text-white mb-4 group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors duration-300">
+            <div className="group relative h-full feature-card" data-accent="green">
+              <div className="relative p-8 shadow-2xl border border-white/10 dark:border-white/10 hover:shadow-3xl transition-all duration-500 group-hover:-translate-y-2 h-full flex flex-col min-h-[360px]">
+                <div className="feature-card-inner text-center w-full">
+                  <div className="feature-icon-badge bg-gradient-to-br from-success-100 to-success-200 dark:from-success-800 dark:to-success-700 mx-auto mb-4 flex items-center justify-center">
+                    <Leaf className="h-7 w-7 text-success-600 dark:text-success-200" />
+                  </div>
+                  <div className="card-edge-glow" />
+                  <h3 className="text-2xl font-bold text-espresso-900 dark:text-white mb-2 group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors duration-300">
                     Eco-friendliness & Sustainability
                   </h3>
-                  <p className="text-espresso-600 dark:text-gray-300 leading-relaxed mb-6 flex-grow">
+                  <div className="text-sm text-espresso-600 dark:text-gray-300 mb-4">Repurpose waste • Reduce landfill • Enrich soil</div>
+                  <p className="text-espresso-600 dark:text-gray-300 leading-relaxed mb-4">
                     Repurposing coffee grounds to reduce waste and enrich soil, supporting a greener campus and community.
                   </p>
+                  <div className="mt-3">
+                    <span className="feature-cta">Learn more</span>
+                  </div>
                 </div>
+                <div className="accent-corner" />
               </div>
             </div>
 
-            <div className="group relative h-full">
-              <div className="relative bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-gray-100 dark:border-gray-600 hover:shadow-2xl transition-all duration-500 group-hover:-translate-y-2 h-full flex flex-col min-h-[400px]">
-                <div className="bg-gradient-to-br from-letran-100 to-letran-200 dark:from-letran-800 dark:to-letran-700 rounded-2xl p-4 w-20 h-20 mx-auto mb-6 flex items-center justify-center shadow-lg group-hover:shadow-xl group-hover:scale-110 transition-all duration-300 flex-shrink-0">
-                  <TrendingUp className="h-10 w-10 text-letran-600 dark:text-letran-200" />
-                </div>
-                <div className="text-center flex flex-col flex-grow">
-                  <h3 className="text-2xl font-bold text-espresso-900 dark:text-white mb-4 group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors duration-300">
+            <div className="group relative h-full feature-card" data-accent="red">
+              <div className="relative p-8 shadow-2xl border border-white/10 dark:border-white/10 hover:shadow-3xl transition-all duration-500 group-hover:-translate-y-2 h-full flex flex-col min-h-[360px]">
+                <div className="feature-card-inner text-center w-full">
+                  <div className="feature-icon-badge bg-gradient-to-br from-letran-100 to-letran-200 dark:from-letran-800 dark:to-letran-700 mx-auto mb-4 flex items-center justify-center">
+                    <TrendingUp className="h-7 w-7 text-letran-600 dark:text-letran-200" />
+                  </div>
+                  <div className="card-edge-glow" />
+                  <h3 className="text-2xl font-bold text-espresso-900 dark:text-white mb-2 group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors duration-300">
                     Technology Integration
                   </h3>
-                  <p className="text-espresso-600 dark:text-gray-300 leading-relaxed mb-6 flex-grow">
+                  <div className="text-sm text-espresso-600 dark:text-gray-300 mb-4">IoT • Sensors • Automation</div>
+                  <p className="text-espresso-600 dark:text-gray-300 leading-relaxed mb-4">
                     IoT sensors monitor African nightcrawlers and coffee grounds to optimize production efficiency.
                   </p>
+                  <div className="mt-3">
+                    <span className="feature-cta">Explore</span>
+                  </div>
                 </div>
+                <div className="accent-corner" />
               </div>
             </div>
 
-            <div className="group relative h-full">
-              <div className="relative bg-white/95 dark:bg-gray-800/95 backdrop-blur-sm rounded-2xl p-8 shadow-xl border border-gray-100 dark:border-gray-600 hover:shadow-2xl transition-all duration-500 group-hover:-translate-y-2 h-full flex flex-col min-h-[400px]">
-                <div className="bg-gradient-to-br from-warning-100 to-warning-200 dark:from-warning-800 dark:to-warning-700 rounded-2xl p-4 w-20 h-20 mx-auto mb-6 flex items-center justify-center shadow-lg group-hover:shadow-xl group-hover:scale-110 transition-all duration-300 flex-shrink-0">
-                  <Recycle className="h-10 w-10 text-warning-600 dark:text-warning-200" />
-                </div>
-                <div className="text-center flex flex-col flex-grow">
-                  <h3 className="text-2xl font-bold text-espresso-900 dark:text-white mb-4 group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors duration-300">
+            <div className="group relative h-full feature-card" data-accent="orange">
+              <div className="relative p-8 shadow-2xl border border-white/10 dark:border-white/10 hover:shadow-3xl transition-all duration-500 group-hover:-translate-y-2 h-full flex flex-col min-h-[360px]">
+                <div className="feature-card-inner text-center w-full">
+                  <div className="feature-icon-badge bg-gradient-to-br from-warning-100 to-warning-200 dark:from-warning-800 dark:to-warning-700 mx-auto mb-4 flex items-center justify-center">
+                    <Recycle className="h-7 w-7 text-warning-600 dark:text-warning-200" />
+                  </div>
+                  <div className="card-edge-glow" />
+                  <h3 className="text-2xl font-bold text-espresso-900 dark:text-white mb-2 group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors duration-300">
                     Vermitea & Vermiculture
                   </h3>
-                  <p className="text-espresso-600 dark:text-gray-300 leading-relaxed mb-6 flex-grow">
+                  <div className="text-sm text-espresso-600 dark:text-gray-300 mb-4">Natural • Nutrient-rich • Sustainable</div>
+                  <p className="text-espresso-600 dark:text-gray-300 leading-relaxed mb-4">
                     African nightcrawlers produce high-quality vermitea for organic farming applications.
                   </p>
+                  <div className="mt-3">
+                    <span className="feature-cta">See methods</span>
+                  </div>
                 </div>
+                <div className="accent-corner" />
+              </div>
+            </div>
+
+            {/* Restored bottom-row cards to match screenshot */}
+            <div className="group relative h-full feature-card" data-accent="blue">
+              <div className="relative p-8 shadow-2xl border border-white/10 dark:border-white/10 hover:shadow-3xl transition-all duration-500 group-hover:-translate-y-2 h-full flex flex-col min-h-[360px]">
+                <div className="feature-card-inner text-center w-full">
+                  <div className="feature-icon-badge bg-gradient-to-br from-blue-100 to-blue-200 dark:from-blue-800 dark:to-blue-700 mx-auto mb-4 flex items-center justify-center">
+                    <BarChart3 className="h-7 w-7 text-blue-600 dark:text-blue-200" />
+                  </div>
+                  <div className="card-edge-glow" />
+                  <h3 className="text-2xl font-bold text-espresso-900 dark:text-white mb-2 group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors duration-300">
+                    Real-time Monitoring
+                  </h3>
+                  <div className="text-sm text-espresso-600 dark:text-gray-300 mb-4">Live streams • Alerts • Reports</div>
+                  <p className="text-espresso-600 dark:text-gray-300 leading-relaxed mb-4">
+                    24/7 environmental data collection with live dashboard analytics and automated reporting.
+                  </p>
+                  <div className="mt-3">
+                    <span className="feature-cta">View live</span>
+                  </div>
+                </div>
+                <div className="accent-corner" />
+              </div>
+            </div>
+
+            <div className="group relative h-full feature-card" data-accent="purple">
+              <div className="relative p-8 shadow-2xl border border-white/10 dark:border-white/10 hover:shadow-3xl transition-all duration-500 group-hover:-translate-y-2 h-full flex flex-col min-h-[360px]">
+                <div className="feature-card-inner text-center w-full">
+                  <div className="feature-icon-badge bg-gradient-to-br from-purple-100 to-purple-200 dark:from-purple-800 dark:to-purple-700 mx-auto mb-4 flex items-center justify-center">
+                    <Users className="h-7 w-7 text-purple-600 dark:text-purple-200" />
+                  </div>
+                  <div className="card-edge-glow" />
+                  <h3 className="text-2xl font-bold text-espresso-900 dark:text-white mb-2 group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors duration-300">
+                    User-Friendly Interface
+                  </h3>
+                  <div className="text-sm text-espresso-600 dark:text-gray-300 mb-4">Accessible • Clear • Fast</div>
+                  <p className="text-espresso-600 dark:text-gray-300 leading-relaxed mb-4">
+                    Intuitive web-based dashboard accessible to both administrators and general users.
+                  </p>
+                  <div className="mt-3">
+                    <span className="feature-cta">Try demo</span>
+                  </div>
+                </div>
+                <div className="accent-corner" />
+              </div>
+            </div>
+
+            <div className="group relative h-full feature-card" data-accent="maroon">
+              <div className="relative p-8 shadow-2xl border border-white/10 dark:border-white/10 hover:shadow-3xl transition-all duration-500 group-hover:-translate-y-2 h-full flex flex-col min-h-[360px]">
+                <div className="feature-card-inner text-center w-full">
+                  <div className="feature-icon-badge bg-gradient-to-br from-red-100 to-red-200 dark:from-red-800 dark:to-red-700 mx-auto mb-4 flex items-center justify-center">
+                    <RefreshCw className="h-7 w-7 text-red-600 dark:text-red-200" />
+                  </div>
+                  <div className="card-edge-glow" />
+                  <h3 className="text-2xl font-bold text-espresso-900 dark:text-white mb-2 group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors duration-300">
+                    Smart Automation
+                  </h3>
+                  <div className="text-sm text-espresso-600 dark:text-gray-300 mb-4">Alerts • Predictive • Scheduled</div>
+                  <p className="text-espresso-600 dark:text-gray-300 leading-relaxed mb-4">
+                    Automated threshold monitoring with intelligent alert systems and predictive maintenance.
+                  </p>
+                  <div className="mt-3">
+                    <span className="feature-cta">Setup rules</span>
+                  </div>
+                </div>
+                <div className="accent-corner" />
               </div>
             </div>
 
