@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import { Navigate, useLocation } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api, { adminAuthService, authService, discoverApi } from '../services/api';
 import { AlertCircle, Leaf, Lock, User, ArrowRight } from 'lucide-react';
@@ -16,23 +16,49 @@ const LoginPage: React.FC = () => {
   const [error, setError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Redirect if already authenticated and user is admin.
-  // If the user is authenticated but not an admin, don't silently redirect to admin dashboard.
-  // This ensures clicking Admin Access always prompts for admin credentials unless the current user
-  // has the admin role.
-  if (isAuthenticated) {
-    // read user from localStorage to avoid extra hook dependencies; AuthContext keeps this in sync
-    let storedUser: any = null;
-    try { storedUser = JSON.parse(localStorage.getItem('user') || 'null'); } catch(e) { storedUser = null; }
-    const isAdmin = storedUser && storedUser.role === 'admin';
-    if (isAdmin) {
-  // ProtectedRoute uses location.state.from when redirecting to login.
-  // Default to '/admin/dashboard' so users land on the dashboard after successful login.
-  const from = (location.state as any)?.from?.pathname || '/admin/dashboard';
-      return <Navigate to={from} replace />;
+  // If there appears to be an authenticated session, verify the token with the backend
+  // before performing an automatic redirect. This avoids silently granting access when
+  // a stale or unverified token exists in localStorage. Clicking Admin Login will now
+  // show the credentials form until the token is verified.
+  const navigate = useNavigate();
+  const [verifyingToken, setVerifyingToken] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function verifyIfNeeded() {
+      if (!isAuthenticated) return;
+      // read stored user to check for admin role quickly
+      let storedUser: any = null;
+      try { storedUser = JSON.parse(localStorage.getItem('user') || 'null'); } catch (e) { storedUser = null; }
+      const isAdmin = storedUser && storedUser.role === 'admin';
+      if (!isAdmin) return; // allow form to be shown if not admin
+
+      // Only auto-verify+redirect if the login page was reached due to a ProtectedRoute redirect
+      // (ProtectedRoute sets location.state.from). If the user clicked "Admin Login" from the UI
+      // we should always show the credential form instead of auto-navigating.
+      const intendedFrom = (location.state as any)?.from?.pathname;
+      if (!intendedFrom) return;
+
+      setVerifyingToken(true);
+      try {
+        // verify token with backend; if successful, navigate to intended page
+        const verifyResp = await authService.verify();
+        if (cancelled) return;
+        if (verifyResp && verifyResp.data && verifyResp.data.success && verifyResp.data.data && verifyResp.data.data.user && verifyResp.data.data.user.role === 'admin') {
+          const from = intendedFrom || '/admin/dashboard';
+          navigate(from, { replace: true });
+        }
+      } catch (e) {
+        // Verification failed; fall through to show login form so admin can re-authenticate
+        console.warn('LoginPage: token verify failed during auto-redirect, showing login form');
+      } finally {
+        if (!cancelled) setVerifyingToken(false);
+      }
     }
-    // If authenticated but not admin, fall through to show the login form so admin credentials can be supplied.
-  }
+    verifyIfNeeded();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -160,6 +186,15 @@ const LoginPage: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-coffee-100 to-primary-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
+      {/* Verification overlay: shown when we are verifying an existing token before auto-redirect */}
+      {verifyingToken && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-lg flex items-center space-x-3">
+            <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary-600"></div>
+            <div className="text-sm text-espresso-900 dark:text-white">Verifying session, please wait...</div>
+          </div>
+        </div>
+      )}
       <div className="max-w-md w-full space-y-8">
         {/* Header */}
         <div className="text-center">

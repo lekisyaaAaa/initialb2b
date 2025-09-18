@@ -7,6 +7,7 @@ import SystemHealth from '../components/SystemHealth';
 import SensorCard from '../components/SensorCard';
 import AlertsPanel from '../components/AlertsPanel';
 import ActuatorControls from '../components/ActuatorControls';
+import ActuatorLogs from '../components/ActuatorLogs';
 import DarkModeToggle from '../components/DarkModeToggle';
 import { useAuth } from '../contexts/AuthContext';
 import weatherService from '../services/weatherService';
@@ -351,8 +352,8 @@ export default function AdminDashboard(): React.ReactElement {
       <main className="relative max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Background accent */}
         <div className="pointer-events-none absolute -top-20 left-1/2 transform -translate-x-1/2 w-[1100px] h-[300px] bg-gradient-to-r from-rose-200 via-yellow-100 to-indigo-100 opacity-30 blur-3xl rounded-full dark:opacity-20" />
-        {/* Left column: System health, alerts, actuators */}
-        <div className="space-y-4">
+  {/* Left column: System health, alerts, actuators */}
+  <div className="space-y-4 flex flex-col h-full">
           <div className="p-4 rounded-lg bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow">
             <SystemHealth items={[
               { label: 'Server', ok: systemStatus.server === 'online', details: `${systemStatus.apiLatency}ms` },
@@ -366,8 +367,8 @@ export default function AdminDashboard(): React.ReactElement {
             <AlertsPanel alerts={filteredAlerts.slice(0,6).map(a => ({ id: a.id, title: a.title, severity: a.severity }))} onAcknowledge={(id)=>{ setAlerts(prev => prev.map(x => x.id===id ? { ...x, acknowledged: true } : x)); }} onDismiss={(id)=>{ setAlerts(prev => prev.filter(x => x.id!==id)); }} />
           </div>
 
-          <div className="p-4 rounded-lg bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow">
-            <ActuatorControls className="w-full" />
+          <div className="p-4 rounded-lg bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow flex flex-col flex-grow">
+            <ActuatorControls className="w-full h-full" />
           </div>
         </div>
 
@@ -425,12 +426,7 @@ export default function AdminDashboard(): React.ReactElement {
             </div>
           </div>
 
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Sensor History</h3>
-            <div className="mt-3">
-              <SensorCharts data={chartData} keys={[ 'temperature','humidity','moisture','ph','ec','waterLevel' ]} />
-            </div>
-          </div>
+          {/* Sensor History removed per request */}
         </div>
 
         {/* Right column: Reports, User management, Recent activity */}
@@ -523,6 +519,23 @@ export default function AdminDashboard(): React.ReactElement {
                   </div>
                 </div>
               ))}
+            </div>
+          </div>
+          <div className="grid grid-cols-1 gap-6">
+            <div className="h-full min-h-[120px]"><ActuatorLogs className="h-full" /></div>
+            <div className="rounded-xl border p-3 bg-white/80 dark:bg-gray-800/70 border-gray-100 dark:border-gray-700 flex flex-col justify-between h-full min-h-[120px]">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-medium text-gray-800 dark:text-gray-100">Scheduler (Beta)</div>
+                <div className="text-xs text-gray-500">Add a simple schedule</div>
+              </div>
+              <div className="mt-3 text-sm text-gray-600 dark:text-gray-300">
+                <label className="text-xs">Daily time</label>
+                <div className="mt-2 flex gap-2">
+                  <input type="time" className="px-3 py-2 rounded-md border bg-white/80 dark:bg-gray-700/60 text-sm w-full" />
+                  <button className="px-3 py-2 rounded-md bg-indigo-600 text-white text-sm">Add</button>
+                </div>
+                <div className="mt-3 text-xs text-gray-500">(Scheduling will save locally for now)</div>
+              </div>
             </div>
           </div>
         </div>

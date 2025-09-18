@@ -28,14 +28,33 @@ const wss = new WebSocket.Server({ server });
 
 // Store WebSocket connections
 global.wsConnections = new Set();
+// Optional mapping from deviceId -> ws connection (when ESP32 registers itself)
+global.deviceSockets = new Map();
 
 wss.on('connection', (ws) => {
   console.log('New WebSocket connection established');
   global.wsConnections.add(ws);
+  // allow ws clients (ESP32) to register with a deviceId by sending a JSON message:
+  // { type: 'register', deviceId: 'esp32-1' }
+  ws.on('message', (raw) => {
+    try {
+      const msg = typeof raw === 'string' ? JSON.parse(raw) : JSON.parse(raw.toString());
+      if (msg && msg.type === 'register' && msg.deviceId) {
+        ws.deviceId = msg.deviceId;
+        global.deviceSockets.set(msg.deviceId, ws);
+        console.log(`WebSocket client registered as deviceId=${msg.deviceId}`);
+      }
+    } catch (e) {
+      // ignore non-JSON or unexpected messages
+    }
+  });
   
   ws.on('close', () => {
     console.log('WebSocket connection closed');
     global.wsConnections.delete(ws);
+    if (ws && ws.deviceId && global.deviceSockets.get(ws.deviceId) === ws) {
+      global.deviceSockets.delete(ws.deviceId);
+    }
   });
   
   ws.on('error', (error) => {

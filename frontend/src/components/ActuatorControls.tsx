@@ -1,126 +1,224 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { Droplet, Zap, SlidersHorizontal } from 'lucide-react';
+import ActuatorControlCard from './ActuatorControlCard';
+import ActuatorButton from './ActuatorButton';
 import ConfirmationDialog from './ConfirmationDialog';
-import { Tooltip } from './Tooltip';
 
 type Props = { className?: string };
 
-const Card: React.FC<{ children?: React.ReactNode; className?: string }> = ({ children, className = '' }) => (
-  <div className={`p-3 rounded-lg bg-white/60 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-700 flex flex-col justify-between ${className}`}>
-    {children}
-  </div>
-);
-
 const ActuatorControls: React.FC<Props> = ({ className = '' }) => {
-  const [pumpOn, setPumpOn] = useState(false);
-  const [solenoidOpen, setSolenoidOpen] = useState(false);
-  const [autoPump, setAutoPump] = useState(true);
-  const [confirm, setConfirm] = useState<{ open: boolean; action?: () => void } | null>(null);
+  const [pumpState, setPumpState] = useState<'ON' | 'OFF' | 'AUTO'>('OFF');
+  const [valveState, setValveState] = useState<'OPEN' | 'CLOSED' | 'AUTO'>('CLOSED');
+  const [irrigationRunning, setIrrigationRunning] = useState(false);
+  const [lastPumpAction, setLastPumpAction] = useState<string | null>(null);
+  const [lastIrrigation, setLastIrrigation] = useState<string | null>(null);
+  const [loading, setLoading] = useState<{ [k: string]: boolean }>({});
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<{ open: boolean; title?: string; message?: string; action?: () => void } | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectRef = useRef<number | null>(null);
+  const reconnectAttempts = useRef(0);
 
-  const doAction = (action: () => void) => setConfirm({ open: true, action: () => { action(); setConfirm(null); } });
+  const toast = (msg: string) => { alert(msg); };
 
-  const callActuator = async (path: string, body: any) => {
+  const callApi = useCallback(async (url: string, body: any) => {
     const token = localStorage.getItem('token') || localStorage.getItem('auth');
-    const res = await fetch(`/api/actuators/${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) throw new Error(await res.text().catch(() => res.statusText));
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body) });
+    if (!res.ok) {
+      let text = '';
+      try { const j = await res.json(); text = j && j.message ? j.message : JSON.stringify(j); } catch (_) { text = await res.text().catch(() => res.statusText); }
+      const err = new Error(text || `Request failed (${res.status})`);
+      (err as any).status = res.status;
+      throw err;
+    }
     return res.json();
-  };
+  }, []);
 
+  // load a default deviceId (use latest sensor device as default target)
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const res = await fetch('/api/sensors/latest');
+        if (!res.ok) return;
+        const b = await res.json().catch(() => ({}));
+        const s = b && b.data ? b.data : null;
+        if (mounted && s && s.deviceId) setDeviceId(s.deviceId);
+      } catch (e) {
+        // ignore
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  const doPump = useCallback(async (next: 'ON' | 'OFF' | 'AUTO') => {
+    setLoading(l => ({ ...l, pump: true }));
+    try {
+      if (!deviceId) throw new Error('No device selected');
+      const action = next === 'ON' ? 'on' : next === 'OFF' ? 'off' : 'auto';
+      await callApi('/api/actuators/pump', { deviceId, action });
+      setPumpState(next);
+      setLastPumpAction(new Date().toISOString());
+    } catch (e: any) {
+      toast(e.message || 'Error');
+    } finally { setLoading(l => ({ ...l, pump: false })); }
+  }, [callApi, deviceId]);
+
+  const doValve = useCallback(async (next: 'OPEN' | 'CLOSED' | 'AUTO') => {
+    setLoading(l => ({ ...l, valve: true }));
+    try {
+      if (!deviceId) throw new Error('No device selected');
+      const action = next === 'OPEN' ? 'open' : next === 'CLOSED' ? 'close' : 'auto';
+      await callApi('/api/actuators/valve', { deviceId, action });
+      setValveState(next);
+    } catch (e: any) {
+      toast(e.message || 'Error');
+    } finally { setLoading(l => ({ ...l, valve: false })); }
+  }, [callApi, deviceId]);
+
+  const doIrrigation = useCallback(async (action: 'START' | 'STOP') => {
+    setLoading(l => ({ ...l, irrigation: true }));
+    try {
+      if (!deviceId) throw new Error('No device selected');
+      const act = action === 'START' ? 'start' : 'stop';
+      // backend endpoint is /api/actuators/cycle
+      await callApi('/api/actuators/cycle', { deviceId, action: act });
+      setIrrigationRunning(action === 'START');
+      if (action === 'START') setLastIrrigation(new Date().toISOString());
+    } catch (e: any) {
+      toast(e.message || 'Error');
+    } finally { setLoading(l => ({ ...l, irrigation: false })); }
+  }, [callApi, deviceId]);
+
+  // WebSocket for real-time actuator updates
+  useEffect(() => {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const host = window.location.host;
+    const wsUrl = `${protocol}//${host}/ws`;
+
+    function connect() {
+      try {
+        wsRef.current = new WebSocket(wsUrl);
+      } catch (e) {
+        scheduleReconnect();
+        return;
+      }
+
+      wsRef.current.onopen = () => {
+        reconnectAttempts.current = 0;
+        // Optionally send an auth or subscription message here if backend expects it
+        // const token = localStorage.getItem('token') || localStorage.getItem('auth');
+        // if (token) wsRef.current?.send(JSON.stringify({ type: 'auth', token }));
+      };
+
+      wsRef.current.onmessage = (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          // handle different message shapes
+          if (data && data.type && data.payload) {
+            const p = data.payload;
+            if (data.type === 'actuator:update' || data.type === 'actuator:log') {
+              const at = String(p.actuatorType || p.type || '').toLowerCase();
+              const action = String(p.action || p.state || '').toLowerCase();
+              const ts = p.timestamp || p.time || new Date().toISOString();
+              if (at === 'pump' || at === 'pump_actuator') {
+                setPumpState(action === 'on' ? 'ON' : action === 'off' ? 'OFF' : 'AUTO');
+                setLastPumpAction(ts);
+              } else if (at === 'solenoid' || at === 'valve') {
+                setValveState(action === 'on' ? 'OPEN' : action === 'off' ? 'CLOSED' : 'AUTO');
+              } else if (at === 'cycle' || at === 'irrigation') {
+                setIrrigationRunning(action === 'start' || action === 'running');
+                if (action === 'start' || action === 'running') setLastIrrigation(ts);
+              }
+            }
+          }
+        } catch (e) {
+          // ignore malformed messages
+        }
+      };
+
+      wsRef.current.onclose = () => {
+        scheduleReconnect();
+      };
+
+      wsRef.current.onerror = () => {
+        // close will trigger reconnect
+        wsRef.current?.close();
+      };
+    }
+
+    function scheduleReconnect() {
+      if (reconnectRef.current) return;
+      reconnectAttempts.current = Math.min(10, reconnectAttempts.current + 1);
+      const timeout = Math.min(30000, 500 * Math.pow(1.5, reconnectAttempts.current));
+      reconnectRef.current = window.setTimeout(() => {
+        reconnectRef.current = null;
+        connect();
+      }, timeout);
+    }
+
+    connect();
+
+    return () => {
+      if (reconnectRef.current) { clearTimeout(reconnectRef.current); reconnectRef.current = null; }
+      try { wsRef.current?.close(); } catch (e) { /* ignore */ }
+      wsRef.current = null;
+    };
+  }, []);
+
+  
+
+  // UI
   return (
-    <div className={`p-3 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow ${className}`}>
-      <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3">Actuator Controls</h3>
-
-      <div className="grid grid-cols-1 gap-3">
-        <Card className="min-h-[140px]">
-          <div>
-            <div className="text-sm font-semibold mb-1">Pump</div>
-            <div className="text-xs text-gray-500">Controls irrigation pump</div>
+    <div className={`${className} h-full`}> 
+      <ActuatorControlCard title="Actuator Controls" className="w-full h-full">
+        <div ref={containerRef} className={`grid grid-cols-1 gap-6 items-stretch auto-rows-[minmax(0,1fr)] w-full h-full overflow-auto`}>
+        <ActuatorControlCard
+          title="Pump"
+          icon={<Droplet className={`w-6 h-6 ${pumpState === 'ON' ? 'text-green-500' : pumpState === 'OFF' ? 'text-red-500' : 'text-indigo-400'}`} />}
+          status={pumpState + (lastPumpAction ? ` • ${new Date(lastPumpAction).toLocaleTimeString()}` : '')}
+        >
+          <div className="grid grid-cols-1 gap-2 h-full min-h-[120px]">
+            <div className="flex gap-2">
+              <div className="flex-1"><ActuatorButton label="On" variant="primary" onClick={() => setConfirm({ open: true, title: 'Start pump', message: 'Are you sure you want to start the pump?', action: () => doPump('ON') })} loading={loading.pump} disabled={pumpState === 'ON'} tooltip="Turn pump ON manually" /></div>
+              <div className="flex-1"><ActuatorButton label="Off" variant="danger" onClick={() => setConfirm({ open: true, title: 'Stop pump', message: 'Stop the pump?', action: () => doPump('OFF') })} loading={loading.pump} disabled={pumpState === 'OFF'} tooltip="Turn pump OFF manually" /></div>
+            </div>
+            <div><ActuatorButton label="Auto" variant="accent" onClick={() => doPump('AUTO')} loading={loading.pump} disabled={pumpState === 'AUTO'} tooltip="Set pump to automatic mode" /></div>
           </div>
-          <div className="mt-3 grid grid-cols-1 gap-2">
-            <Tooltip content={pumpOn ? 'Stop the pump' : 'Start the pump'}>
-              <button
-                onClick={() => doAction(async () => { setPumpOn(true); try { await callActuator('pump', { action: 'on' }); } catch (e) { setPumpOn(false); console.error(e); } })}
-                className="w-full px-3 py-2 rounded-md bg-green-600 text-white text-sm"
-              >
-                On
-              </button>
-            </Tooltip>
+        </ActuatorControlCard>
 
-            <Tooltip content="Turn pump off">
-              <button
-                onClick={() => doAction(async () => { setPumpOn(false); try { await callActuator('pump', { action: 'off' }); } catch (e) { setPumpOn(true); console.error(e); } })}
-                className="w-full px-3 py-2 rounded-md bg-red-600 text-white text-sm"
-              >
-                Off
-              </button>
-            </Tooltip>
-
-            <button
-              onClick={() => doAction(async () => { setAutoPump(v => !v); try { await callActuator('pump', { action: autoPump ? 'manual' : 'auto' }); } catch (e) { setAutoPump(v => !v); console.error(e); } })}
-              className={`w-full px-3 py-2 rounded-md text-sm ${autoPump ? 'bg-indigo-600 text-white' : 'bg-gray-200 dark:bg-gray-700'}`}
-            >
-              Auto
-            </button>
+        <ActuatorControlCard
+          title="Solenoid Valve"
+          icon={<SlidersHorizontal className={`w-6 h-6 ${valveState === 'OPEN' ? 'text-green-500' : valveState === 'CLOSED' ? 'text-red-500' : 'text-indigo-400'}`} />}
+          status={valveState}
+        >
+          <div className="grid grid-cols-1 gap-2 h-full min-h-[120px]">
+            <div className="flex gap-2">
+              <div className="flex-1"><ActuatorButton label="Open" variant="primary" onClick={() => doValve('OPEN')} loading={loading.valve} disabled={valveState === 'OPEN'} tooltip="Open valve" /></div>
+              <div className="flex-1"><ActuatorButton label="Close" variant="danger" onClick={() => doValve('CLOSED')} loading={loading.valve} disabled={valveState === 'CLOSED'} tooltip="Close valve" /></div>
+            </div>
+            <div><ActuatorButton label="Auto" variant="neutral" onClick={() => doValve('AUTO')} loading={loading.valve} disabled={valveState === 'AUTO'} tooltip="Set valve to automatic mode" /></div>
           </div>
+        </ActuatorControlCard>
 
-          <div className="text-xs text-gray-500 mt-3">State: <span className="font-medium">{pumpOn ? 'On' : 'Off'}</span> • Mode: <span className="font-medium">{autoPump ? 'Auto' : 'Manual'}</span></div>
-        </Card>
-
-        <div className="h-px bg-gray-200 dark:bg-gray-800" />
-
-        <Card className="min-h-[140px]">
-          <div>
-            <div className="text-sm font-semibold mb-1">Solenoid Valve</div>
-            <div className="text-xs text-gray-500">Opens/closes water to beds</div>
+        <ActuatorControlCard
+          title="Irrigation Cycle"
+          icon={<Zap className="w-6 h-6 text-indigo-500" />}
+          status={(irrigationRunning ? 'Running' : 'Stopped') + (lastIrrigation ? ` • ${new Date(lastIrrigation).toLocaleTimeString()}` : '')}
+        >
+          <div className="grid grid-cols-1 gap-2 h-full min-h-[120px]">
+            <div className="flex gap-2">
+              <div className="flex-1"><ActuatorButton label="Start" variant="accent" onClick={() => setConfirm({ open: true, title: 'Start irrigation', message: 'Start irrigation cycle now?', action: () => doIrrigation('START') })} loading={loading.irrigation} disabled={irrigationRunning} tooltip="Start irrigation cycle now" /></div>
+              <div className="flex-1"><ActuatorButton label="Stop" variant="neutral" onClick={() => doIrrigation('STOP')} loading={loading.irrigation} disabled={!irrigationRunning} tooltip="Stop running cycle" /></div>
+            </div>
+            <div className="mt-2 text-xs text-gray-500 dark:text-gray-300">Last run: <span className="font-medium">{lastIrrigation ? new Date(lastIrrigation).toLocaleString() : '--'}</span></div>
           </div>
-          <div className="mt-3 grid grid-cols-1 gap-2">
-            <Tooltip content="Open valve">
-              <button
-                onClick={() => doAction(async () => { setSolenoidOpen(true); try { await callActuator('valve', { action: 'open' }); } catch (e) { setSolenoidOpen(false); console.error(e); } })}
-                className="w-full px-3 py-2 rounded-md bg-green-600 text-white text-sm"
-              >
-                Open
-              </button>
-            </Tooltip>
+        </ActuatorControlCard>
+        </div>
+      </ActuatorControlCard>
 
-            <Tooltip content="Close valve">
-              <button
-                onClick={() => doAction(async () => { setSolenoidOpen(false); try { await callActuator('valve', { action: 'close' }); } catch (e) { setSolenoidOpen(true); console.error(e); } })}
-                className="w-full px-3 py-2 rounded-md bg-red-600 text-white text-sm"
-              >
-                Close
-              </button>
-            </Tooltip>
-
-            <button onClick={() => doAction(async () => { try { await callActuator('valve', { action: 'auto' }); } catch (e) { console.error(e); } })} className="w-full px-3 py-2 rounded-md text-sm bg-gray-200 dark:bg-gray-700">Auto</button>
-          </div>
-          <div className="text-xs text-gray-500 mt-3">State: <span className="font-medium">{solenoidOpen ? 'Open' : 'Closed'}</span></div>
-        </Card>
-
-        <div className="h-px bg-gray-200 dark:bg-gray-800" />
-
-        <Card className="min-h-[140px]">
-          <div>
-            <div className="text-sm font-semibold mb-1">Irrigation Cycle</div>
-            <div className="text-xs text-gray-500">Run a timed irrigation cycle</div>
-          </div>
-          <div className="mt-3 grid grid-cols-1 gap-2">
-            <Tooltip content="Start irrigation cycle now">
-              <button onClick={() => doAction(async () => { try { await callActuator('cycle', { action: 'start' }); } catch (e) { console.error(e); } })} className="w-full px-3 py-2 rounded-md bg-indigo-600 text-white text-sm">Start</button>
-            </Tooltip>
-            <Tooltip content="Stop running cycle">
-              <button onClick={() => doAction(async () => { try { await callActuator('cycle', { action: 'stop' }); } catch (e) { console.error(e); } })} className="w-full px-3 py-2 rounded-md bg-gray-200 text-sm">Stop</button>
-            </Tooltip>
-          </div>
-          <div className="text-xs text-gray-500 mt-3">Last run: <span className="font-medium">--</span></div>
-        </Card>
-
-      </div>
-
-      {confirm && <ConfirmationDialog open={confirm.open} title="Confirm action" message="Proceed with the action?" onConfirm={() => confirm.action && confirm.action()} onCancel={() => setConfirm(null)} />}
+      {confirm && <ConfirmationDialog open={confirm.open} title={confirm.title || 'Confirm'} message={confirm.message || ''} onConfirm={() => { confirm.action && confirm.action(); setConfirm(null); }} onCancel={() => setConfirm(null)} />}
     </div>
   );
 };

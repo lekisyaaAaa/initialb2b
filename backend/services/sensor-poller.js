@@ -39,6 +39,18 @@ function normalize(raw) {
   else if (t.includes('humid')) out.type = 'humidity';
   else if (t.includes('moist')) out.type = 'moisture';
   else if (t.includes('batt') || t.includes('battery')) out.type = 'battery';
+  else if (t.includes('phosphorus') || t === 'p') out.type = 'phosphorus';
+  else if (t.includes('potassium') || t === 'k') out.type = 'potassium';
+  else if (t.includes('nitrogen') || t === 'n') out.type = 'nitrogen';
+  else if (t === 'ec' || t.includes('conduct')) out.type = 'ec';
+  else if (t === 'ph' || t.includes(' ph') || t.startsWith('ph') ) out.type = 'ph';
+  else if (t.includes('water') || t.includes('waterlevel') || t.includes('water_level') || t.includes('level')) out.type = 'waterLevel';
+
+  // ensure numeric parsing for common string values like '45' or '2.1' or '1' etc.
+  if (typeof raw.value === 'string' && raw.value.trim() !== '') {
+    const maybe = Number(raw.value);
+    if (!Number.isNaN(maybe)) out.value = maybe;
+  }
 
   return out;
 }
