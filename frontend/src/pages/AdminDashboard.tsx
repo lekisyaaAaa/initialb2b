@@ -193,6 +193,11 @@ export default function AdminDashboard(): React.ReactElement {
 
   // Portal header to document.body so it is never affected by parent transforms/scroll containers
   const AdminHeader: React.FC = () => {
+    React.useEffect(() => {
+      document.body.classList.add('has-admin-header');
+      return () => { document.body.classList.remove('has-admin-header'); };
+    }, []);
+
     return createPortal(
       (
         <header className="admin-fixed bg-gradient-to-r from-white via-coffee-50 to-white dark:from-gray-800 dark:via-gray-800 dark:to-gray-800 shadow-xl border-b border-coffee-200/50 dark:border-gray-700/50 backdrop-blur-sm bg-opacity-95" role="banner">

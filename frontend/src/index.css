@@ -10,6 +10,14 @@
   
   body {
     @apply bg-coffee-50 text-espresso-900 font-sans antialiased;
+    padding-top: 0; /* only add top padding when a fixed header is present */
+  }
+
+  /* When the admin/header portal is mounted, add top padding to the body
+     so page content doesn't sit beneath the fixed header. The header itself
+     is scoped to `header.admin-fixed` so regular headers are unaffected. */
+  body.has-admin-header {
+    padding-top: var(--admin-header-height);
   }
 }
 
@@ -24,6 +32,13 @@ html, body, #root {
   perspective: none !important;
   -webkit-backface-visibility: visible !important;
   backface-visibility: visible !important;
+}
+
+/* When the admin header portal is mounted we add top padding to the body
+   so page content doesn't hide behind the fixed header. This keeps normal
+   pages unaffected when the header is not present. */
+body.has-admin-header {
+  padding-top: var(--admin-header-height);
 }
 
 /* Extra-specific overrides: when header is appended to document.body (via portal),
@@ -182,8 +197,9 @@ header.admin-fixed {
   }
 
   /* Global enforcement: keep header at viewport top even if nested in transforms */
-  :root { --admin-header-height: 6rem; }
-  header {
+  :root { --admin-header-height: 6.5rem; }
+  /* Only make the admin/header portal fixed. Avoid forcing every <header> to be fixed */
+  header.admin-fixed {
     position: fixed !important;
     top: 0 !important;
     left: 0 !important;
@@ -193,6 +209,13 @@ header.admin-fixed {
     transform: translateZ(0) !important;
     will-change: transform;
     height: var(--admin-header-height) !important;
+  }
+
+  /* Visual separation: subtle border and shadow so the header reads as its own layer */
+  header {
+    box-shadow: 0 8px 24px -12px rgba(2,6,23,0.6);
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    backdrop-filter: blur(6px);
   }
 
   /* Enhanced accent for the title with gradient */
@@ -281,6 +304,10 @@ header.admin-fixed {
     background: linear-gradient(90deg, #00BFA6, #8E44AD);
   }
 
+  /* Grid helpers for contact detail rows */
+  .contact-card-body .grid { align-items: start; }
+  .contact-card-body .col-span-1 { display: flex; align-items: center; justify-content: flex-start; }
+
   .contact-cta {
     display: inline-flex;
     align-items: center;
@@ -290,6 +317,8 @@ header.admin-fixed {
     font-weight: 600;
     box-shadow: 0 10px 30px -12px rgba(0,0,0,0.2);
     transition: transform .18s ease, box-shadow .18s ease;
+    white-space: nowrap; /* ensure labels like 'Copy Phone' don't wrap to two lines */
+    word-break: keep-all;
   }
 
   .contact-cta:hover { transform: translateY(-3px); box-shadow: 0 20px 40px -16px rgba(0,0,0,0.24); }
@@ -342,10 +371,13 @@ header.admin-fixed {
   .dark .contact-hero-inner p { color: rgba(226,234,248,0.78); }
   .dark .contact-card { background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-color: rgba(255,255,255,0.04); color: #e6eef8; }
   .dark .contact-card .card-accent { opacity: 1; }
-  .dark .contact-card-footer { background: rgba(255,255,255,0.02); }
+  .dark .contact-card-footer { background: linear-gradient(180deg, rgba(12,14,18,0.6), rgba(8,10,12,0.5)); border-top: 1px solid rgba(255,255,255,0.04); }
   .dark .contact-card-footer .contact-cta { color: #fff; }
   .dark .contact-cta.bg-primary-600 { background: linear-gradient(90deg,#00BFA6,#03A9F4); color: #042027; }
-  .dark .contact-cta.bg-coffee-50 { background: rgba(255,255,255,0.06); color: #e6eef8; }
+  /* Replace very light button with a stronger, accessible variant in dark mode */
+  .dark .contact-cta.bg-coffee-50 { background: linear-gradient(90deg,#374151,#1f2937); color: #e6eef8; box-shadow: 0 8px 20px rgba(2,6,23,0.45); }
+  /* Also ensure default contact-cta buttons have good contrast in dark */
+  .dark .contact-cta { box-shadow: 0 14px 36px -10px rgba(0,0,0,0.6); }
 
 @keyframes pulse {
   0%, 100% {
