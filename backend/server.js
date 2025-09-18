@@ -319,10 +319,16 @@ server.on('error', (err) => {
 
 // Bind to 0.0.0.0 in development so localhost resolves (IPv4/IPv6) from browsers reliably
 const BIND_HOST = (process.env.BIND_HOST || '0.0.0.0');
-server.listen(PORT, BIND_HOST, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`🔌 WebSocket server running on ws://localhost:${PORT}`);
+
+// Resilient binding: try PORT and fall back across a small range if the port is in use
+const configuredPort = Number(process.env.PORT || PORT || 8000);
+const MAX_TRIES = 10;
+let attempts = 0;
+
+function onBound(boundPort) {
+  console.log(`🚀 Server running on port ${boundPort}`);
+  console.log(`📊 Health check: http://localhost:${boundPort}/api/health`);
+  console.log(`🔌 WebSocket server running on ws://localhost:${boundPort}`);
   try {
     console.log('Process PID:', process.pid);
     const addr = server.address();
@@ -331,12 +337,12 @@ server.listen(PORT, BIND_HOST, () => {
     console.warn('Could not determine server address/pid:', e && e.message ? e.message : e);
   }
 
-  // Temporary self-connectivity check: attempt to HTTP GET the health endpoint from the same process.
+  // Self-check the internal ping endpoint using the actual bound port
   try {
     const http = require('http');
     const selfOpts = {
       hostname: '127.0.0.1',
-      port: PORT,
+      port: boundPort,
       path: '/internal/ping',
       method: 'GET',
       timeout: 2000
@@ -359,7 +365,31 @@ server.listen(PORT, BIND_HOST, () => {
   } catch (e) {
     console.error('Self-check setup failed:', e && e.message ? e.message : e);
   }
-});
+}
+
+function tryListen(port) {
+  attempts++;
+  server.listen(port, BIND_HOST, () => onBound(port));
+  server.once('error', (err) => {
+    if (err && err.code === 'EADDRINUSE') {
+      console.warn(`Port ${port} in use (EADDRINUSE)`);
+      server.removeAllListeners('error');
+      if (attempts < MAX_TRIES) {
+        const next = port + 1;
+        console.log(`Attempting to bind to port ${next} (try ${attempts + 1}/${MAX_TRIES})`);
+        tryListen(next);
+      } else {
+        console.error('Exhausted port retry attempts. Exiting.');
+        process.exit(1);
+      }
+    } else {
+      console.error('Server listen error:', err);
+      process.exit(1);
+    }
+  });
+}
+
+tryListen(configuredPort);
 
 
 // Graceful shutdown
