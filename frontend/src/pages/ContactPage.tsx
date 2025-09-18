@@ -69,32 +69,54 @@ const ContactPage: React.FC = () => {
             </Link>
             <DarkModeToggle />
           </div>
-          
-          <div className="text-center">
-            <h1 className="text-4xl font-bold text-coffee-900 dark:text-white mb-4">Contact Information</h1>
-            <p className="text-coffee-700 dark:text-gray-300 text-lg max-w-2xl mx-auto">
+
+          <div className="contact-hero mx-auto max-w-5xl text-center relative">
+              <div className="contact-hero-deco" aria-hidden="true">
+                <svg width="520" height="420" viewBox="0 0 520 420" fill="none" xmlns="http://www.w3.org/2000/svg" className="mx-auto">
+                  <defs>
+                    <linearGradient id="g1" x1="0" x2="1">
+                      <stop offset="0%" stopColor="#8E44AD" stopOpacity="0.12"/>
+                      <stop offset="100%" stopColor="#00BFA6" stopOpacity="0.06"/>
+                    </linearGradient>
+                  </defs>
+                  <rect x="0" y="0" width="520" height="420" rx="24" fill="url(#g1)" />
+                  <circle cx="420" cy="80" r="120" fill="#00BFA6" fillOpacity="0.06" />
+                  <circle cx="80" cy="320" r="100" fill="#8E44AD" fillOpacity="0.04" />
+                </svg>
+              </div>
+            <h1 className="text-4xl font-bold text-coffee-900 dark:text-white mb-2">Contact Information</h1>
+            <p className="text-coffee-700 dark:text-gray-300 text-lg max-w-2xl mx-auto mb-4">
               Get in touch with our environmental monitoring team. Our experts are here to assist you 
               with any questions about environmental data, sensor systems, or monitoring services.
             </p>
+            <div className="flex items-center justify-center gap-4">
+              <a href="mailto:info@letran.edu.ph" className="contact-cta bg-primary-600 text-white">Email General Inquiry</a>
+              <a href="tel:+639171234567" className="contact-cta bg-coffee-50 text-coffee-800">Call Office</a>
+            </div>
           </div>
         </div>
 
         {/* Contact Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {contacts.map((contact, index) => (
-            <div 
-              key={index}
-              className="bg-white dark:bg-gray-800 rounded-xl shadow-lg hover:shadow-xl transition-shadow duration-300 overflow-hidden"
-            >
-              {/* Card Header */}
-              <div className="bg-gradient-to-r from-coffee-600 to-coffee-700 dark:from-coffee-700 dark:to-coffee-800 text-white p-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 mt-6">
+          {contacts.map((contact, index) => {
+            const accents = ['purple', 'blue', 'green'];
+            const accent = accents[index % accents.length];
+            return (
+              <div 
+                key={index}
+                className="contact-card overflow-hidden"
+                data-accent={accent}
+              >
+                <div className="card-accent" />
+                {/* Card Header */}
+                <div className="p-6">
                 <div className="flex items-center mb-3">
-                  <div className="w-12 h-12 bg-coffee-500 dark:bg-coffee-600 rounded-full flex items-center justify-center mr-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-coffee-500 to-primary-500 rounded-full flex items-center justify-center mr-4 shadow-md">
                     <User className="w-6 h-6 text-white" />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold">{contact.name}</h3>
-                    <p className="text-coffee-100 dark:text-coffee-200 text-sm">{contact.position}</p>
+                    <h3 className="text-xl font-bold text-coffee-900 dark:text-white">{contact.name}</h3>
+                    <p className="text-coffee-500 dark:text-coffee-300 text-sm">{contact.position}</p>
                   </div>
                 </div>
               </div>
@@ -162,20 +184,21 @@ const ContactPage: React.FC = () => {
                 <div className="flex space-x-3">
                   <a
                     href={`tel:${contact.phone}`}
-                    className="flex-1 bg-coffee-600 dark:bg-coffee-700 text-white text-center py-2 px-4 rounded-lg hover:bg-coffee-700 dark:hover:bg-coffee-800 transition-colors"
+                    className="contact-cta flex-1 bg-coffee-600 text-white justify-center"
                   >
                     Call
                   </a>
                   <a
                     href={`mailto:${contact.email}`}
-                    className="flex-1 bg-coffee-200 dark:bg-gray-600 text-coffee-800 dark:text-gray-200 text-center py-2 px-4 rounded-lg hover:bg-coffee-300 dark:hover:bg-gray-500 transition-colors"
+                    className="contact-cta flex-1 bg-coffee-200 text-coffee-800 justify-center"
                   >
                     Email
                   </a>
                 </div>
               </div>
-            </div>
-          ))}
+              </div>
+            );
+          })}
         </div>
 
         {/* Additional Information */}

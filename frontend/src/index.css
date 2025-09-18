@@ -13,6 +13,34 @@
   }
 }
 
+/* Prevent root-level stacking contexts that can break `position: fixed` on portals.
+   This is a minimal, safe override applied only to the top-level containers and
+   avoids touching component-level transforms or animations. */
+html, body, #root {
+  transform: none !important;
+  -webkit-transform: none !important;
+  will-change: auto !important;
+  filter: none !important;
+  perspective: none !important;
+  -webkit-backface-visibility: visible !important;
+  backface-visibility: visible !important;
+}
+
+/* Extra-specific overrides: when header is appended to document.body (via portal),
+   ensure it is forced to viewport-fixed regardless of other CSS. This targets the
+   common header markup used across admin/public pages and keeps behavior robust. */
+body > header,
+body > header.admin-fixed,
+header.admin-fixed {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  width: 100% !important;
+  z-index: 9999 !important; /* reasonable high value */
+  transform: none !important;
+}
+
 /* Custom component styles */
 @layer components {
   .btn {
@@ -141,6 +169,32 @@
     line-height: 1;
   }
 
+  /* Ensure admin header remains fixed and visually separated */
+  .admin-fixed {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    z-index: 9999 !important;
+    box-shadow: 0 8px 30px -12px rgba(2,6,23,0.45);
+    backdrop-filter: blur(6px);
+  }
+
+  /* Global enforcement: keep header at viewport top even if nested in transforms */
+  :root { --admin-header-height: 6rem; }
+  header {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    width: 100% !important;
+    z-index: 9998 !important;
+    transform: translateZ(0) !important;
+    will-change: transform;
+    height: var(--admin-header-height) !important;
+  }
+
   /* Enhanced accent for the title with gradient */
   .site-title .site-accent {
     color: var(--tertiary-accent, #8E44AD);
@@ -178,6 +232,68 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
   }
+
+  /* Contact page styles */
+  .contact-hero {
+    background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(255,255,255,0.4));
+    -webkit-backdrop-filter: blur(8px);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(0,0,0,0.04);
+    box-shadow: 0 12px 30px rgba(2,6,23,0.06);
+    border-radius: 1rem;
+    padding: 2rem;
+  }
+
+  .contact-hero-deco {
+    position: absolute;
+    inset: -24px 0 auto 0;
+    pointer-events: none;
+    opacity: 0.85;
+    transform: translateY(-6%);
+    filter: blur(0.6px);
+    z-index: 0;
+  }
+
+  .contact-card {
+    background: linear-gradient(180deg, rgba(255,255,255,0.95), rgba(255,255,255,0.9));
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    border: 1px solid rgba(16,24,40,0.04);
+    border-radius: 1rem;
+    transition: transform .25s ease, box-shadow .25s ease;
+  }
+
+  .contact-card:hover {
+    transform: translateY(-6px);
+    box-shadow: 0 30px 60px -20px rgba(2,6,23,0.2);
+  }
+
+  /* Per-card accent colors for contact cards */
+  .contact-card[data-accent="purple"] .card-accent { background: linear-gradient(90deg, #8E44AD, #6B21A8); }
+  .contact-card[data-accent="blue"] .card-accent { background: linear-gradient(90deg, #3b82f6, #2563eb); }
+  .contact-card[data-accent="green"] .card-accent { background: linear-gradient(90deg, #10b981, #059669); }
+
+  .contact-card .card-accent {
+    height: 6px;
+    width: 100%;
+    border-top-left-radius: 1rem;
+    border-top-right-radius: 1rem;
+    background: linear-gradient(90deg, #00BFA6, #8E44AD);
+  }
+
+  .contact-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .6rem 1rem;
+    border-radius: .75rem;
+    font-weight: 600;
+    box-shadow: 0 10px 30px -12px rgba(0,0,0,0.2);
+    transition: transform .18s ease, box-shadow .18s ease;
+  }
+
+  .contact-cta:hover { transform: translateY(-3px); box-shadow: 0 20px 40px -16px rgba(0,0,0,0.24); }
+
 
   /* Live indicator styles */
   .live-indicator {

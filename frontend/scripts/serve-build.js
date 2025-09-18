@@ -7,7 +7,8 @@ const buildDir = path.join(__dirname, '..', 'build');
 
 app.use(express.static(buildDir));
 
-app.get(['/', '/admin', '/admin/*', '/login', '/dashboard', '/admin/dashboard'], (req, res) => {
+// Fallback for client-side routing: return index.html for any path not matching static assets
+app.get('*', (req, res) => {
   res.sendFile(path.join(buildDir, 'index.html'));
 });
 

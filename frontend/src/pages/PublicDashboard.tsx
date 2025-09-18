@@ -63,7 +63,7 @@ const sampleSensorData = [
 ];
 
 const PublicDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'alerts' | 'sensors'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'sensors'>('overview');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleRefresh = () => {
@@ -196,12 +196,11 @@ const PublicDashboard: React.FC = () => {
           <div className="flex space-x-8">
             {[
               { id: 'overview', label: 'Overview', icon: TrendingUp },
-              { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
               { id: 'sensors', label: 'Sensors', icon: Thermometer }
             ].map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
-                onClick={() => setActiveTab(id as 'overview' | 'alerts' | 'sensors')}
+                onClick={() => setActiveTab(id as 'overview' | 'sensors')}
                 className={`flex items-center space-x-2 px-4 py-4 border-b-2 font-medium text-sm transition-colors ${
                   activeTab === id
                     ? 'border-teal-500 text-teal-600 dark:text-teal-400'
@@ -463,18 +462,7 @@ const PublicDashboard: React.FC = () => {
           </div>
         )}
 
-        {activeTab === 'alerts' && (
-          <div className="rounded-lg shadow">
-            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white">Recent Alerts</h3>
-            </div>
-            <div className="p-6">
-              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                No alerts at this time. All systems operating normally.
-              </div>
-            </div>
-          </div>
-        )}
+        
 
         {activeTab === 'sensors' && (
           <div className="space-y-6">

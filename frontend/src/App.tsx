@@ -39,6 +39,7 @@ function App() {
                 <Route path="/admin" element={<ProtectedRoute><Navigate to="/admin/dashboard" replace /></ProtectedRoute>} />
                 {/* Explicit dashboard path kept for compatibility */}
                 <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
+                {/* dev-only debug route removed */}
                 <Route path="/logs" element={<ProtectedRoute><LogsPage /></ProtectedRoute>} />
                 <Route path="/thresholds" element={<ProtectedRoute><ThresholdsPage /></ProtectedRoute>} />
                 <Route path="/home-assistant" element={<ProtectedRoute><HomeAssistant /></ProtectedRoute>} />

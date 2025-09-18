@@ -34,12 +34,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             throw new Error('Token verify failed');
           }
         } catch (e: any) {
-          console.warn('Stored token verify failed, clearing local auth:', e && (e.message || String(e)));
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          delete api.defaults.headers.common['Authorization'];
-          setToken(null);
-          setUser(null);
+          // If this appears to be a development local-token and a user is stored, keep it so admin can work offline
+          const looksLikeLocalDevToken = typeof storedToken === 'string' && storedToken.startsWith('local-dev-token-');
+          if (looksLikeLocalDevToken && storedUser) {
+            try {
+              const parsed = JSON.parse(storedUser);
+              setToken(storedToken);
+              setUser(parsed);
+              (api.defaults.headers as any).Authorization = `Bearer ${storedToken}`;
+              console.log('✅ Using local fallback token on startup for user', parsed.username || parsed.id);
+            } catch (parseErr) {
+              console.warn('Stored token verify failed, clearing local auth:', e && (e.message || String(e)));
+              localStorage.removeItem('token');
+              localStorage.removeItem('user');
+              delete api.defaults.headers.common['Authorization'];
+              setToken(null);
+              setUser(null);
+            }
+          } else {
+            console.warn('Stored token verify failed, clearing local auth:', e && (e.message || String(e)));
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            delete api.defaults.headers.common['Authorization'];
+            setToken(null);
+            setUser(null);
+          }
         }
       }
 

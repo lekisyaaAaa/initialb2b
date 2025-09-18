@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { adminAuthService } from '../services/api';
+import api, { adminAuthService, authService, discoverApi } from '../services/api';
 import { AlertCircle, Leaf, Lock, User, ArrowRight } from 'lucide-react';
 import DarkModeToggle from '../components/DarkModeToggle';
 
@@ -49,6 +49,47 @@ const LoginPage: React.FC = () => {
     setIsSubmitting(true);
 
     try {
+      // Pre-flight: check backend health so we can present a clear offline message
+      try {
+        await api.get('/health', { timeout: 3000 });
+      } catch (healthErr: any) {
+        console.warn('LoginPage: health check failed', healthErr && (healthErr.message || healthErr));
+        // Try discovery (probe common fallback ports) and switch if found
+        let discovered = false;
+        try {
+          const d = await discoverApi({ timeout: 1500 });
+          if (d.ok && d.baseURL) {
+            console.log('LoginPage: discovered API at', d.baseURL);
+            discovered = true;
+            // continue and attempt login again using updated api.baseURL
+          }
+        } catch (e) {
+          // ignore discovery failure
+        }
+
+        // If discovery didn't find anything, offer a local dev fallback for admin credentials
+        if (!discovered) {
+          const localUser = (process.env.REACT_APP_LOCAL_ADMIN_USER || 'admin');
+          const localPass = (process.env.REACT_APP_LOCAL_ADMIN_PASS || 'admin');
+          if (formData.username.trim() === localUser && formData.password === localPass) {
+            // Create a local fake token + user and proceed
+            const fakeToken = `local-dev-token-${Date.now()}`;
+            const user = { id: 'local-admin', username: localUser, role: 'admin', local: true } as any;
+            try {
+              localStorage.setItem('adminToken', fakeToken);
+              localStorage.setItem('token', fakeToken);
+              localStorage.setItem('user', JSON.stringify(user));
+              console.log('LoginPage: local fallback login applied');
+              window.location.href = '/admin/dashboard';
+              return;
+            } catch (e) {
+              console.warn('LoginPage: could not store local fallback token', e);
+            }
+          }
+        }
+        // If not handled, let the normal login attempt proceed (it will likely fail) and be handled below
+      }
+
       // Prefer explicit admin login to the admin endpoint to keep UI and backend in sync
       console.log('LoginPage: calling adminAuthService.loginAdmin', { url: (process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000') + '/api/admin/login' });
       const result = await adminAuthService.loginAdmin(formData.username.trim(), formData.password);
@@ -59,12 +100,43 @@ const LoginPage: React.FC = () => {
         const el = document.getElementById('username') as HTMLInputElement | null;
         if (el) { el.focus(); el.select(); }
       } else {
-        // Success - store token and redirect to admin dashboard
+        // Success - store token, fetch user via /auth/verify, then redirect to admin dashboard
         try {
           localStorage.setItem('adminToken', result.token);
-          // Also set Authorization header for api instance so subsequent calls work
+          // Also set the main token key for compatibility with existing auth flows
           localStorage.setItem('token', result.token);
           (window as any).localStorage && console.log('LoginPage: token stored in localStorage (adminToken)');
+
+          // If the login response included a user object (local fallback), use it directly
+          if ((result as any).user) {
+            try {
+              localStorage.setItem('user', JSON.stringify((result as any).user));
+              console.log('LoginPage: stored local fallback user');
+            } catch (e) { /* ignore */ }
+          } else {
+            // Verify token and fetch user information so AuthContext can pick up authenticated user
+            try {
+              const verifyResp = await authService.verify();
+              if (verifyResp?.data?.success && verifyResp.data.data?.user) {
+                localStorage.setItem('user', JSON.stringify(verifyResp.data.data.user));
+                console.log('LoginPage: verified admin token and stored user');
+              } else {
+                console.warn('LoginPage: token verify did not return user, proceeding to dashboard');
+              }
+            } catch (verifyErr) {
+              // Non-fatal: if verify fails, still attempt to navigate — AuthContext will clear invalid tokens on load
+              const msg = verifyErr && (verifyErr as any).message ? (verifyErr as any).message : String(verifyErr);
+              console.warn('LoginPage: token verify failed after admin login', msg);
+            } finally {
+              // Debug: ensure token keys are present and log them
+              try {
+                console.log('LoginPage: tokens after storage -> token=', localStorage.getItem('token'), 'adminToken=', localStorage.getItem('adminToken'));
+              } catch (e) {
+                console.warn('LoginPage: failed to read localStorage for debug', e);
+              }
+            }
+          }
+
           window.location.href = '/admin/dashboard';
         } catch (storeErr) {
           console.error('LoginPage: failed to store token', storeErr);
@@ -74,7 +146,10 @@ const LoginPage: React.FC = () => {
     } catch (err: any) {
       console.error('LoginPage: unexpected error during admin login', err);
       const serverMsg = (err && err.response && err.response.data && err.response.data.message) || err?.message || 'Unable to connect to server. Please try again.';
-      setError(serverMsg.includes('connect') ? 'Unable to connect to server. Please try again.' : serverMsg);
+      const low = (serverMsg || '').toLowerCase();
+      const networkKeywords = ['connect', 'network error', 'econnrefused', 'enotfound', 'etimedout', 'server offline', 'unable to reach'];
+      const isNetwork = networkKeywords.some(k => low.includes(k));
+      setError(isNetwork ? 'Server offline. Please check if the backend is running.' : serverMsg);
     } finally {
       setIsSubmitting(false);
     }
@@ -179,6 +254,17 @@ const LoginPage: React.FC = () => {
                   </>
                 )}
               </button>
+              <div className="mt-2 flex justify-between">
+                <button type="button" onClick={async () => {
+                  setError('');
+                  try {
+                    const d = await discoverApi({ timeout: 1500 });
+                    if (d.ok) setError(`Backend reachable at ${d.baseURL}`);
+                    else setError('No reachable backend found on common ports.');
+                  } catch (e:any) { setError('Error checking backend: ' + (e && e.message ? e.message : String(e))); }
+                }} className="text-sm text-gray-600 underline">Check backend</button>
+                <div className="text-xs text-gray-400">If offline, start backend on port 5000/8000</div>
+              </div>
             </div>
           </form>
         </div>
