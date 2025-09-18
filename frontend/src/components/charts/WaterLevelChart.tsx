@@ -1,4 +1,5 @@
 import React from 'react';
+import { toDateTime } from '../../utils/date';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { SensorData } from '../../types';
 
@@ -14,8 +15,8 @@ const WaterLevelChart: React.FC<WaterLevelChartProps> = ({ data, height = 400, c
 
   // Format data for the chart
   const chartData = waterLevelData.map(item => ({
-    timestamp: new Date(item.timestamp).getTime(),
-    time: new Date(item.timestamp).toLocaleTimeString(),
+    timestamp: toDateTime(item.timestamp).getTime(),
+    time: toDateTime(item.timestamp).toLocaleTimeString(),
     waterLevel: item.waterLevel,
     deviceId: item.deviceId
   }));

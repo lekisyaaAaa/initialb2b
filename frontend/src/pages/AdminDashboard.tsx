@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Leaf } from 'lucide-react';
@@ -25,7 +26,7 @@ type Sensor = {
   lastSeen?: string | null;
 };
 
-type Alert = { id: string; title: string; severity: 'info' | 'warning' | 'critical'; message?: string; createdAt: string; acknowledged?: boolean };
+type Alert = { id: string; _id?: string; type?: string; title: string; severity: 'info' | 'warning' | 'critical'; message?: string; createdAt: string; acknowledged?: boolean };
 
 export default function AdminDashboard(): React.ReactElement {
   const { user, logout } = useAuth();
@@ -45,6 +46,7 @@ export default function AdminDashboard(): React.ReactElement {
   // Maintenance reminders state (populated from backend)
   const [reminders, setReminders] = useState<Array<any>>([]);
   const [remindersLoading, setRemindersLoading] = useState(false);
+  const [actuatorLogs, setActuatorLogs] = useState<any[]>([]);
 
   async function loadReminders() {
     setRemindersLoading(true);
@@ -64,6 +66,17 @@ export default function AdminDashboard(): React.ReactElement {
       setReminders([]);
     } finally {
       setRemindersLoading(false);
+    }
+  }
+
+  async function loadActuatorLogs() {
+    try {
+      const res = await fetch('/api/actuators/logs?limit=200');
+      if (!res.ok) return setActuatorLogs([]);
+      const body = await res.json().catch(() => ({}));
+      setActuatorLogs(body.logs || []);
+    } catch (e) {
+      setActuatorLogs([]);
     }
   }
 
@@ -133,6 +146,21 @@ export default function AdminDashboard(): React.ReactElement {
     }
 
     loadLatest(); loadAlerts(); loadHealth(); loadReminders();
+    // also fetch initial history for charts
+    (async function loadHistory() {
+      try {
+        const h = await fetch('/api/sensors/history?limit=200');
+        if (h.ok) {
+          const body = await h.json().catch(() => ({}));
+          const items = Array.isArray(body.data?.sensorData) ? body.data.sensorData : (Array.isArray(body) ? body : []);
+          if (items && items.length) {
+            setSensorHistory(items.slice(0,200).reverse());
+          }
+        }
+      } catch (e) {
+        // ignore
+      }
+    })();
     const id1 = setInterval(loadLatest, 5000);
     const id2 = setInterval(loadAlerts, 15000);
     const id3 = setInterval(loadHealth, 10000);
@@ -190,6 +218,23 @@ export default function AdminDashboard(): React.ReactElement {
       // ignore errors for now
     }
   }
+
+  // Compute vermitea production counter from waterLevel deltas in history
+  const vermiteaLiters = useMemo(() => {
+    // assume waterLevel is integer representing mm of water or sensor level; convert delta to liters using tank cross-section
+    // this is heuristic: if waterLevel drops, that's liters produced; use tankAreaLitersPerUnit as calibration
+    const tankAreaLitersPerUnit = 0.5; // liters per waterLevel unit (configurable in settings)
+    if (!sensorHistory || sensorHistory.length < 2) return 0;
+    let liters = 0;
+    for (let i = 1; i < sensorHistory.length; i++) {
+      const prev = sensorHistory[i-1].waterLevel ?? null;
+      const cur = sensorHistory[i].waterLevel ?? null;
+      if (prev != null && cur != null && prev > cur) {
+        liters += (prev - cur) * tankAreaLitersPerUnit;
+      }
+    }
+    return Math.round(liters * 10) / 10;
+  }, [sensorHistory]);
 
   // Portal header to document.body so it is never affected by parent transforms/scroll containers
   const AdminHeader: React.FC = () => {
@@ -371,12 +416,12 @@ export default function AdminDashboard(): React.ReactElement {
             </div>
 
             <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-              <SensorCard id="temp" label="Temperature" value={latestSensor?.temperature ?? null} unit="°C" icon={<span>🌡️</span>} thresholds={{ ok: [18,30], warn: [15,18], critical: [0,14] }} hint="Optimal 18–30°C" />
-              <SensorCard id="humidity" label="Humidity" value={latestSensor?.humidity ?? null} unit="%" icon={<span>💧</span>} thresholds={{ ok: [40,70], warn: [30,40], critical: [0,29] }} hint="Optimal 40–70%" />
-              <SensorCard id="moisture" label="Soil Moisture" value={latestSensor?.moisture ?? null} unit="%" icon={<span>🪴</span>} thresholds={{ ok: [30,60], warn: [15,29], critical: [0,14] }} hint="Keep moisture >30%" />
-              <SensorCard id="ph" label="pH" value={latestSensor?.ph ?? null} unit="" icon={<span>⚗️</span>} thresholds={{ ok: [6,8], warn: [5,6], critical: [0,4] }} hint="Target pH 6–8" />
-              <SensorCard id="ec" label="EC (µS/cm)" value={latestSensor?.ec ?? null} unit="µS/cm" icon={<span>🔌</span>} hint="Electrical Conductivity" />
-              <SensorCard id="npk" label="NPK (mg/kg)" value={latestSensor?.npk?.n ?? null} unit="mg/kg" icon={<span>🧪</span>} hint="NPK sample (show N)" />
+              <SensorCard id="temp" label="Temperature" value={latestSensor?.temperature ?? null} unit="°C" icon={<span>🌡️</span>} thresholds={{ ok: [18,30], warn: [15,18], critical: [0,14] }} hint="Optimal 18–30°C" alert={alerts.some(a => (a.type || a._id || '').toString() === 'temperature' && !a.acknowledged)} />
+              <SensorCard id="humidity" label="Humidity" value={latestSensor?.humidity ?? null} unit="%" icon={<span>💧</span>} thresholds={{ ok: [40,70], warn: [30,40], critical: [0,29] }} hint="Optimal 40–70%" alert={alerts.some(a => (a.type || a._id || '').toString() === 'humidity' && !a.acknowledged)} />
+              <SensorCard id="moisture" label="Soil Moisture" value={latestSensor?.moisture ?? null} unit="%" icon={<span>🪴</span>} thresholds={{ ok: [30,60], warn: [15,29], critical: [0,14] }} hint="Keep moisture >30%" alert={alerts.some(a => (a.type || a._id || '').toString() === 'moisture' && !a.acknowledged)} />
+              <SensorCard id="ph" label="pH" value={latestSensor?.ph ?? null} unit="" icon={<span>⚗️</span>} thresholds={{ ok: [6,8], warn: [5,6], critical: [0,4] }} hint="Target pH 6–8" alert={alerts.some(a => (a.type || a._id || '').toString() === 'ph' && !a.acknowledged)} />
+              <SensorCard id="ec" label="EC (µS/cm)" value={latestSensor?.ec ?? null} unit="µS/cm" icon={<span>🔌</span>} hint="Electrical Conductivity" alert={alerts.some(a => a.type === 'ec' && !a.acknowledged)} />
+              <SensorCard id="npk" label="NPK (mg/kg)" value={latestSensor?.npk?.n ?? null} unit="mg/kg" icon={<span>🧪</span>} hint="NPK sample (show N)" alert={alerts.some(a => ['nitrogen','phosphorus','potassium'].includes(String(a.type)) && !a.acknowledged)} />
             </div>
           </div>
 
@@ -391,13 +436,13 @@ export default function AdminDashboard(): React.ReactElement {
         {/* Right column: Reports, User management, Recent activity */}
         <div className="space-y-6">
           <div className="p-4 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow flex flex-col justify-between min-h-[140px]">
-            <div>
+              <div>
               <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">Reports & Logs</h3>
               <p className="text-sm text-gray-600">Compost production, vermitea output, irrigation history and sensor calibration logs will appear here.</p>
             </div>
             <div className="mt-4 flex gap-3 items-end">
-              <button title="Export as PDF" className="px-4 py-2 text-sm rounded-md bg-primary-600 text-white">Export PDF</button>
-              <button title="Export as CSV" className="px-4 py-2 text-sm rounded-md bg-gray-200 dark:bg-gray-700">Export CSV</button>
+              <button title="Export as PDF" onClick={() => window.print()} className="px-4 py-2 text-sm rounded-md bg-primary-600 text-white">Export PDF</button>
+              <button title="Export as CSV" onClick={async () => { await loadActuatorLogs(); const rows = sensorHistory.map(s => ({ timestamp: (s as any).timestamp || new Date().toISOString(), deviceId: s.deviceId || '', temperature: s.temperature ?? '', humidity: s.humidity ?? '', moisture: s.moisture ?? '', ph: s.ph ?? '', ec: s.ec ?? '', waterLevel: s.waterLevel ?? '' })); const csv = [['timestamp','deviceId','temperature','humidity','moisture','ph','ec','waterLevel'], ...rows.map(r => [r.timestamp, r.deviceId, r.temperature, r.humidity, r.moisture, r.ph, r.ec, r.waterLevel])].map(r => r.join(',')).join('\n'); const blob = new Blob([csv], { type: 'text/csv' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'sensor-history.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }} className="px-4 py-2 text-sm rounded-md bg-gray-200 dark:bg-gray-700">Export CSV</button>
             </div>
           </div>
 

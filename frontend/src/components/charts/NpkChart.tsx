@@ -1,6 +1,7 @@
 import React from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine, Legend } from 'recharts';
 import { SensorData } from '../../types';
+import { toDateTime } from '../../utils/date';
 
 interface NpkChartProps {
   data: SensorData[];
@@ -18,8 +19,8 @@ const NpkChart: React.FC<NpkChartProps> = ({ data, height = 400, className = '' 
 
   // Format data for the chart
   const chartData = npkData.map(item => ({
-    timestamp: new Date(item.timestamp).getTime(),
-    time: new Date(item.timestamp).toLocaleTimeString(),
+    timestamp: toDateTime(item.timestamp).getTime(),
+    time: toDateTime(item.timestamp).toLocaleTimeString(),
     nitrogen: item.nitrogen,
     phosphorus: item.phosphorus,
     potassium: item.potassium,

@@ -18,17 +18,17 @@ export interface AuthContextType {
 export interface SensorData {
   _id?: string;
   deviceId: string;
-  temperature: number;
-  humidity: number;
-  moisture: number;
+  temperature?: number;
+  humidity?: number;
+  moisture?: number;
   ph?: number;
   ec?: number;
   nitrogen?: number;
   phosphorus?: number;
   potassium?: number;
   waterLevel?: number;
-  timestamp: string;
-  status: 'normal' | 'warning' | 'critical';
+  timestamp?: string | Date;
+  status?: 'normal' | 'warning' | 'critical' | string;
   batteryLevel?: number;
   signalStrength?: number;
   isOfflineData?: boolean;
@@ -36,14 +36,14 @@ export interface SensorData {
 
 export interface Alert {
   _id: string;
-  type: 'temperature' | 'humidity' | 'moisture' | 'device_offline' | 'device_online' | 'battery_low' | 'ph' | 'ec' | 'nitrogen' | 'phosphorus' | 'potassium' | 'water_level';
-  severity: 'low' | 'medium' | 'high' | 'critical';
-  message: string;
-  deviceId: string;
-  sensorData: Partial<SensorData>;
-  isResolved: boolean;
-  createdAt: string;
-  resolvedAt?: string;
+  type?: string;
+  severity?: 'low' | 'medium' | 'high' | 'critical' | string;
+  message?: string;
+  deviceId?: string;
+  sensorData?: Partial<SensorData>;
+  isResolved?: boolean;
+  createdAt?: string | Date;
+  resolvedAt?: string | Date;
   acknowledgedBy?: string;
 }
 

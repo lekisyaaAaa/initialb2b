@@ -59,6 +59,12 @@ Settings.getSettings = async () => {
       };
     }
 
+    if (!settingsObj.vermitea) {
+      settingsObj.vermitea = {
+        tankAreaLitersPerUnit: 0.5
+      };
+    }
+
     return settingsObj;
   } catch (error) {
     console.error('Error getting settings:', error);

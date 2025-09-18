@@ -290,7 +290,7 @@ const Dashboard: React.FC<DashboardProps> = () => {
                       <p className="text-sm font-medium text-espresso-600 mb-1">Avg Humidity</p>
                       <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">
                         {latestSensorData.length > 0
-                          ? Math.round(latestSensorData.reduce((sum: number, d: SensorData) => sum + d.humidity, 0) / latestSensorData.length)
+                          ? Math.round(latestSensorData.reduce((sum: number, d: SensorData) => sum + (d.humidity ?? 0), 0) / latestSensorData.length)
                           : 0}%
                       </p>
                     </div>
@@ -311,7 +311,7 @@ const Dashboard: React.FC<DashboardProps> = () => {
                       <p className="text-sm font-medium text-espresso-600 mb-1">Avg Moisture</p>
                       <p className="text-3xl font-bold text-espresso-900 group-hover:text-letran-600 transition-colors">
                         {latestSensorData.length > 0
-                          ? Math.round(latestSensorData.reduce((sum: number, d: SensorData) => sum + d.moisture, 0) / latestSensorData.length)
+                          ? Math.round(latestSensorData.reduce((sum: number, d: SensorData) => sum + (d.moisture ?? 0), 0) / latestSensorData.length)
                           : 0}%
                       </p>
                     </div>
@@ -341,12 +341,12 @@ const Dashboard: React.FC<DashboardProps> = () => {
                       <div key={data._id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                         <div className="flex items-center space-x-4">
                           <div className="flex-shrink-0">
-                            <div className={`w-3 h-3 rounded-full ${getStatusColor(data.status).replace('text-', 'bg-').replace('bg-', 'bg-')}`}></div>
+                            <div className={`w-3 h-3 rounded-full ${getStatusColor((data.status || 'normal') as string).replace('text-', 'bg-').replace('bg-', 'bg-')}`}></div>
                           </div>
                           <div>
                             <p className="font-medium text-gray-900">{data.deviceId}</p>
                             <p className="text-sm text-gray-500">
-                              Manila • {format(new Date(data.timestamp), 'MMM dd, yyyy HH:mm')}
+                              Manila • {format(new Date(data.timestamp || Date.now()), 'MMM dd, yyyy HH:mm')}
                             </p>
                           </div>
                         </div>
@@ -395,8 +395,8 @@ const Dashboard: React.FC<DashboardProps> = () => {
                     {recentAlerts.slice(0, 5).map((alert: Alert) => (
                       <div key={alert._id} className="flex items-center justify-between p-3 border rounded-lg">
                         <div className="flex items-center space-x-3">
-                          <div className={`px-2 py-1 rounded-full text-xs font-medium ${getSeverityColor(alert.severity)}`}>
-                            {alert.severity}
+                          <div className={`px-2 py-1 rounded-full text-xs font-medium ${getSeverityColor((alert.severity || 'info') as string)}`}>
+                            {(alert.severity || 'info')}
                           </div>
                           <div>
                             <p className="font-medium text-gray-900">{alert.message}</p>
@@ -405,7 +405,7 @@ const Dashboard: React.FC<DashboardProps> = () => {
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-gray-500">
-                            {format(new Date(alert.createdAt), 'MMM dd, HH:mm')}
+                            {format(new Date(alert.createdAt || Date.now()), 'MMM dd, HH:mm')}
                           </p>
                           {alert.isResolved && (
                             <span className="text-xs text-green-600">Resolved</span>

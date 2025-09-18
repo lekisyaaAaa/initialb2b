@@ -60,7 +60,9 @@ export const mockAlerts: Alert[] = [
   }
 ];
 
-export default {
+const exported = {
   mockSensorData,
   mockAlerts,
 };
+
+export default exported;

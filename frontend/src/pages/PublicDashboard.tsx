@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useState } from 'react';
 import { Leaf, AlertTriangle, Thermometer, Droplets, Sprout, Battery, Activity, RefreshCw, TrendingUp, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
@@ -63,7 +64,7 @@ const sampleSensorData = [
 ];
 
 const PublicDashboard: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'sensors'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'alerts' | 'sensors'>('overview');
   const [isLoading, setIsLoading] = useState(false);
 
   const handleRefresh = () => {
@@ -196,11 +197,12 @@ const PublicDashboard: React.FC = () => {
           <div className="flex space-x-8">
             {[
               { id: 'overview', label: 'Overview', icon: TrendingUp },
+              { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
               { id: 'sensors', label: 'Sensors', icon: Thermometer }
             ].map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
-                onClick={() => setActiveTab(id as 'overview' | 'sensors')}
+                onClick={() => setActiveTab(id as 'overview' | 'alerts' | 'sensors')}
                 className={`flex items-center space-x-2 px-4 py-4 border-b-2 font-medium text-sm transition-colors ${
                   activeTab === id
                     ? 'border-teal-500 text-teal-600 dark:text-teal-400'
@@ -413,12 +415,12 @@ const PublicDashboard: React.FC = () => {
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center space-x-4">
                           <div className="flex-shrink-0">
-                            <div className={`w-3 h-3 rounded-full ${getStatusColor(data.status).replace('text-', 'bg-').replace('bg-', 'bg-')}`}></div>
+                            <div className={`w-3 h-3 rounded-full ${getStatusColor((data.status || 'normal') as string).replace('text-', 'bg-').replace('bg-', 'bg-')}`}></div>
                           </div>
                           <div>
                             <p className="font-medium text-gray-900 dark:text-white">{data.deviceId}</p>
                             <p className="text-sm text-gray-500 dark:text-gray-400">
-                              {format(new Date(data.timestamp), 'MMM dd, yyyy HH:mm')}
+                              {format(new Date(data.timestamp || Date.now()), 'MMM dd, yyyy HH:mm')}
                             </p>
                           </div>
                         </div>
@@ -462,7 +464,18 @@ const PublicDashboard: React.FC = () => {
           </div>
         )}
 
-        
+        {activeTab === 'alerts' && (
+          <div className="rounded-lg shadow">
+            <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white">Recent Alerts</h3>
+            </div>
+            <div className="p-6">
+              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                No alerts at this time. All systems operating normally.
+              </div>
+            </div>
+          </div>
+        )}
 
         {activeTab === 'sensors' && (
           <div className="space-y-6">

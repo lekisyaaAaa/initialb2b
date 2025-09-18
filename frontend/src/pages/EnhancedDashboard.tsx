@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -130,7 +131,8 @@ const EnhancedDashboard: React.FC = () => {
   // Calculate alert summary for pie chart
   const alertSummary = useMemo(() => {
     const summary = recentAlerts.reduce((acc: Record<string, number>, alert: Alert) => {
-      acc[alert.severity] = (acc[alert.severity] || 0) + 1;
+      const sev = (alert.severity || 'unknown').toString();
+      acc[sev] = (acc[sev] || 0) + 1;
       return acc;
     }, {} as Record<string, number>);
 
@@ -488,13 +490,13 @@ const EnhancedDashboard: React.FC = () => {
                     <div className="space-y-3 max-h-64 overflow-y-auto">
                       {recentAlerts.slice(0, 5).map((alert: Alert, index: number) => (
                         <div key={alert._id || index} className="flex items-start space-x-3 p-3 rounded-lg bg-coffee-50 dark:bg-gray-800">
-                          <div className={`px-2 py-1 rounded-full text-xs font-medium ${getSeverityColor(alert.severity)}`}>
-                            {alert.severity.toUpperCase()}
+                          <div className={`px-2 py-1 rounded-full text-xs font-medium ${getSeverityColor((alert.severity || 'info') as string)}`}>
+                            {(alert.severity || 'info').toString().toUpperCase()}
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-sm text-coffee-900 dark:text-white font-medium">{alert.message}</p>
                             <p className="text-xs text-coffee-600 dark:text-gray-300">
-                              {format(new Date(alert.createdAt), 'MMM dd, HH:mm')} • {alert.deviceId}
+                              {format(new Date(alert.createdAt || Date.now()), 'MMM dd, HH:mm')} • {alert.deviceId}
                             </p>
                           </div>
                         </div>
@@ -566,13 +568,13 @@ const EnhancedDashboard: React.FC = () => {
                       <div key={alert._id || index} className="border border-coffee-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
                         <div className="flex items-start justify-between">
                           <div className="flex items-start space-x-3">
-                            <div className={`px-3 py-1 rounded-full text-sm font-medium ${getSeverityColor(alert.severity)}`}>
-                              {alert.severity.toUpperCase()}
+                            <div className={`px-3 py-1 rounded-full text-sm font-medium ${getSeverityColor((alert.severity || 'info') as string)}`}>
+                              {(alert.severity || 'info').toString().toUpperCase()}
                             </div>
                             <div>
                               <p className="text-coffee-900 dark:text-white font-medium">{alert.message}</p>
                               <p className="text-coffee-600 dark:text-gray-300 text-sm mt-1">
-                                {format(new Date(alert.createdAt), 'MMM dd, yyyy HH:mm:ss')} • Device: {alert.deviceId}
+                                {format(new Date(alert.createdAt || Date.now()), 'MMM dd, yyyy HH:mm:ss')} • Device: {alert.deviceId}
                               </p>
                               {alert.isResolved && alert.resolvedAt && (
                                 <p className="text-green-600 dark:text-green-300 text-sm mt-1">

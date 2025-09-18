@@ -36,10 +36,10 @@ const MultiSensorChart: React.FC<MultiSensorChartProps> = ({
 
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
-      const data = payload[0].payload;
+      const data = payload[0].payload || {};
       return (
         <div className={`${isDark ? 'bg-gray-800 text-gray-100 border-gray-700' : 'bg-white text-coffee-900 border-coffee-200'} p-4 rounded-lg shadow-lg border`}>
-          <p className="font-medium">{formatTooltipTime(label)}</p>
+          <p className="font-medium">{formatTooltipTime(label || '')}</p>
           <div className="space-y-1">
             <p>
               <span className="font-medium">Temperature:</span> {data.temperature.toFixed(1)}°C
@@ -56,7 +56,7 @@ const MultiSensorChart: React.FC<MultiSensorChartProps> = ({
               </p>
             )}
           </div>
-          <p className="text-sm mt-2">Device: {data.deviceId}</p>
+          <p className="text-sm mt-2">Device: {data.deviceId || 'unknown'}</p>
         </div>
       );
     }
@@ -66,7 +66,7 @@ const MultiSensorChart: React.FC<MultiSensorChartProps> = ({
   // Normalize data for better visualization (scale temperature for comparison)
   const normalizedData = data.map(item => ({
     ...item,
-    scaledTemperature: item.temperature * 2.5, // Scale temperature to be visible alongside humidity/moisture
+    scaledTemperature: (item.temperature ?? 0) * 2.5, // Scale temperature to be visible alongside humidity/moisture
   }));
 
   return (

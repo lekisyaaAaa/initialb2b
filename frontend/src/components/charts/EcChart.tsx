@@ -1,4 +1,5 @@
 import React from 'react';
+import { toDateTime } from '../../utils/date';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
 import { SensorData } from '../../types';
 
@@ -14,8 +15,8 @@ const EcChart: React.FC<EcChartProps> = ({ data, height = 400, className = '' })
 
   // Format data for the chart
   const chartData = ecData.map(item => ({
-    timestamp: new Date(item.timestamp).getTime(),
-    time: new Date(item.timestamp).toLocaleTimeString(),
+    timestamp: toDateTime(item.timestamp).getTime(),
+    time: toDateTime(item.timestamp).toLocaleTimeString(),
     ec: item.ec,
     deviceId: item.deviceId
   }));

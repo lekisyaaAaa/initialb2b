@@ -536,8 +536,8 @@ const Dashboard: React.FC<DashboardProps> = () => {
                     {safeRecentAlerts.slice(0, 5).map((alert: Alert, idx: number) => (
                       <div key={(alert as any).id || alert._id || `${alert.deviceId || 'alert'}-${idx}`} className="flex items-center justify-between p-3 border rounded-lg">
                         <div className="flex items-center space-x-3">
-                          <div className={`px-2 py-1 rounded-full text-xs font-medium ${getSeverityColor(alert.severity)}`}>
-                            {alert.severity}
+                          <div className={`px-2 py-1 rounded-full text-xs font-medium ${getSeverityColor((alert.severity || 'info') as string)}`}>
+                            {(alert.severity || 'info').toString().toUpperCase()}
                           </div>
                           <div>
                             <p className="font-medium text-gray-900">{alert.message}</p>
@@ -546,7 +546,7 @@ const Dashboard: React.FC<DashboardProps> = () => {
                         </div>
                         <div className="text-right">
                           <p className="text-sm text-gray-500">
-                            {format(new Date(alert.createdAt), 'MMM dd, HH:mm')}
+                            {format(new Date(alert.createdAt || Date.now()), 'MMM dd, HH:mm')}
                           </p>
                           {alert.isResolved && (
                             <span className="text-xs text-green-600">Resolved</span>

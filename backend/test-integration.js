@@ -14,16 +14,42 @@ async function testIntegration() {
     
     // Test latest sensor data
     console.log('\n2. Testing Latest Sensor Data...');
-    const sensorResponse = await axios.get('http://localhost:5000/api/sensors/latest');
-    if (sensorResponse.data.success) {
-      const data = sensorResponse.data.data;
+    // Ensure there is at least one sensor reading by POSTing a sample payload if latest is empty
+    let sensorResponse = await axios.get('http://localhost:5000/api/sensors/latest');
+    if (sensorResponse.data && sensorResponse.data.success && Array.isArray(sensorResponse.data.data) && sensorResponse.data.data.length === 0) {
+      console.log('No latest data present — creating a test sensor reading...');
+      try {
+        await axios.post('http://localhost:5000/api/sensors', {
+          deviceId: 'integration-test-device',
+          temperature: 22.5,
+          humidity: 55,
+          moisture: 40,
+          ph: 6.8,
+          ec: 1.2,
+          nitrogen: 10,
+          phosphorus: 5,
+          potassium: 8,
+          waterLevel: 75,
+          batteryLevel: 3.7,
+          signalStrength: -70
+        });
+        // Allow short delay for async processing
+        await new Promise(r => setTimeout(r, 500));
+        sensorResponse = await axios.get('http://localhost:5000/api/sensors/latest');
+      } catch (e) {
+        console.warn('Could not create test sensor reading:', e && e.message ? e.message : e);
+      }
+    }
+
+    if (sensorResponse.data && sensorResponse.data.success) {
+      const data = Array.isArray(sensorResponse.data.data) ? (sensorResponse.data.data[0] || {}) : sensorResponse.data.data;
       console.log('✅ Latest Sensor Reading:');
-      console.log(`   Device: ${data.deviceId}`);
-      console.log(`   Temperature: ${data.temperature}°C`);
-      console.log(`   Humidity: ${data.humidity}%`);
-      console.log(`   Moisture: ${data.moisture}%`);
-      console.log(`   Status: ${data.status}`);
-      console.log(`   Timestamp: ${new Date(data.timestamp).toLocaleString()}`);
+      console.log(`   Device: ${data.deviceId || 'N/A'}`);
+      console.log(`   Temperature: ${data.temperature !== undefined ? data.temperature : 'N/A'}°C`);
+      console.log(`   Humidity: ${data.humidity !== undefined ? data.humidity : 'N/A'}%`);
+      console.log(`   Moisture: ${data.moisture !== undefined ? data.moisture : 'N/A'}%`);
+      console.log(`   Status: ${data.status || 'N/A'}`);
+      console.log(`   Timestamp: ${data.timestamp ? new Date(data.timestamp).toLocaleString() : 'N/A'}`);
     }
     
     // Test WebSocket connection

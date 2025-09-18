@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Phone, 
@@ -24,6 +24,7 @@ interface ContactInfo {
 }
 
 const ContactPage: React.FC = () => {
+  const [copied, setCopied] = useState<null | { index: number; type: 'phone' | 'email' }>(null);
   const contacts: ContactInfo[] = [
     {
       name: "Aranda, Trishia Nicolein D.",
@@ -90,10 +91,7 @@ const ContactPage: React.FC = () => {
               Get in touch with our environmental monitoring team. Our experts are here to assist you 
               with any questions about environmental data, sensor systems, or monitoring services.
             </p>
-            <div className="flex items-center justify-center gap-4">
-              <a href="mailto:info@letran.edu.ph" className="contact-cta bg-primary-600 text-white">Email General Inquiry</a>
-              <a href="tel:+639171234567" className="contact-cta bg-coffee-50 text-coffee-800">Call Office</a>
-            </div>
+            {/* hero actions removed as requested */}
             </div>
           </div>
         </div>
@@ -126,18 +124,22 @@ const ContactPage: React.FC = () => {
               {/* Card Body */}
               <div className="contact-card-body p-6 space-y-4 flex-1">
                 {/* Department */}
-                <div className="flex items-start">
-                  <Building className="w-5 h-5 text-coffee-600 dark:text-coffee-400 mr-3 mt-1 flex-shrink-0" />
-                  <div>
+                <div className="grid grid-cols-12 gap-x-3 items-start">
+                  <div className="col-span-1 mt-1">
+                    <Building className="w-5 h-5 text-coffee-600 dark:text-coffee-400" />
+                  </div>
+                  <div className="col-span-11">
                     <p className="text-sm text-coffee-500 dark:text-coffee-400 font-medium">Department</p>
                     <p className="text-coffee-800 dark:text-gray-200">{contact.department}</p>
                   </div>
                 </div>
 
                 {/* Phone */}
-                <div className="flex items-start">
-                  <Phone className="w-5 h-5 text-coffee-600 dark:text-coffee-400 mr-3 mt-1 flex-shrink-0" />
-                  <div>
+                <div className="grid grid-cols-12 gap-x-3 items-start">
+                  <div className="col-span-1 mt-1">
+                    <Phone className="w-5 h-5 text-coffee-600 dark:text-coffee-400" />
+                  </div>
+                  <div className="col-span-11">
                     <p className="text-sm text-coffee-500 dark:text-coffee-400 font-medium">Phone</p>
                     <a 
                       href={`tel:${contact.phone}`}
@@ -149,9 +151,11 @@ const ContactPage: React.FC = () => {
                 </div>
 
                 {/* Email */}
-                <div className="flex items-start">
-                  <Mail className="w-5 h-5 text-coffee-600 dark:text-coffee-400 mr-3 mt-1 flex-shrink-0" />
-                  <div>
+                <div className="grid grid-cols-12 gap-x-3 items-start">
+                  <div className="col-span-1 mt-1">
+                    <Mail className="w-5 h-5 text-coffee-600 dark:text-coffee-400" />
+                  </div>
+                  <div className="col-span-11">
                     <p className="text-sm text-coffee-500 dark:text-coffee-400 font-medium">Email</p>
                     <a 
                       href={`mailto:${contact.email}`}
@@ -163,18 +167,22 @@ const ContactPage: React.FC = () => {
                 </div>
 
                 {/* Address */}
-                <div className="flex items-start">
-                  <MapPin className="w-5 h-5 text-coffee-600 dark:text-coffee-400 mr-3 mt-1 flex-shrink-0" />
-                  <div>
+                <div className="grid grid-cols-12 gap-x-3 items-start">
+                  <div className="col-span-1 mt-1">
+                    <MapPin className="w-5 h-5 text-coffee-600 dark:text-coffee-400" />
+                  </div>
+                  <div className="col-span-11">
                     <p className="text-sm text-coffee-500 dark:text-coffee-400 font-medium">Address</p>
                     <p className="text-coffee-800 dark:text-gray-200">{contact.address}</p>
                   </div>
                 </div>
 
                 {/* Availability */}
-                <div className="flex items-start">
-                  <Clock className="w-5 h-5 text-coffee-600 dark:text-coffee-400 mr-3 mt-1 flex-shrink-0" />
-                  <div>
+                <div className="grid grid-cols-12 gap-x-3 items-start">
+                  <div className="col-span-1 mt-1">
+                    <Clock className="w-5 h-5 text-coffee-600 dark:text-coffee-400" />
+                  </div>
+                  <div className="col-span-11">
                     <p className="text-sm text-coffee-500 dark:text-coffee-400 font-medium">Availability</p>
                     <p className="text-coffee-800 dark:text-gray-200">{contact.availability}</p>
                   </div>
@@ -184,18 +192,36 @@ const ContactPage: React.FC = () => {
               {/* Card Footer */}
               <div className="contact-card-footer bg-coffee-50 dark:bg-gray-700 px-6 py-4">
                 <div className="flex space-x-3">
-                  <a
-                    href={`tel:${contact.phone}`}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        navigator.clipboard.writeText(contact.phone);
+                        setCopied({ index, type: 'phone' });
+                        setTimeout(() => setCopied(null), 2000);
+                      } catch (e) {
+                        /* clipboard not supported */
+                      }
+                    }}
                     className="contact-cta flex-1 bg-coffee-600 text-white justify-center"
                   >
-                    Call
-                  </a>
-                  <a
-                    href={`mailto:${contact.email}`}
-                    className="contact-cta flex-1 bg-coffee-200 text-coffee-800 justify-center"
+                    {copied && copied.index === index && copied.type === 'phone' ? 'Copied!' : 'Copy Phone'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      try {
+                        navigator.clipboard.writeText(contact.email);
+                        setCopied({ index, type: 'email' });
+                        setTimeout(() => setCopied(null), 2000);
+                      } catch (e) {
+                        /* clipboard not supported */
+                      }
+                    }}
+                    className="contact-cta flex-1 bg-primary-600 text-white justify-center"
                   >
-                    Email
-                  </a>
+                    {copied && copied.index === index && copied.type === 'email' ? 'Copied!' : 'Copy Email'}
+                  </button>
                 </div>
               </div>
               </div>

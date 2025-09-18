@@ -345,6 +345,50 @@ router.put('/monitoring', [auth, adminOnly], [
   }
 });
 
+// @route   PUT /api/settings/vermitea
+// @desc    Update vermitea calibration settings
+// @access  Private (Admin only)
+router.put('/vermitea', [auth, adminOnly], [
+  body('tankAreaLitersPerUnit').optional().isFloat({ min: 0 }).withMessage('tankAreaLitersPerUnit must be a positive number')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, message: 'Validation failed', errors: errors.array() });
+    }
+
+    const settings = await Settings.getSettings();
+    if (!settings.vermitea) settings.vermitea = { tankAreaLitersPerUnit: 0.5 };
+
+    if (req.body.tankAreaLitersPerUnit !== undefined) {
+      settings.vermitea.tankAreaLitersPerUnit = parseFloat(req.body.tankAreaLitersPerUnit);
+    }
+
+    // Persist by saving in Settings table as JSON string under key 'vermitea'
+    // Upsert pattern: try update, else create
+    const sequelize = require('../services/database_pg');
+    const SettingsModel = require('../models/Settings');
+    const key = 'vermitea';
+    const value = JSON.stringify(settings.vermitea);
+
+    try {
+      const existing = await SettingsModel.findOne({ where: { key } });
+      if (existing) {
+        await SettingsModel.update({ value }, { where: { key } });
+      } else {
+        await SettingsModel.create({ key, value });
+      }
+    } catch (e) {
+      console.warn('Failed to persist vermitea settings:', e && e.message ? e.message : e);
+    }
+
+    res.json({ success: true, message: 'Vermitea settings updated', data: settings.vermitea });
+  } catch (error) {
+    console.error('Error updating vermitea settings:', error);
+    res.status(500).json({ success: false, message: 'Error updating vermitea settings' });
+  }
+});
+
 // @route   PUT /api/settings/system
 // @desc    Update system settings
 // @access  Private (Admin only)

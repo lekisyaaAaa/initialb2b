@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { SensorData, Alert } from '../types';
-import { alertService } from '../services/api';
+import { alertService, sensorService } from '../services/api';
 import weatherService, { type WeatherData } from '../services/weatherService';
 import mockData from '../mocks/mockData';
 
@@ -234,20 +234,41 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         
         console.log(`DataContext: Updated with ${sensorData.length} Manila weather readings`);
       } else {
-        console.log('DataContext: No Manila weather data received or empty array - falling back to mock data');
-        // Use mock data so UI remains functional during backend outages
-        setLatestSensorData(mockData.mockSensorData);
-        setIsConnected(false);
-        setLastFetchCount(mockData.mockSensorData.length);
-        setLastFetchAt(new Date().toISOString());
-        setLastFetchError('No live weather data - using local mock data');
+        // Try backend API as a fallback when weather service returns nothing
+        try {
+          const resp = await sensorService.getLatestData();
+          if (resp && resp.data && resp.data.success) {
+            const payload = Array.isArray(resp.data.data) ? resp.data.data : (resp.data.data ? [resp.data.data] : []);
+            setLatestSensorData(payload as any);
+            setIsConnected(true);
+            setLastFetchCount(payload.length);
+            setLastFetchAt(new Date().toISOString());
+          } else {
+            console.log('DataContext: Backend returned no latest data; falling back to mock data');
+            setLatestSensorData(mockData.mockSensorData);
+            setIsConnected(false);
+            setLastFetchCount(mockData.mockSensorData.length);
+            setLastFetchAt(new Date().toISOString());
+            setLastFetchError('No live backend data - using mock data');
+          }
+        } catch (be) {
+          const beMsg = (be && (be as any).message) ? (be as any).message : String(be);
+          console.log('DataContext: Backend latest data fetch failed, using mock data', beMsg);
+          setLatestSensorData(mockData.mockSensorData as SensorData[]);
+          setIsConnected(false);
+          setLastFetchCount(mockData.mockSensorData.length);
+          setLastFetchAt(new Date().toISOString());
+          setLastFetchError('Backend fetch failed - using mock data');
+        }
       }
 
       // Try to fetch alerts from backend (if available)
       try {
         const alertResponse = await alertService.getRecentAlerts(5);
-        if (alertResponse.data.success && alertResponse.data.data) {
-          setRecentAlerts(alertResponse.data.data);
+        if (alertResponse && alertResponse.data && alertResponse.data.success && Array.isArray(alertResponse.data.data)) {
+          setRecentAlerts(alertResponse.data.data as any[]);
+        } else {
+          setRecentAlerts(mockData.mockAlerts as any[]);
         }
       } catch (alertError) {
         console.log('Could not fetch alerts from backend, falling back to mock alerts');
@@ -353,7 +374,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         clearTimeout(intervalId);
       }
     };
-  }, []); // Empty dependency array - this should only run once
+  }, [refreshData]); // include refreshData to satisfy hook dependency
 
   const value: DataContextType = {
     latestSensorData,

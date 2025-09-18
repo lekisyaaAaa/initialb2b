@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+/* eslint-disable @typescript-eslint/no-unused-vars */
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api, { adminAuthService, authService, discoverApi } from '../services/api';

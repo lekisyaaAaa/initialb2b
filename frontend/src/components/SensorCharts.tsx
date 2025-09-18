@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip as ReTooltip, Legend, CartesianGrid } from 'recharts';
 import { exportCsv } from '../utils/export';
 

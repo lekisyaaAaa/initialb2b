@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { toDateTime } from '../../utils/date';
 import { Calendar, Filter, TrendingUp, BarChart3 } from 'lucide-react';
 import { SensorData } from '../../types';
 import TemperatureChart from './TemperatureChart';
@@ -49,7 +50,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
     const cutoff = new Date(now.getTime() - ranges[timeRange]);
     
     let filtered = data.filter(item => {
-      const itemTime = new Date(item.timestamp);
+  const itemTime = toDateTime(item.timestamp);
       return itemTime >= cutoff;
     });
 
@@ -59,7 +60,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
     }
 
     // Sort by timestamp
-    return filtered.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  return filtered.sort((a, b) => toDateTime(a.timestamp).getTime() - toDateTime(b.timestamp).getTime());
   }, [data, timeRange, deviceId]);
 
   const timeRangeOptions = [
@@ -129,7 +130,7 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
             <Calendar className="w-4 h-4" />
             <span className="text-sm">Last updated: {
               filteredData.length > 0 
-                ? new Date(filteredData[filteredData.length - 1].timestamp).toLocaleTimeString()
+                ? toDateTime(filteredData[filteredData.length - 1].timestamp).toLocaleTimeString()
                 : 'No data'
             }</span>
           </div>

@@ -31,6 +31,10 @@ async function populateDB() {
       key: 'default_temp_threshold',
       value: '30',
     });
+    await Settings.create({
+      key: 'vermitea',
+      value: JSON.stringify({ tankAreaLitersPerUnit: 0.5 })
+    });
     console.log('✅ Default settings inserted');
 
     // Insert sample alert

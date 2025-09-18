@@ -44,7 +44,6 @@ body.has-admin-header {
 /* Extra-specific overrides: when header is appended to document.body (via portal),
    ensure it is forced to viewport-fixed regardless of other CSS. This targets the
    common header markup used across admin/public pages and keeps behavior robust. */
-body > header,
 body > header.admin-fixed,
 header.admin-fixed {
   position: fixed !important;
@@ -209,6 +208,16 @@ header.admin-fixed {
     transform: translateZ(0) !important;
     will-change: transform;
     height: var(--admin-header-height) !important;
+  }
+
+  /* Explicitly ensure non-admin headers are not positioned fixed to avoid accidental overlays */
+  header:not(.admin-fixed) {
+    position: static !important;
+    top: auto !important;
+    left: auto !important;
+    right: auto !important;
+    height: auto !important;
+    z-index: auto !important;
   }
 
   /* Visual separation: subtle border and shadow so the header reads as its own layer */

@@ -10,6 +10,7 @@ type SensorProps = {
   thresholds?: { ok: [number, number]; warn?: [number, number]; critical?: [number, number] };
   hint?: string;
   className?: string;
+  alert?: boolean;
 };
 
 function colorForValue(v: number | null | undefined, t?: SensorProps['thresholds']) {
@@ -22,10 +23,10 @@ function colorForValue(v: number | null | undefined, t?: SensorProps['thresholds
   return 'text-gray-900';
 }
 
-const SensorCard: React.FC<SensorProps> = ({ id, label, value, unit, icon, thresholds, hint, className = '' }) => {
+const SensorCard: React.FC<SensorProps> = ({ id, label, value, unit, icon, thresholds, hint, className = '', alert = false }) => {
   const val = value == null ? '—' : `${value}${unit ? ` ${unit}` : ''}`;
   return (
-    <div className={`box-border p-5 rounded-2xl bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 shadow-sm transition-transform transform hover:-translate-y-1 hover:shadow-lg min-w-0 ${className}`} role="group" aria-labelledby={`sensor-${id}`}>
+    <div className={`box-border p-5 rounded-2xl bg-white dark:bg-gray-900 border ${alert ? 'border-red-500 shadow-red-200/40 animate-pulse' : 'border-gray-100 dark:border-gray-800 shadow-sm'} transition-transform transform hover:-translate-y-1 hover:shadow-lg min-w-0 ${className}`} role="group" aria-labelledby={`sensor-${id}`}>
       <div className="flex flex-col items-center justify-center text-center h-full min-h-[140px] gap-3">
         <div className="flex items-center justify-center text-3xl w-12 h-12 rounded-lg bg-gray-50 dark:bg-gray-800 text-primary-600">{icon}</div>
         <div className={`text-3xl sm:text-4xl font-extrabold tracking-tight ${colorForValue(value, thresholds)}`} id={`sensor-${id}`}>{val}</div>

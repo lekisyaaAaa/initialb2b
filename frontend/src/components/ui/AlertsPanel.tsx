@@ -28,14 +28,14 @@ const AlertsPanel: React.FC<Props> = ({ alerts }) => {
               </div>
               <div className="flex-1">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-espresso-900">{a.type.replace('_', ' ').toUpperCase()}</p>
-                  <p className="text-xs text-gray-400">{format(new Date(a.createdAt), 'MMM dd, HH:mm')}</p>
+                  <p className="text-sm font-medium text-espresso-900">{(a.type || 'alert').replace('_', ' ').toUpperCase()}</p>
+                  <p className="text-xs text-gray-400">{format(new Date(a.createdAt || Date.now()), 'MMM dd, HH:mm')}</p>
                 </div>
-                <p className="text-xs text-gray-500 mt-1">{a.message}</p>
+                <p className="text-xs text-gray-500 mt-1">{a.message || ''}</p>
                 <div className="mt-2 text-xs text-gray-400 flex items-center justify-between">
                   <span>Device: {a.deviceId}</span>
                   <span className="px-2 py-0.5 rounded text-xs font-medium">
-                    {a.severity.toUpperCase()}
+                    {(a.severity || 'unknown').toString().toUpperCase()}
                   </span>
                 </div>
               </div>

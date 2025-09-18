@@ -1,5 +1,6 @@
 import React from 'react';
 import { SensorData } from '../../types';
+import { toLocale } from '../../utils/date';
 import { Thermometer, Droplets, Battery, Sprout } from 'lucide-react';
 
 interface Props { data: SensorData }
@@ -10,10 +11,10 @@ const SensorCard: React.FC<Props> = ({ data }) => {
       <div className="flex items-center justify-between">
         <div>
           <p className="text-sm text-espresso-600">{data.deviceId}</p>
-          <p className="text-xs text-gray-500">{new Date(data.timestamp).toLocaleString()}</p>
+          <p className="text-xs text-gray-500">{data.timestamp ? toLocale(data.timestamp) : '—'}</p>
         </div>
         <div className="text-right">
-          <p className="text-lg font-semibold text-espresso-900">{data.temperature}°C</p>
+          <p className="text-lg font-semibold text-espresso-900">{data.temperature != null ? `${data.temperature}°C` : 'N/A'}</p>
           <p className="text-sm text-gray-500">Temp</p>
         </div>
       </div>
@@ -21,19 +22,19 @@ const SensorCard: React.FC<Props> = ({ data }) => {
       <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
         <div className="flex items-center space-x-2">
           <Thermometer className="h-4 w-4 text-red-600" />
-          <span>{data.temperature}°C</span>
+          <span>{data.temperature != null ? `${data.temperature}°C` : 'N/A'}</span>
         </div>
         <div className="flex items-center space-x-2">
           <Droplets className="h-4 w-4 text-blue-600" />
-          <span>{data.humidity}%</span>
+          <span>{data.humidity != null ? `${data.humidity}%` : 'N/A'}</span>
         </div>
         <div className="flex items-center space-x-2">
           <Sprout className="h-4 w-4 text-green-600" />
-          <span>{data.moisture}%</span>
+          <span>{data.moisture != null ? `${data.moisture}%` : 'N/A'}</span>
         </div>
         <div className="flex items-center space-x-2">
           <Battery className="h-4 w-4 text-secondary-600" />
-          <span>{data.batteryLevel ?? 'N/A'}%</span>
+          <span>{data.batteryLevel != null ? `${data.batteryLevel}%` : 'N/A'}</span>
         </div>
       </div>
 
