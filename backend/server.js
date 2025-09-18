@@ -15,6 +15,7 @@ const sensorRoutes = require('./routes/sensors');
 const alertRoutes = require('./routes/alerts');
 const settingsRoutes = require('./routes/settings');
 const actuatorRoutes = require('./routes/actuators');
+const maintenanceRoutes = require('./routes/maintenance');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -46,6 +47,16 @@ wss.on('connection', (ws) => {
 // Security middleware
 app.use(helmet());
 app.use(compression());
+
+// Development Content Security Policy helper: allow local API origins for SPA served from the backend
+if ((process.env.NODE_ENV || 'development') !== 'production') {
+  app.use((req, res, next) => {
+    // Allow connections to localhost and 127.0.0.1 for API and WebSocket during local dev
+    const csp = "default-src 'self' 'unsafe-inline' 'unsafe-eval' http: https:; connect-src 'self' http://localhost:5000 http://127.0.0.1:5000 ws://localhost:5000 ws://127.0.0.1:5000;";
+    res.setHeader('Content-Security-Policy', csp);
+    next();
+  });
+}
 
 // Rate limiting - disabled for development
 // const limiter = rateLimit({
@@ -203,9 +214,9 @@ app.get('/internal/ping', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/sensors', sensorRoutes);
-app.use('/api/alerts', alertRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/actuators', actuatorRoutes);
+app.use('/api/maintenance', maintenanceRoutes);
 // Mount admin route for simple admin login (keeps compatibility with existing auth flows)
 const adminRoutes = require('./routes/admin');
 app.use('/api/admin', adminRoutes);
@@ -217,6 +228,22 @@ app.use('/api/alerts', alertRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/actuators', actuatorRoutes);
 
+// Serve frontend production build if available (useful in local dev)
+try {
+  const fs = require('fs');
+  const frontendBuild = path.join(__dirname, '..', 'frontend', 'build');
+  if (fs.existsSync(frontendBuild)) {
+    console.log('Found frontend build, serving static files from', frontendBuild);
+    app.use(express.static(frontendBuild));
+    // Serve index.html for SPA routes (admin/dashboard, login, etc.)
+    app.get(['/','/login','/admin','/admin/*','/dashboard','/admin/dashboard'], (req, res) => {
+      res.sendFile(path.join(frontendBuild, 'index.html'));
+    });
+  }
+} catch (e) {
+  console.warn('Could not enable static frontend serving:', e && e.message ? e.message : e);
+}
+
 // 404 handler for unknown routes
 app.use('*', (req, res) => {
   res.status(404).json({
@@ -224,7 +251,6 @@ app.use('*', (req, res) => {
     message: `Route ${req.originalUrl} not found`
   });
 });
-
 // Error handling middleware (must be last)
 app.use(errorHandler);
 

@@ -71,7 +71,7 @@ const ContactPage: React.FC = () => {
           </div>
 
           <div className="contact-hero mx-auto max-w-5xl text-center relative">
-              <div className="contact-hero-deco" aria-hidden="true">
+            <div className="contact-hero-deco" aria-hidden="true">
                 <svg width="520" height="420" viewBox="0 0 520 420" fill="none" xmlns="http://www.w3.org/2000/svg" className="mx-auto">
                   <defs>
                     <linearGradient id="g1" x1="0" x2="1">
@@ -84,14 +84,16 @@ const ContactPage: React.FC = () => {
                   <circle cx="80" cy="320" r="100" fill="#8E44AD" fillOpacity="0.04" />
                 </svg>
               </div>
-            <h1 className="text-4xl font-bold text-coffee-900 dark:text-white mb-2">Contact Information</h1>
-            <p className="text-coffee-700 dark:text-gray-300 text-lg max-w-2xl mx-auto mb-4">
+            <div className="contact-hero-inner relative z-10">
+              <h1 className="text-4xl font-bold text-coffee-900 dark:text-white mb-2">Contact Information</h1>
+              <p className="text-coffee-700 dark:text-gray-300 text-lg max-w-2xl mx-auto mb-4">
               Get in touch with our environmental monitoring team. Our experts are here to assist you 
               with any questions about environmental data, sensor systems, or monitoring services.
             </p>
             <div className="flex items-center justify-center gap-4">
               <a href="mailto:info@letran.edu.ph" className="contact-cta bg-primary-600 text-white">Email General Inquiry</a>
               <a href="tel:+639171234567" className="contact-cta bg-coffee-50 text-coffee-800">Call Office</a>
+            </div>
             </div>
           </div>
         </div>
@@ -103,11 +105,11 @@ const ContactPage: React.FC = () => {
             const accent = accents[index % accents.length];
             return (
               <div 
-                key={index}
-                className="contact-card overflow-hidden"
-                data-accent={accent}
-              >
-                <div className="card-accent" />
+                  key={index}
+                  className="contact-card overflow-hidden min-h-[320px] flex flex-col"
+                  data-accent={accent}
+                >
+                  <div className="card-accent" />
                 {/* Card Header */}
                 <div className="p-6">
                 <div className="flex items-center mb-3">
@@ -122,7 +124,7 @@ const ContactPage: React.FC = () => {
               </div>
 
               {/* Card Body */}
-              <div className="p-6 space-y-4">
+              <div className="contact-card-body p-6 space-y-4 flex-1">
                 {/* Department */}
                 <div className="flex items-start">
                   <Building className="w-5 h-5 text-coffee-600 dark:text-coffee-400 mr-3 mt-1 flex-shrink-0" />
@@ -180,7 +182,7 @@ const ContactPage: React.FC = () => {
               </div>
 
               {/* Card Footer */}
-              <div className="bg-coffee-50 dark:bg-gray-700 px-6 py-4">
+              <div className="contact-card-footer bg-coffee-50 dark:bg-gray-700 px-6 py-4">
                 <div className="flex space-x-3">
                   <a
                     href={`tel:${contact.phone}`}

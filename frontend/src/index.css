@@ -319,6 +319,34 @@ header.admin-fixed {
     animation: pulse 2s infinite;
   }
 
+  /* Ensure hero content sits above deco */
+  .contact-hero { position: relative; z-index: 5; }
+  .contact-hero .contact-hero-inner { z-index: 12; position: relative; }
+  .contact-hero-deco { position: absolute; left: 50%; transform: translateX(-50%) translateY(-8%); width: calc(100% + 120px); max-width: 720px; pointer-events: none; opacity: 0.45; }
+
+  /* Hide decorative SVG on small screens to avoid overlap */
+  @media (max-width: 768px) {
+    .contact-hero-deco { display: none; }
+    .contact-card { margin-top: 0; }
+  }
+
+  /* Align footer buttons and ensure consistent sizing */
+  .contact-card-footer .contact-cta { display: inline-flex; align-items: center; justify-content: center; padding: .65rem .8rem; border-radius: .6rem; font-weight:700; }
+  .contact-card-footer { display: flex; gap: .75rem; align-items: center; }
+  .contact-card-footer .contact-cta { flex: 1; }
+  .contact-card-footer { margin-top: auto; }
+
+  /* Dark-mode tweaks for contact components */
+  .dark .contact-hero { background: linear-gradient(180deg, rgba(12,14,18,0.65), rgba(8,10,12,0.5)); border-color: rgba(255,255,255,0.04); }
+  .dark .contact-hero-inner h1 { color: #ffffff; }
+  .dark .contact-hero-inner p { color: rgba(226,234,248,0.78); }
+  .dark .contact-card { background: linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); border-color: rgba(255,255,255,0.04); color: #e6eef8; }
+  .dark .contact-card .card-accent { opacity: 1; }
+  .dark .contact-card-footer { background: rgba(255,255,255,0.02); }
+  .dark .contact-card-footer .contact-cta { color: #fff; }
+  .dark .contact-cta.bg-primary-600 { background: linear-gradient(90deg,#00BFA6,#03A9F4); color: #042027; }
+  .dark .contact-cta.bg-coffee-50 { background: rgba(255,255,255,0.06); color: #e6eef8; }
+
 @keyframes pulse {
   0%, 100% {
     opacity: 1;
