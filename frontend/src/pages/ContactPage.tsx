@@ -28,29 +28,29 @@ const ContactPage: React.FC = () => {
   const contacts: ContactInfo[] = [
     {
       name: "Aranda, Trishia Nicolein D.",
-      position: "Environmental Systems Manager",
+      position: "Documentation Specialist",
       department: "Information Technology Department",
       phone: "+63 917 123 4567",
       email: "trishianicolein.aranda@letran.edu.ph",
-      address: "Environmental Building, 123 Science Avenue, Quezon City",
+      address: "Colegio de San Juan de Letran",
       availability: "Monday to Friday, 8:00 AM - 5:00 PM"
     },
     {
       name: "De Silva, Justine Erickson M.",
-      position: "Senior Technical Specialist",
+      position: "IoT Specialist",
       department: "Information Technology Department",
       phone: "+63 928 987 6543",
       email: "justineerickson.desilva@letran.edu.ph",
-      address: "Technology Center, 456 Innovation Street, Makati City",
+      address: "Colegio de San Juan de Letran",
       availability: "Monday to Saturday, 9:00 AM - 6:00 PM"
     },
     {
       name: "Dubouzet, Ranzheskha Lequixia L.",
-      position: "Data Analytics Coordinator",
+      position: "Full Stack Developer",
       department: "Information Technology Department",
       phone: "+63 939 555 7890",
       email: "ranzheskhalequixia.dubouzet@letran.edu.ph",
-      address: "Data Center Building, 789 Digital Plaza, Taguig City",
+      address: "Colegio de San Juan de Letran",
       availability: "Monday to Friday, 7:00 AM - 4:00 PM"
     }
   ];
