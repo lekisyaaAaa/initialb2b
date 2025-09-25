@@ -1,0 +1,33 @@
+# Render service manifest
+# Import this repository into Render and use this manifest to create the services.
+# After import, set JWT_SECRET and any secrets in the Render dashboard.
+
+databases:
+  - name: initialb2b-db
+    plan: starter
+
+services:
+  - type: web
+    name: initialb2b-backend
+    env: docker
+    dockerfilePath: backend/Dockerfile
+    branch: fix/contact-header-gap
+    plan: free
+    startCommand: "node server.js"
+    env:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: "5000"
+      # NOTE: Set JWT_SECRET and DATABASE_URL in the Render dashboard instead of hardcoding here.
+
+  - type: static
+    name: initialb2b-frontend
+    branch: fix/contact-header-gap
+    buildCommand: "npm ci && npm run build"
+    publishPath: build
+    plan: free
+
+# After creating the database, Render will provide a DATABASE_URL. In the backend service's
+# environment variables set DATABASE_URL to that value. Also add JWT_SECRET (a long random
+# string). Set any other secrets (e.g., TWILIO creds) as needed.
