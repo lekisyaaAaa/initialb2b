@@ -1,0 +1,9 @@
+node_modules
+npm-debug.log
+.env
+dist
+build
+coverage
+.cache
+frontend/node_modules
+backend/node_modules
