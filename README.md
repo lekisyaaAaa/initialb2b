@@ -1,18 +1,69 @@
 caon<!-- Updated README for the Environmental Monitoring System (BeanToBin) -->
 # BeanToBin — Environmental Monitoring System
+# BeanToBin — Environmental Monitoring System
 
-This repository contains a full-stack environmental monitoring platform ("BeanToBin") consisting of:
+What is BeanToBin?
 
-- backend/ — Node.js + Express API (Sequelize for PostgreSQL)
-- frontend/ — React (TypeScript) + TailwindCSS dashboard and UI
-- esp32/ — Arduino/ESP32 code for sensor collection and RS485/MODBUS integration
-- scripts/ and tools for migrations, seeding and utilities
+BeanToBin is a capstone IoT project for compost monitoring. It collects environmental sensor data from ESP32-based devices attached to RS485/MODBUS sensors, provides a web dashboard for visualization and control, and supports actuator control and notifications to maintain optimal composting conditions.
 
-This README summarizes the system architecture, features, how to run locally, recent changes (pH support, Manila weather integration), and troubleshooting notes.
+Why it exists
+
+- Built as a capstone academic project to demonstrate end-to-end IoT data collection, real-time control, and cloud-ready deployment for small-scale environmental monitoring (composting).
+
+One-sentence system summary
+
+- ESP32 devices → Backend API (Node/Express + Sequelize/Postgres) → Frontend dashboard (React/TypeScript + Tailwind); actuators are controlled via WebSocket-connected devices and actions are persisted and auditable.
+
+## Features
+
+- Real-time sensor monitoring (temperature, humidity, soil moisture, pH, EC, NPK)
+- Actuator control (pump, solenoid valve)
+- Alerts & notifications (SMS via Twilio integration)
+- Weather integration (Manila-specific weather sampling and synthetic sensor correlation)
+- Exportable reports (CSV, PDF)
+
+## Tech stack
+
+| Layer | Technology |
+|---|---|
+| Frontend | React + TypeScript + TailwindCSS |
+| Backend | Node.js + Express + Sequelize |
+| Database | PostgreSQL |
+| IoT | ESP32 with RS485 / MODBUS sensors |
+| Deployment | Docker, Render, Vercel / Netlify (frontend) |
+
+## Screenshots
+
+*(placeholders — replace with real screenshots in `frontend_design_bundle/` or `screenshots/`)*
+
+- Dashboard overview
+
+![Dashboard overview](screenshots/dashboard-overview.png)
+
+- Actuator Controls (Admin)
+
+![Actuator controls](screenshots/actuator-controls.png)
+
+- Sensor timeline chart
+
+![Sensor chart](screenshots/sensor-chart.png)
+
+---
+
+## Repository contents (short)
+
+- `backend/` — Node/Express API, Sequelize models, routes
+- `frontend/` — React app (TypeScript), TailwindCSS, components and pages
+- `esp32/` — ESP32/Arduino sketches for sensor polling and API integration
+- `scripts/` — Migration & helper scripts (seeding, smoke-tests, simulators)
+- `docker-compose.yml` — Optional local stack (Postgres, etc.)
+- `README.md` — This file
+
+---
 
 ## High-level Overview
 
-- Sensors (ESP32 + RS485) collect Temperature, Humidity, Soil Moisture and now pH (where supported).
+- Sensors (ESP32 + RS485) collect Temperature, Humidity, Soil Moisture and pH (where supported).
 - ESP32 devices POST sensor readings to the backend API; the backend stores and broadcasts data and raises alerts.
 - The frontend provides an Admin dashboard (role-based access) and public dashboards for visualization, charts, and exports.
 - A weather service (frontend-side) fetches Manila-only weather snapshots and produces realistic weather-derived sensor-like readings for correlation and analytics.
@@ -28,54 +79,17 @@ This README summarizes the system architecture, features, how to run locally, re
   - The Admin Dashboard `/admin/dashboard` has a `Load Weather` button which fetches and displays the Manila weather summary (Avg Temp, Avg Humidity, Avg Moisture, status, lastUpdated).
   - The Enhanced dashboard's separate weather snapshot was removed per recent UX requests; weather is now loaded via Admin only.
 
-## Repo Layout (short)
-
-```
-./
-├─ backend/                # Node/Express API, Sequelize models, routes
-├─ frontend/               # React app (TypeScript), TailwindCSS, components and pages
-├─ esp32/                  # ESP32/Arduino sketches for sensor polling and API integration
-├─ scripts/                # Migration & helper scripts
-├─ docker-compose.yml      # Optional local stack (Postgres, etc.)
-└─ README.md               # This file
-```
+---
 
 ## Quick local setup
 
-Prerequisites
+### Prerequisites
 
 - Node.js 18+ and npm
 - PostgreSQL (local or Docker)
 - (Optional) Twilio account for SMS alerts
-# BeanToBin — Environmental Monitoring System
 
-This repository contains a full-stack environmental monitoring platform (BeanToBin):
-
-- backend/ — Node.js + Express API with Sequelize (Postgres)
-- frontend/ — React + TypeScript + Tailwind dashboard
-- esp32/ — Arduino/ESP32 sketches (RS485/MODBUS)
-- scripts/ — utilities: seeding, simulators, smoke-tests, deployment helpers
-
-This README is the quick operational guide: how to run locally, smoke-test, auto-start services, and deploy.
-
-## Quick summary
-
-- Local dev helper: `start-all.ps1` (PowerShell) starts backend + frontend and waits for health checks.
-- Smoke test: `scripts/smoke-test.js` exercises admin login, actuator endpoints, and validates logs.
-- Device simulator: `backend/scripts/ws-device-sim.js` simulates an ESP32 (registers over WebSocket and ACKs actuator commands).
-- Auto-start: `ecosystem.config.js` + `scripts/pm2-windows-setup.ps1` to run backend and simulators via PM2 on Windows.
-- Deploy: `render.yaml` and Dockerfiles are included for Render/Docker deployments.
-
----
-
-## Prerequisites
-
-- Node.js 18+ and npm
-- Git
-- (Local) PostgreSQL or Docker Desktop
-- PowerShell on Windows (we provide PowerShell helpers)
-
-## Quick local start (recommended for development on Windows)
+### Recommended quick start (Windows)
 
 1) From repository root install dependencies once:
 
@@ -199,6 +213,31 @@ Recommended quick production flows:
 ---
 
 If you want, I can also add a short `README-DEPLOY.md` tailored to a chosen hosting provider (Render, Railway, or a one-liner VPS script with Let's Encrypt). Tell me which target you prefer and I'll add it.
+
+---
+
+## Screenshots & assets
+
+Add actual screenshots to `screenshots/` or `frontend_design_bundle/` and update the image paths above. Optimized PNGs (under 500 KB) are recommended for repo storage.
+
+---
+
+## Contributing
+
+Thanks for your interest in contributing! A few quick guidelines:
+
+1. Fork the repository and create a feature branch from `main` (or from your working branch): `git checkout -b feature/your-change`
+2. Add tests for changes where appropriate. Keep changes focused and documented.
+3. Make small, well-scoped commits and push your branch to your fork.
+4. Open a Pull Request describing the change and link related issues. CI will run on the PR.
+
+If you want to contribute infrastructure changes (Docker/Render), include clear deploy notes and a rollback plan in the PR description.
+
+---
+
+## License
+
+This project is licensed under the MIT License — see the `LICENSE` file for details.
 
 ---
 
