@@ -105,7 +105,7 @@ PowerShell -ExecutionPolicy Bypass -File .\start-all.ps1
 ```
 
 - Backend health: http://127.0.0.1:5000/api/health
-- Frontend: http://127.0.0.1:3002 (or 3000, depending on your dev environment)
+- Frontend: http://127.0.0.1:3000 (default; some dev setups use 3002)
 
 3) Run the resilient smoke test (verifies actuator endpoints and DB logging):
 
