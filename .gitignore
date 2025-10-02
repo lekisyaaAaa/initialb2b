@@ -26,6 +26,60 @@ check-console-visibility*.json
 # Session artifacts
 .session_saved
 WORKSPACE_SNAPSHOT.md
+
+# Environment files
+backend/.env
+frontend/.env
+.env.local
+.env
+
+# Builds and logs
+/frontend/build/
+/logs/
+/backend/logs/
+/frontend/logs/
+
+# Temporary and cleanup folders
+cleanup-backup-*/
+tmp_*
+tmp*
+
+# Archive and snapshots
+archive/
+archive/*
+archive/organized_snapshot_*/
+archive/cleanup_*/
+
+# Misc
+package-lock.json
+# Node
+node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs and runtime
+*.log
+*.err
+*.out
+
+# Local DB and sensor stream
+backend/data/*.sqlite
+backend/data/*.jsonl
+
+# Scripts and tokens
+scripts/*.token
+scripts/*.png
+check-console-visibility*.png
+check-console-visibility*.json
+
+# IDE
+.vscode/
+
+# Session artifacts
+.session_saved
+WORKSPACE_SNAPSHOT.md
 node_modules
 backend/.env
 frontend/.env
