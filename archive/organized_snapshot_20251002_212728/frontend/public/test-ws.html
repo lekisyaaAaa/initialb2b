@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Test</title>
+</head>
+<body>
+    <h1>Testing WebSocket Endpoint</h1>
+    <button onclick="testWS()">Test /ws endpoint</button>
+    <div id="result"></div>
+
+    <script>
+        function testWS() {
+            fetch('/ws')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('result').innerHTML = 'Response: ' + JSON.stringify(data);
+                })
+                .catch(error => {
+                    document.getElementById('result').innerHTML = 'Error: ' + error.message;
+                });
+        }
+    </script>
+</body>
+</html>

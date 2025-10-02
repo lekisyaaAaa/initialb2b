@@ -1,0 +1,5 @@
+{
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwidXNlcm5hbWUiOiJhZG1pbiIsInJvbGUiOiJhZG1pbiIsImlhdCI6MTc1Nzk3MzM2NSwiZXhwIjoxNzU4MDU5NzY1fQ.rLwR4HVbAQzQVbV9iUvFhvcMUERVcy3EnrYiQn2sIYA",
+  "user": "{\"id\":1,\"username\":\"admin\",\"role\":\"admin\",\"lastLogin\":null,\"loginCount\":0}",
+  "darkMode": "true"
+}

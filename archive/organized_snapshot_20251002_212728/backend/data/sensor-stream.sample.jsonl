@@ -1,0 +1,5 @@
+{"timestamp":"2025-09-07T00:00:00Z","sensorId":"esp32-1","type":"temperature","value":24.3,"unit":"C","meta":{"raw":{"t":24.3,"rssi":-72}}}
+{"timestamp":"2025-09-07T00:00:05Z","sensorId":"esp32-2","type":"humidity","value":55.1,"unit":"%","meta":{"raw":{"h":55.1}}}
+{"timestamp":"2025-09-07T00:00:10Z","sensorId":"esp32-3","type":"moisture","value":12.6,"unit":"%","meta":{"raw":{"m":12.6}}}
+{"timestamp":"2025-09-07T00:00:15Z","sensorId":"esp32-1","type":"battery","value":3.7,"unit":"V","meta":{"raw":{"b":3.7}}}
+{"timestamp":"2025-09-07T00:00:20Z","sensorId":"esp32-4","type":"other","value":1.0,"unit":"","meta":{"raw":{"x":1}}}

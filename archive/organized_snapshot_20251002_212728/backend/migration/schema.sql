@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS users (
+  id SERIAL PRIMARY KEY,
+  mongo_id TEXT UNIQUE,
+  name TEXT,
+  email TEXT UNIQUE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
+);
