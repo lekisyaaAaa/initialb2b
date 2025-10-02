@@ -4,7 +4,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { SensorData, Alert } from '../types';
 import { Leaf, AlertTriangle, Thermometer, Droplets, Sprout, Battery, RefreshCw, Settings, TrendingUp, LogOut, User, ArrowRight } from 'lucide-react';
 import { format } from 'date-fns';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import DarkModeToggle from '../components/DarkModeToggle';
 import Hero from '../components/ui/Hero';
 import SensorCard from '../components/ui/SensorCard';
@@ -18,6 +18,7 @@ import weatherService from '../services/weatherService';
 // Top-level WebSocketStatus component (uses hooks at top level)
 const WebSocketStatus: React.FC = () => {
   const { isConnected, lastFetchCount, lastFetchAt } = useData();
+
   return (
     <div className="text-sm text-espresso-600 dark:text-gray-300 text-right">
       <div>WS: {isConnected ? <span className="text-success-500">Connected</span> : <span className="text-danger-500">Disconnected</span>}</div>
@@ -34,6 +35,7 @@ const Dashboard: React.FC<DashboardProps> = () => {
   const { latestSensorData, recentAlerts, isConnected, isLoading, refreshData } = useData();
   const { lastFetchError, clearLastFetchError } = useData();
   const { user, logout, isAuthenticated } = useAuth();
+  const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<'overview' | 'alerts' | 'sensors' | 'settings'>('overview');
   // ...existing code...
   
@@ -288,7 +290,7 @@ const Dashboard: React.FC<DashboardProps> = () => {
                 <button
                   id="btn-home-assistant"
                   aria-label="Open SmartBin Console"
-                  onClick={() => { window.location.href = '/home-assistant'; }}
+                  onClick={() => { navigate('/home-assistant'); }}
                   className="ml-4 panel-button panel-button--primary"
                   title="SmartBin Console"
                 >

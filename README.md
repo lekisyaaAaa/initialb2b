@@ -199,6 +199,54 @@ Recommended quick production flows:
 
 ---
 
+## Onboarding Tour (guided walkthrough)
+
+This project includes a lightweight guided onboarding tour to help first-time users discover key features.
+
+Where it lives
+
+- Frontend component: `frontend/src/components/OnboardingTour` — a small wrapper around `intro.js`.
+- Tour steps config: `frontend/src/components/OnboardingTour/tourConfig.ts` — a simple array of steps.
+
+How it works
+
+- The tour automatically runs only for first-time visitors. A flag is stored in `localStorage` under the key `onboarding_seen` after completion or skip.
+- The tour is integrated at the top-level `App` component so it can highlight elements across routes.
+
+Configuring & extending steps
+
+1. Open `frontend/src/components/OnboardingTour/tourConfig.ts`.
+2. Add or remove step objects. Each step has the shape: `{ element?: string, title?: string, intro: string }`.
+  - `element` is a CSS selector (e.g. `'#admin-access-btn'` or `'nav'`). If omitted, a center modal step is shown.
+  - `title` is optional and shown above the content.
+  - `intro` is the short description shown in the tooltip.
+
+Example step:
+
+```ts
+{ element: '#actuator-controls', title: 'Actuator Controls', intro: 'Open the actuator panel to manually operate devices.' }
+```
+
+Controlling when the tour runs
+
+- The tour reads/writes `localStorage.onboarding_seen`. To force the tour to show again during development, run in the browser console:
+
+```js
+localStorage.removeItem('onboarding_seen');
+window.location.reload();
+```
+
+Custom storage key
+
+- The `OnboardingTour` component accepts a `storageKey` prop if you need a different key (e.g., per-user keys).
+
+Library choice
+
+- We use `intro.js` (framework-agnostic) to remain compatible with the project's React version. This keeps the integration minimal and easy to maintain.
+
+
+---
+
 ## Useful commands (copy/paste)
 
 - Start services (PowerShell helper):

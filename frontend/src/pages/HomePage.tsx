@@ -16,8 +16,11 @@ import {
   ArrowRight
 } from 'lucide-react';
 import DarkModeToggle from '../components/DarkModeToggle';
+import { useAuth } from '../contexts/AuthContext';
 
 const HomePage: React.FC = () => {
+  const { isAuthenticated } = useAuth();
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-coffee-100 to-primary-100 dark:from-gray-900 dark:to-gray-800">
       {/* Header Navigation */}
@@ -36,21 +39,13 @@ const HomePage: React.FC = () => {
               </div>
             </div>
             <div className="flex items-center space-x-6">
-              <Link to="/dashboard" className="text-espresso-700 dark:text-gray-300 hover:text-letran-600 dark:hover:text-letran-400 transition-colors">
-                Dashboard
-              </Link>
-              <Link to="/enhanced-dashboard" className="text-espresso-700 dark:text-gray-300 hover:text-letran-600 dark:hover:text-letran-400 transition-colors">
-                Analytics
-              </Link>
-              <Link to="/contact" className="text-espresso-700 dark:text-gray-300 hover:text-letran-600 dark:hover:text-letran-400 transition-colors">
-                Contact
-              </Link>
-              
+              <Link to="/dashboard" className="text-espresso-700 dark:text-gray-300 hover:text-letran-600 dark:hover:text-letran-400 transition-colors">Dashboard</Link>
+              <Link to="/enhanced-dashboard" className="text-espresso-700 dark:text-gray-300 hover:text-letran-600 dark:hover:text-letran-400 transition-colors">Analytics</Link>
+              <Link to="/contact" className="text-espresso-700 dark:text-gray-300 hover:text-letran-600 dark:hover:text-letran-400 transition-colors">Contact</Link>
               {/* Dark Mode Toggle */}
               <DarkModeToggle />
-              
               <Link
-                to="/admin/login"
+                to={isAuthenticated ? '/admin' : '/admin/login'}
                 className="bg-[#c81e36] hover:bg-[#b2182e] text-white font-semibold px-4 py-2 rounded-full shadow-lg flex items-center gap-2 transition-colors duration-200"
               >
                 <ArrowRight className="h-4 w-4" />
@@ -129,6 +124,7 @@ const HomePage: React.FC = () => {
             {/* Enhanced Buttons with Better Typography */}
             <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
               <Link 
+                id="dashboard-card"
                 to="/dashboard" 
                 className="font-sans bg-primary-600 hover:bg-primary-700 dark:bg-primary-500 dark:hover:bg-primary-600 text-white font-semibold px-8 py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 tracking-wide"
               >
@@ -136,7 +132,8 @@ const HomePage: React.FC = () => {
               </Link>
               
               <Link
-                to="/admin/login"
+                id="admin-access-btn"
+                to={isAuthenticated ? '/admin' : '/admin/login'}
                 className="font-sans bg-[#c81e36] hover:bg-[#b2182e] text-white font-semibold px-8 py-3 rounded-full shadow-lg flex items-center gap-3 transition-all duration-200 tracking-wide"
               >
                 <ArrowRight className="h-5 w-5" />

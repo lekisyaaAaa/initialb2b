@@ -21,6 +21,8 @@ import { DarkModeProvider } from './contexts/DarkModeContext';
 
 // Import components
 import ProtectedRoute from './components/ProtectedRoute';
+import OnboardingTour from './components/OnboardingTour';
+import tourSteps from './components/OnboardingTour/tourConfig';
 
 function App() {
   return (
@@ -29,6 +31,7 @@ function App() {
         <DataProvider>
           <Router>
             <div className="App">
+              <OnboardingTour steps={tourSteps} />
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/contact" element={<ContactPage />} />

@@ -143,9 +143,25 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const logout = () => {
     setUser(null);
     setToken(null);
+    // clear both token keys used in different flows
     localStorage.removeItem('token');
+    localStorage.removeItem('adminToken');
     localStorage.removeItem('user');
-    delete api.defaults.headers.common['Authorization'];
+    localStorage.removeItem('adminUser');
+    try {
+      // axios instances sometimes have headers.common; other mocks may set headers directly.
+      const anyApi: any = api;
+      if (anyApi && anyApi.defaults && anyApi.defaults.headers) {
+        if (anyApi.defaults.headers.common && anyApi.defaults.headers.common['Authorization']) {
+          delete anyApi.defaults.headers.common['Authorization'];
+        }
+        if (anyApi.defaults.headers['Authorization']) {
+          delete anyApi.defaults.headers['Authorization'];
+        }
+      }
+    } catch (e) {
+      // ignore if api shape is unexpected in tests
+    }
   };
 
   const value: AuthContextType = {

@@ -102,12 +102,12 @@ const LoginPage: React.FC = () => {
             // Create a local fake token + user and proceed
             const fakeToken = `local-dev-token-${Date.now()}`;
             const user = { id: 'local-admin', username: localUser, role: 'admin', local: true } as any;
-            try {
+              try {
               localStorage.setItem('adminToken', fakeToken);
               localStorage.setItem('token', fakeToken);
               localStorage.setItem('user', JSON.stringify(user));
               console.log('LoginPage: local fallback login applied');
-              window.location.href = '/admin/dashboard';
+              navigate('/admin/dashboard');
               return;
             } catch (e) {
               console.warn('LoginPage: could not store local fallback token', e);
@@ -164,7 +164,7 @@ const LoginPage: React.FC = () => {
             }
           }
 
-          window.location.href = '/admin/dashboard';
+          navigate('/admin/dashboard');
         } catch (storeErr) {
           console.error('LoginPage: failed to store token', storeErr);
           setError('Internal error while saving session. Please try again.');
@@ -300,6 +300,17 @@ const LoginPage: React.FC = () => {
                   } catch (e:any) { setError('Error checking backend: ' + (e && e.message ? e.message : String(e))); }
                 }} className="text-sm text-gray-600 underline">Check backend</button>
                 <div className="text-xs text-gray-400">If offline, start backend on port 5000/8000</div>
+              </div>
+
+              {/* Back to home button shown after logout/redirect to admin login */}
+              <div className="mt-4 text-center">
+                <button
+                  type="button"
+                  onClick={() => navigate('/')}
+                  className="inline-flex items-center justify-center px-4 py-2 border border-gray-300 dark:border-gray-700 rounded-full text-sm font-medium text-espresso-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                >
+                  Back to home
+                </button>
               </div>
             </div>
           </form>

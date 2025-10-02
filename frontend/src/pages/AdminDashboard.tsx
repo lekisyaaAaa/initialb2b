@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useEffect, useMemo, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { Leaf } from 'lucide-react';
 import SensorCharts from '../components/SensorCharts';
@@ -299,7 +300,7 @@ export default function AdminDashboard(): React.ReactElement {
                 </div>
 
                 <div className="flex items-center space-x-4">
-                  <button title="Logout" onClick={() => { logout(); window.location.href = '/login'; }} className="px-3 py-2 rounded-lg border bg-gray-100 dark:bg-gray-800 text-sm">Logout</button>
+                  <button title="Logout" onClick={() => setShowLogoutConfirm(true)} className="px-3 py-2 rounded-lg border bg-gray-100 dark:bg-gray-800 text-sm">Logout</button>
                   <DarkModeToggle />
                 </div>
               </div>
@@ -309,6 +310,27 @@ export default function AdminDashboard(): React.ReactElement {
           <div className="h-px bg-gradient-to-r from-transparent via-teal-300 dark:via-teal-600 to-transparent opacity-50"></div>
         </header>
       ),
+      document.body
+    );
+  };
+
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const navigate = useNavigate();
+
+  const LogoutConfirmModal: React.FC = () => {
+    if (!showLogoutConfirm) return null;
+    return createPortal(
+      <div className="fixed inset-0 z-60 flex items-center justify-center p-4">
+        <div className="absolute inset-0 bg-black/50" onClick={() => setShowLogoutConfirm(false)} />
+        <div className="relative z-70 bg-white dark:bg-gray-900 rounded-xl shadow-lg border p-6 max-w-md w-full">
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Confirm Logout</h3>
+          <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">Are you sure you want to logout?</p>
+            <div className="mt-4 flex justify-end gap-3">
+            <button onClick={() => setShowLogoutConfirm(false)} className="px-3 py-2 rounded-md border">No</button>
+            <button onClick={() => { setShowLogoutConfirm(false); logout(); navigate('/admin/login'); }} className="px-3 py-2 rounded-md bg-red-600 text-white">Yes, logout</button>
+          </div>
+        </div>
+      </div>,
       document.body
     );
   };
@@ -344,8 +366,10 @@ export default function AdminDashboard(): React.ReactElement {
           </div>
         </div>
       )}
-      {/* header rendered to body via portal (AdminHeader) */}
-      <AdminHeader />
+  {/* header rendered to body via portal (AdminHeader) */}
+  <AdminHeader />
+  {/* Logout confirmation modal (portal) */}
+  <LogoutConfirmModal />
 
   {/* header is fixed via CSS; top padding on the root container prevents overlap */}
 
@@ -367,7 +391,7 @@ export default function AdminDashboard(): React.ReactElement {
             <AlertsPanel alerts={filteredAlerts.slice(0,6).map(a => ({ id: a.id, title: a.title, severity: a.severity }))} onAcknowledge={(id)=>{ setAlerts(prev => prev.map(x => x.id===id ? { ...x, acknowledged: true } : x)); }} onDismiss={(id)=>{ setAlerts(prev => prev.filter(x => x.id!==id)); }} />
           </div>
 
-          <div className="p-4 rounded-lg bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow flex flex-col flex-grow">
+          <div id="actuator-controls" className="p-4 rounded-lg bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow flex flex-col flex-grow">
             <ActuatorControls className="w-full h-full" />
           </div>
         </div>

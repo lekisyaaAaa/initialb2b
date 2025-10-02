@@ -150,12 +150,6 @@ const ContactPage: React.FC = () => {
                       href={`mailto:${contact.email}?subject=${encodeURIComponent('Inquiry about Environmental Monitoring')}&body=${encodeURIComponent(`Hello ${contact.name},%0D%0A%0D%0AI would like to ask about...`)}`}
                       className="text-coffee-800 hover:text-coffee-600 transition-colors break-all dark:text-gray-200 dark:hover:text-white"
                       aria-label={`Email ${contact.name}`}
-                      onClick={(e) => {
-                        // Use in-page mailto navigation to avoid opening webmail in a new tab
-                        e.preventDefault();
-                        const mailto = `mailto:${contact.email}?subject=${encodeURIComponent('Inquiry about Environmental Monitoring')}&body=${encodeURIComponent(`Hello ${contact.name},\r\n\r\nI would like to ask about...`)}`;
-                        window.location.href = mailto;
-                      }}
                     >
                       {contact.email}
                     </a>
