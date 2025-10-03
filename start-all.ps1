@@ -8,7 +8,8 @@ Usage: Open PowerShell, run:
 
 param(
   [int]$BackendPort = 5000,
-  [int[]]$FrontendPorts = @(3000,3002),
+  # Always prefer frontend dev server on 3002 for local dev to avoid CRA default conflicts
+  [int[]]$FrontendPorts = @(3002),
   [int]$TimeoutSeconds = 60
 )
 
@@ -56,9 +57,11 @@ foreach ($p in $FrontendPorts) {
 }
 
 if (-not $frontendStarted) {
-  Write-Host "Starting frontend (wrapped-start)..." -ForegroundColor Yellow
-  # Use node to run the wrapped-start.js to avoid npm shell quirks
-  $frontendProc = Start-Process -FilePath node -ArgumentList './frontend/scripts/wrapped-start.js' -WorkingDirectory (Resolve-Path .) -PassThru -WindowStyle Hidden
+  Write-Host "Starting frontend (wrapped-start) on PORT=3002..." -ForegroundColor Yellow
+  # Use cmd to set PORT=3002 for the child process so CRA picks up the dev port reliably.
+  # This avoids Start-Process environment limitations on Windows PowerShell 5.1.
+  $cmd = "set PORT=3002 && node frontend/scripts/wrapped-start.js"
+  $frontendProc = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $cmd -WorkingDirectory (Resolve-Path .) -PassThru -WindowStyle Hidden
   $sw = [diagnostics.stopwatch]::StartNew()
   while ($sw.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
     foreach ($p in $FrontendPorts) {
