@@ -1,5 +1,5 @@
 const express = require('express');
-const { query, validationResult } = require('express-validator');
+const { query, validationResult, body } = require('express-validator');
 const Alert = require('../models/Alert');
 const { auth, adminOnly } = require('../middleware/auth');
 
@@ -101,6 +101,109 @@ router.get('/recent', auth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching recent alerts'
+    });
+  }
+});
+
+// @route   GET /api/alerts/latest
+// @desc    Get the 10 most recent alerts (for admin notifications)
+// @access  Private (Admin only)
+router.get('/latest', [auth, adminOnly], async (req, res) => {
+  try {
+    const alerts = await Alert.findAll({
+      order: [['createdAt', 'DESC']],
+      limit: 10
+    });
+
+    res.json({
+      success: true,
+      data: alerts
+    });
+
+  } catch (error) {
+    console.error('Error fetching latest alerts:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching latest alerts'
+    });
+  }
+});
+
+// @route   POST /api/alerts
+// @desc    Create a new alert (for public users to report issues)
+// @access  Private (User role allowed)
+router.post('/', [
+  auth,
+  body('type').isIn(['sensor', 'connectivity', 'threshold', 'device_offline', 'other']).withMessage('Invalid alert type'),
+  body('message').isLength({ min: 1, max: 500 }).withMessage('Message must be 1-500 characters'),
+  body('timestamp').optional().isISO8601().withMessage('Invalid timestamp format')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const { type, message, timestamp } = req.body;
+
+    const alert = await Alert.createAlert({
+      type,
+      message,
+      createdAt: timestamp ? new Date(timestamp) : new Date(),
+      status: 'new'
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Alert created successfully',
+      data: alert
+    });
+
+  } catch (error) {
+    console.error('Error creating alert:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error creating alert'
+    });
+  }
+});
+
+// @route   PATCH /api/alerts/:id
+// @desc    Mark an alert as read (for admin acknowledgment)
+// @access  Private (Admin only)
+router.patch('/:id', [auth, adminOnly], async (req, res) => {
+  try {
+    const alert = await Alert.findByPk(req.params.id);
+
+    if (!alert) {
+      return res.status(404).json({
+        success: false,
+        message: 'Alert not found'
+      });
+    }
+
+    // Update status to 'read' and acknowledged info
+    alert.status = 'read';
+    alert.acknowledgedBy = req.user.username;
+    alert.acknowledgedAt = new Date();
+
+    await alert.save();
+
+    res.json({
+      success: true,
+      message: 'Alert marked as read',
+      data: alert
+    });
+
+  } catch (error) {
+    console.error('Error updating alert:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating alert'
     });
   }
 });

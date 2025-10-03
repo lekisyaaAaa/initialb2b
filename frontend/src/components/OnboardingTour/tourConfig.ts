@@ -7,23 +7,22 @@ type Step = {
 const tourSteps: Step[] = [
   {
     element: 'nav',
-    title: 'Main navigation',
-    intro: 'Use the main navigation to access the Dashboard, Admin console, and other pages.',
+    title: 'Navigation',
+    intro: 'Navigate between Dashboard, Admin console, and other sections using this menu.',
   },
   {
     element: '#dashboard-card',
-    title: 'Dashboard overview',
-    intro: 'This card shows the latest sensor readings and quick stats.',
+    title: 'Dashboard',
+    intro: 'View real-time sensor data, system status, and key metrics at a glance.',
   },
   {
     element: '#admin-access-btn',
-    title: 'Admin access',
-    intro: 'Click here to sign in to the admin console where you can control actuators and settings.',
+    title: 'Admin Access',
+    intro: 'Access the admin panel to manage actuators, settings, and system controls.',
   },
   {
-    element: '#actuator-controls',
-    title: 'Actuator Controls',
-    intro: 'Open the actuator panel to manually operate devices and view action logs.',
+    title: 'Getting Started',
+    intro: 'Welcome to BeanToBin! This environmental monitoring system helps you track sensors, manage actuators, and monitor your data in real-time.',
   },
 ];
 

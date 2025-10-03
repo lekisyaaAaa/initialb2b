@@ -626,4 +626,38 @@ router.get('/stats', auth, async (req, res) => {
   }
 });
 
+// Register a new sensor (for admin management)
+router.post('/register', auth, [
+  body('deviceId').isString().notEmpty().withMessage('Device ID is required'),
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, message: 'Validation errors', errors: errors.array() });
+    }
+
+    const { deviceId } = req.body;
+
+    // Check if sensor already exists
+    const existing = await SensorData.findOne({ where: { deviceId } });
+    if (existing) {
+      return res.status(409).json({ success: false, message: 'Sensor with this device ID already exists' });
+    }
+
+    // Create a placeholder sensor entry
+    const newSensor = await SensorData.create({
+      deviceId,
+      temperature: null,
+      humidity: null,
+      moisture: null,
+      status: 'registered'
+    });
+
+    res.json({ success: true, message: 'Sensor registered successfully', data: newSensor });
+  } catch (error) {
+    console.error('Error registering sensor:', error);
+    res.status(500).json({ success: false, message: 'Error registering sensor' });
+  }
+});
+
 module.exports = router;

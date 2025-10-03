@@ -4,8 +4,8 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const bcrypt = require('bcryptjs');
 const { Sequelize, DataTypes } = require('sequelize');
 
-const adminUser = process.env.LOCAL_ADMIN_USER || 'admin';
-const adminPass = process.env.LOCAL_ADMIN_PASS || 'admin';
+const adminUser = process.env.LOCAL_ADMIN_USER || 'beantobin';
+const adminPass = process.env.LOCAL_ADMIN_PASS || 'Bean2bin';
 
 async function seedWithSequelize(sequelize, UserModel) {
   await sequelize.sync();

@@ -41,8 +41,8 @@ const path = require('path');
 
     // Fill form
     await page.waitForSelector('input[name="username"], #username', { timeout: 5000 });
-    await page.type('input[name="username"], #username', process.env.TEST_ADMIN_USER || 'admin');
-    await page.type('input[name="password"], #password', process.env.TEST_ADMIN_PASS || 'admin');
+    await page.type('input[name="username"], #username', process.env.TEST_ADMIN_USER || 'beantobin');
+    await page.type('input[name="password"], #password', process.env.TEST_ADMIN_PASS || 'Bean2bin');
 
     // Submit
     await Promise.all([

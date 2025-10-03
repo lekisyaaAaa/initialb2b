@@ -164,11 +164,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const setAuth = (newToken: string, newUser?: any) => {
+    setToken(newToken);
+    if (newUser) setUser(newUser);
+    try {
+      localStorage.setItem('token', newToken);
+      if (newUser) localStorage.setItem('user', JSON.stringify(newUser));
+      (api.defaults.headers as any).Authorization = `Bearer ${newToken}`;
+    } catch (e) {
+      // ignore storage errors
+    }
+  };
+
   const value: AuthContextType = {
     user,
     token,
     login,
     logout,
+    setAuth,
     isLoading,
     isAuthenticated: !!user && !!token,
   };

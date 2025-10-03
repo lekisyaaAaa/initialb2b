@@ -7,7 +7,7 @@ import { AlertCircle, Leaf, Lock, User, ArrowRight } from 'lucide-react';
 import DarkModeToggle from '../components/DarkModeToggle';
 
 const LoginPage: React.FC = () => {
-  const { login, isAuthenticated, isLoading } = useAuth();
+  const { login, isAuthenticated, isLoading, setAuth } = useAuth();
   const location = useLocation();
   const [formData, setFormData] = useState({
     username: '',
@@ -75,100 +75,81 @@ const LoginPage: React.FC = () => {
     setError('');
     setIsSubmitting(true);
 
+  // debug: handleSubmit invoked
+
     try {
-      // Pre-flight: check backend health so we can present a clear offline message
+      // Pre-flight health check
       try {
         await api.get('/health', { timeout: 3000 });
       } catch (healthErr: any) {
-        console.warn('LoginPage: health check failed', healthErr && (healthErr.message || healthErr));
-        // Try discovery (probe common fallback ports) and switch if found
+        // Try discovery as a fallback
         let discovered = false;
         try {
           const d = await discoverApi({ timeout: 1500 });
-          if (d.ok && d.baseURL) {
-            console.log('LoginPage: discovered API at', d.baseURL);
-            discovered = true;
-            // continue and attempt login again using updated api.baseURL
-          }
+          if (d.ok && d.baseURL) discovered = true;
         } catch (e) {
-          // ignore discovery failure
+          // ignore
         }
 
-        // If discovery didn't find anything, offer a local dev fallback for admin credentials
         if (!discovered) {
           const localUser = (process.env.REACT_APP_LOCAL_ADMIN_USER || 'admin');
           const localPass = (process.env.REACT_APP_LOCAL_ADMIN_PASS || 'admin');
           if (formData.username.trim() === localUser && formData.password === localPass) {
-            // Create a local fake token + user and proceed
             const fakeToken = `local-dev-token-${Date.now()}`;
             const user = { id: 'local-admin', username: localUser, role: 'admin', local: true } as any;
-              try {
+            if (setAuth) {
+              setAuth(fakeToken, user);
+            } else {
               localStorage.setItem('adminToken', fakeToken);
               localStorage.setItem('token', fakeToken);
               localStorage.setItem('user', JSON.stringify(user));
-              console.log('LoginPage: local fallback login applied');
-              navigate('/admin/dashboard');
-              return;
-            } catch (e) {
-              console.warn('LoginPage: could not store local fallback token', e);
             }
+            navigate('/admin/dashboard');
+            return;
           }
         }
-        // If not handled, let the normal login attempt proceed (it will likely fail) and be handled below
+        // otherwise continue to normal login attempt
       }
 
-      // Prefer explicit admin login to the admin endpoint to keep UI and backend in sync
-      console.log('LoginPage: calling adminAuthService.loginAdmin', { url: (process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000') + '/api/admin/login' });
-      const result = await adminAuthService.loginAdmin(formData.username.trim(), formData.password);
-      console.log('LoginPage: admin login result', result);
+  // Attempt admin login
+  const result = await adminAuthService.loginAdmin(formData.username.trim(), formData.password);
       if (!result.success) {
         setError(result.message || 'Invalid username or password');
         setFormData(prev => ({ ...prev, password: '' }));
         const el = document.getElementById('username') as HTMLInputElement | null;
         if (el) { el.focus(); el.select(); }
-      } else {
-        // Success - store token, fetch user via /auth/verify, then redirect to admin dashboard
-        try {
+        return;
+      }
+
+      // Success: set token and user into context/storage immediately
+      try {
+        if (setAuth) {
+          setAuth(result.token, (result as any).user || undefined);
+        } else {
           localStorage.setItem('adminToken', result.token);
-          // Also set the main token key for compatibility with existing auth flows
           localStorage.setItem('token', result.token);
-          (window as any).localStorage && console.log('LoginPage: token stored in localStorage (adminToken)');
-
-          // If the login response included a user object (local fallback), use it directly
-          if ((result as any).user) {
-            try {
-              localStorage.setItem('user', JSON.stringify((result as any).user));
-              console.log('LoginPage: stored local fallback user');
-            } catch (e) { /* ignore */ }
-          } else {
-            // Verify token and fetch user information so AuthContext can pick up authenticated user
-            try {
-              const verifyResp = await authService.verify();
-              if (verifyResp?.data?.success && verifyResp.data.data?.user) {
-                localStorage.setItem('user', JSON.stringify(verifyResp.data.data.user));
-                console.log('LoginPage: verified admin token and stored user');
-              } else {
-                console.warn('LoginPage: token verify did not return user, proceeding to dashboard');
-              }
-            } catch (verifyErr) {
-              // Non-fatal: if verify fails, still attempt to navigate — AuthContext will clear invalid tokens on load
-              const msg = verifyErr && (verifyErr as any).message ? (verifyErr as any).message : String(verifyErr);
-              console.warn('LoginPage: token verify failed after admin login', msg);
-            } finally {
-              // Debug: ensure token keys are present and log them
-              try {
-                console.log('LoginPage: tokens after storage -> token=', localStorage.getItem('token'), 'adminToken=', localStorage.getItem('adminToken'));
-              } catch (e) {
-                console.warn('LoginPage: failed to read localStorage for debug', e);
-              }
-            }
-          }
-
-          navigate('/admin/dashboard');
-        } catch (storeErr) {
-          console.error('LoginPage: failed to store token', storeErr);
-          setError('Internal error while saving session. Please try again.');
         }
+
+        if ((result as any).user) {
+          localStorage.setItem('user', JSON.stringify((result as any).user));
+        } else {
+          // Try to verify to fetch user
+          try {
+            const verifyResp = await authService.verify();
+            if (verifyResp?.data?.success && verifyResp.data.data?.user) {
+              if (setAuth) setAuth(result.token, verifyResp.data.data.user);
+              else localStorage.setItem('user', JSON.stringify(verifyResp.data.data.user));
+            }
+          } catch (e) {
+            // non-fatal
+            console.warn('LoginPage: verify after login failed', (e as any)?.message ?? e);
+          }
+        }
+
+        navigate('/admin/dashboard');
+      } catch (storeErr) {
+        console.error('LoginPage: failed to persist session', storeErr);
+        setError('Internal error while saving session. Please try again.');
       }
     } catch (err: any) {
       console.error('LoginPage: unexpected error during admin login', err);

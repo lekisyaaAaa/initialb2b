@@ -214,13 +214,26 @@ export const alertService = {
     api.get<ApiResponse<Alert[]>>('/alerts/recent', {
       params: limit ? { limit } : undefined,
     }),
-  
+
+  getLatestAlerts: () =>
+    api.get<ApiResponse<Alert[]>>('/alerts/latest'),
+
+  createAlert: (alertData: {
+    type: 'sensor' | 'connectivity' | 'threshold' | 'device_offline' | 'other';
+    message: string;
+    timestamp?: string;
+  }) =>
+    api.post<ApiResponse<Alert>>('/alerts', alertData),
+
+  markAsRead: (alertId: string) =>
+    api.patch<ApiResponse<Alert>>(`/alerts/${alertId}`),
+
   resolveAlert: (alertId: string) =>
     api.put<ApiResponse<Alert>>(`/alerts/${alertId}/resolve`),
-  
+
   acknowledgeAlert: (alertId: string) =>
     api.put<ApiResponse<Alert>>(`/alerts/${alertId}/acknowledge`),
-  
+
   getStats: (params?: {
     period?: 'day' | 'week' | 'month';
     deviceId?: string;

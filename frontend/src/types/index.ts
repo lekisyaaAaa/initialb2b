@@ -11,6 +11,7 @@ export interface AuthContextType {
   token: string | null;
   login: (username: string, password: string) => Promise<{ success: boolean; message?: string }>;
   logout: () => void;
+  setAuth?: (token: string, user?: any) => void;
   isLoading: boolean;
   isAuthenticated: boolean;
 }
@@ -45,6 +46,8 @@ export interface Alert {
   createdAt?: string | Date;
   resolvedAt?: string | Date;
   acknowledgedBy?: string;
+  acknowledgedAt?: string | Date;
+  status?: 'new' | 'read';
 }
 
 export interface Settings {

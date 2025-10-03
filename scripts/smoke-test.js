@@ -12,8 +12,8 @@ const child_process = require('child_process');
 const jwt = require('jsonwebtoken');
 
 const API_BASE = process.env.API_BASE || 'http://127.0.0.1:5000';
-const ADMIN_USER = process.env.LOCAL_ADMIN_USER || 'admin';
-const ADMIN_PASS = process.env.LOCAL_ADMIN_PASS || 'admin';
+const ADMIN_USER = process.env.LOCAL_ADMIN_USER || 'beantobin';
+const ADMIN_PASS = process.env.LOCAL_ADMIN_PASS || 'Bean2bin';
 const JWT_SECRET = process.env.JWT_SECRET || 'devsecret';
 const DEVICE_ID = process.env.SMOKE_DEVICE_ID || 'smoke-sim-01';
 

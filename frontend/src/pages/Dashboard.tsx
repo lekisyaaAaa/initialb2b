@@ -121,6 +121,8 @@ const Dashboard: React.FC<DashboardProps> = () => {
 
   // Guard against undefined/null data coming from the backend
   const safeLatestSensorData: SensorData[] = Array.isArray(latestSensorData) ? latestSensorData : [];
+  console.log('Dashboard: safeLatestSensorData length:', safeLatestSensorData.length);
+  console.log('Dashboard: safeLatestSensorData:', safeLatestSensorData);
   const safeRecentAlerts: Alert[] = Array.isArray(recentAlerts) ? recentAlerts : [];
 
   const unresolvedAlerts = safeRecentAlerts.filter((alert: Alert) => !alert.isResolved);
@@ -475,6 +477,25 @@ const Dashboard: React.FC<DashboardProps> = () => {
               </div>
             )}
 
+            {/* Empty State - No Sensors Connected */}
+            {safeLatestSensorData.length === 0 && (
+              <div className="grid grid-cols-1 gap-6">
+                <div className="group relative overflow-hidden">
+                  <div className="absolute inset-0 bg-gradient-to-br from-gray-500/10 to-gray-400/10 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                  <div className="relative bg-white/80 backdrop-blur-lg border border-white/50 rounded-2xl p-8 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col items-center justify-center text-center min-h-[200px]">
+                    <div className="flex-shrink-0 w-16 h-16 flex items-center justify-center rounded-2xl bg-gradient-to-br from-gray-100 to-gray-50 shadow-lg mb-4">
+                      <Thermometer className="h-8 w-8 text-gray-500" />
+                    </div>
+                    <h3 className="text-xl font-semibold text-espresso-900 mb-2">No Sensors Connected</h3>
+                    <p className="text-espresso-600 max-w-md">
+                      No environmental sensors are currently connected to the system. 
+                      Connect ESP32 devices or check sensor configuration to start monitoring.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Manila Weather Snapshot (if loaded) */}
             {manilaSummary && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -572,10 +593,20 @@ const Dashboard: React.FC<DashboardProps> = () => {
         )}
 
         {activeTab === 'sensors' && (
-          <div className="text-center py-16">
-            <Thermometer className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Sensor Management</h3>
-            <p className="text-gray-500">Detailed sensor view coming soon...</p>
+          <div className="space-y-6">
+            {safeLatestSensorData.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {safeLatestSensorData.map((sensor, index) => (
+                  <SensorCard key={sensor._id || index} data={sensor} />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-16">
+                <Thermometer className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Sensors Connected</h3>
+                <p className="text-gray-500">Connect ESP32 devices to start monitoring environmental data.</p>
+              </div>
+            )}
           </div>
         )}
 

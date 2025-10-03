@@ -6,8 +6,8 @@ import './App.css';
 // Import components
 import HomePage from './pages/HomePage';
 import ContactPage from './pages/ContactPage';
-import PublicDashboard from './pages/PublicDashboard';
 import EnhancedDashboard from './pages/EnhancedDashboard';
+import MockDashboard from './pages/MockDashboard';
 import LoginPage from './pages/LoginPage';
 import AdminDashboard from './pages/AdminDashboard';
 import LogsPage from './pages/LogsPage';
@@ -35,8 +35,8 @@ function App() {
               <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/contact" element={<ContactPage />} />
-                <Route path="/dashboard" element={<PublicDashboard />} />
-                <Route path="/enhanced-dashboard" element={<EnhancedDashboard />} />
+                <Route path="/dashboard" element={<EnhancedDashboard />} />
+                <Route path="/mock-dashboard" element={<MockDashboard />} />
                 <Route path="/login" element={<LoginPage />} />
                 {/* Public admin login route used by landing page */}
                 <Route path="/admin/login" element={<LoginPage />} />

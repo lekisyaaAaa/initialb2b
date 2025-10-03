@@ -22,7 +22,7 @@
     const loginResp = await fetch(`${backend}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'admin', password: 'admin' })
+      body: JSON.stringify({ username: 'beantobin', password: 'Bean2bin' })
     }).catch(e=>({ ok:false, status:0, text: async ()=>String(e) }));
     let loginBody = '';
     try { loginBody = await loginResp.text(); } catch(e){ loginBody = String(e); }

@@ -77,7 +77,7 @@ const NpkChart: React.FC<NpkChartProps> = ({ data, height = 400, className = '' 
             type="number"
             scale="time"
             domain={['dataMin', 'dataMax']}
-            tickFormatter={(timestamp) => new Date(timestamp).toLocaleTimeString()}
+            tickFormatter={(timestamp: number | string | Date) => new Date(timestamp as any).toLocaleTimeString()}
             className="text-xs"
           />
           <YAxis

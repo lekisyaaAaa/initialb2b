@@ -1,0 +1,306 @@
+/* Custom Intro.js Tour Styles for BeanToBin */
+/* Optimized for both light and dark themes with minimal, readable design */
+
+@import 'intro.js/introjs.css';
+
+/* Base intro.js overrides for minimal design */
+.introjs-tooltip {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1), 0 4px 10px rgba(0, 0, 0, 0.05);
+  max-width: 320px !important;
+  min-width: 280px !important;
+  font-size: 14px !important;
+  line-height: 1.4 !important;
+  padding: 16px !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .introjs-tooltip {
+    background: #1f2937;
+    border-color: #374151;
+  }
+}
+
+/* Title styling - smaller and cleaner */
+.introjs-tooltiptitle {
+  color: #111827;
+  font-weight: 600;
+  font-size: 15px !important;
+  line-height: 1.3 !important;
+  margin-bottom: 8px !important;
+  padding-bottom: 8px !important;
+  border-bottom: 1px solid #e5e7eb !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .introjs-tooltiptitle {
+    color: #ffffff;
+    border-bottom-color: #4b5563 !important;
+  }
+}
+
+/* Content text - optimized for readability */
+.introjs-tooltiptext {
+  color: #374151;
+  font-size: 14px !important;
+  line-height: 1.5 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .introjs-tooltiptext {
+    color: #d1d5db;
+  }
+}
+
+/* Button styling - minimal and theme-aware */
+.introjs-button {
+  background: #2563eb;
+  color: #ffffff;
+  font-weight: 500;
+  font-size: 13px !important;
+  padding: 8px 16px !important;
+  margin: 0 4px !important;
+  border: none !important;
+  border-radius: 6px !important;
+  min-width: auto !important;
+  transition: background-color 0.2s ease;
+}
+
+.introjs-button:hover {
+  background: #1d4ed8;
+}
+
+@media (prefers-color-scheme: dark) {
+  .introjs-button {
+    background: #3b82f6;
+  }
+
+  .introjs-button:hover {
+    background: #2563eb;
+  }
+}
+
+.introjs-button:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px #3b82f6, 0 0 0 4px rgba(59, 130, 246, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  .introjs-button:focus {
+    box-shadow: 0 0 0 2px #3b82f6, 0 0 0 4px rgba(59, 130, 246, 0.2);
+  }
+}
+
+/* Skip button - more subtle */
+.introjs-skipbutton {
+  color: #6b7280;
+  font-size: 13px !important;
+  float: right !important;
+  margin-top: -4px !important;
+  margin-right: -4px !important;
+  transition: color 0.2s ease;
+}
+
+.introjs-skipbutton:hover {
+  color: #374151;
+}
+
+@media (prefers-color-scheme: dark) {
+  .introjs-skipbutton {
+    color: #9ca3af;
+  }
+
+  .introjs-skipbutton:hover {
+    color: #e5e7eb;
+  }
+}
+
+/* Progress indicators - minimal design */
+.introjs-progress {
+  background: #e5e7eb;
+  border-radius: 9999px;
+  height: 4px;
+  margin-top: 16px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .introjs-progress {
+    background: #374151;
+  }
+}
+
+.introjs-progressbar {
+  background: #2563eb;
+  border-radius: 9999px;
+  height: 4px;
+  transition: width 0.3s ease;
+}
+
+@media (prefers-color-scheme: dark) {
+  .introjs-progressbar {
+    background: #3b82f6;
+  }
+}
+
+/* Step numbers - subtle */
+.introjs-stepnumber {
+  background: #f3f4f6;
+  color: #4b5563;
+  font-size: 11px !important;
+  font-weight: 500;
+  border-radius: 9999px;
+  width: 24px !important;
+  height: 24px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin-right: 8px !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .introjs-stepnumber {
+    background: #374151;
+    color: #d1d5db;
+  }
+}
+
+/* Arrow styling - theme-aware */
+.introjs-arrow {
+  border-color: #e5e7eb;
+}
+
+@media (prefers-color-scheme: dark) {
+  .introjs-arrow {
+    border-color: #374151;
+  }
+}
+
+.introjs-arrow.top {
+  border-bottom-color: #ffffff !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .introjs-arrow.top {
+    border-bottom-color: #1f2937 !important;
+  }
+}
+
+.introjs-arrow.bottom {
+  border-top-color: #ffffff !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .introjs-arrow.bottom {
+    border-top-color: #1f2937 !important;
+  }
+}
+
+.introjs-arrow.left {
+  border-right-color: #ffffff !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .introjs-arrow.left {
+    border-right-color: #1f2937 !important;
+  }
+}
+
+.introjs-arrow.right {
+  border-left-color: #ffffff !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .introjs-arrow.right {
+    border-left-color: #1f2937 !important;
+  }
+}
+
+/* Overlay - subtle */
+.introjs-overlay {
+  background-color: rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Bullets - minimal */
+.introjs-bullets ul li a {
+  background: #d1d5db;
+  width: 8px !important;
+  height: 8px !important;
+  margin: 0 2px !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .introjs-bullets ul li a {
+    background: #4b5563;
+  }
+}
+
+.introjs-bullets ul li a.active {
+  background: #2563eb;
+}
+
+@media (prefers-color-scheme: dark) {
+  .introjs-bullets ul li a.active {
+    background: #3b82f6;
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+  .introjs-tooltip {
+    max-width: 280px !important;
+    min-width: 260px !important;
+    font-size: 13px !important;
+    padding: 14px !important;
+  }
+
+  .introjs-tooltiptitle {
+    font-size: 14px !important;
+  }
+
+  .introjs-tooltiptext {
+    font-size: 13px !important;
+  }
+
+  .introjs-button {
+    font-size: 12px !important;
+    padding: 6px 12px !important;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .introjs-tooltip {
+    border-width: 2px;
+    border-color: #000000;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .introjs-tooltip {
+      border-color: #ffffff;
+    }
+  }
+
+  .introjs-tooltiptitle {
+    border-bottom-width: 2px;
+    border-bottom-color: #000000;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .introjs-tooltiptitle {
+      border-bottom-color: #ffffff;
+    }
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  .introjs-tooltip,
+  .introjs-progressbar,
+  .introjs-button {
+    transition: none !important;
+  }
+}

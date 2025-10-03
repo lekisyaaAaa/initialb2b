@@ -6,7 +6,7 @@ async function testAuth() {
     const healthResponse = await axios.get('http://localhost:5000/api/health');
     console.log('✅ Health check passed:', healthResponse.data);
 
-    console.log('🔐 Testing login with admin/admin...');
+    console.log('🔐 Testing login with beantobin/Bean2bin...');
     const loginResponse = await axios.post('http://localhost:5000/api/auth/login', {
       username: 'admin',
       password: 'admin'

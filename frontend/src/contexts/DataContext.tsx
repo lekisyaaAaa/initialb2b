@@ -38,114 +38,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const isCurrentlyLoading = useRef(false);
   const cooldownActive = useRef(false);
 
-  // WebSocket connection - TEMPORARILY DISABLED to stop refresh loop
-  // WebSocket connection (opt-in via REACT_APP_ENABLE_WS) - re-enabled with robust reconnect
-  useEffect(() => {
-    const enableWs = process.env.REACT_APP_ENABLE_WS === 'true';
-    if (!enableWs) {
-      console.log('DataContext: WebSocket disabled (REACT_APP_ENABLE_WS != true)');
-      return;
-    }
-
-    let websocket: WebSocket | null = null;
-    let reconnectTimeout: number | null = null;
-    let isComponentMounted = true;
-
-    const connectWebSocket = () => {
-      if (!isComponentMounted) return;
-
-      try {
-        const wsUrl = process.env.REACT_APP_WS_URL || `${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.hostname}:5000`;
-        console.log('DataContext: Connecting WebSocket to', wsUrl);
-        websocket = new WebSocket(wsUrl);
-
-        websocket.onopen = () => {
-          if (!isComponentMounted) {
-            websocket?.close();
-            return;
-          }
-          console.log('DataContext: WebSocket connected');
-          setIsConnected(true);
-
-          if (reconnectTimeout) {
-            window.clearTimeout(reconnectTimeout);
-            reconnectTimeout = null;
-          }
-        };
-
-        websocket.onmessage = (event) => {
-          if (!isComponentMounted) return;
-          try {
-            const message = JSON.parse(event.data);
-            // Support different message shapes: { type, data } or raw sensor object
-            if (message) {
-              if (message.type === 'sensor_data' && message.data) {
-                const newData = Array.isArray(message.data) ? message.data : [message.data];
-                setLatestSensorData(prevData => {
-                  // Merge by deviceId (replace existing reading for device)
-                  const updated = [...prevData];
-                  newData.forEach((r: SensorData) => {
-                    const idx = updated.findIndex(x => x.deviceId === r.deviceId);
-                    if (idx >= 0) updated[idx] = r; else updated.push(r);
-                  });
-                  return updated;
-                });
-              } else if (message.type === 'alert' && message.data) {
-                // Prepend alert
-                setRecentAlerts(prev => [message.data as Alert, ...prev].slice(0, 50));
-              } else if (message.deviceId && (message.temperature !== undefined || message.humidity !== undefined)) {
-                // Raw sensor object
-                const raw = message as SensorData;
-                setLatestSensorData(prev => {
-                  const updated = [...prev];
-                  const idx = updated.findIndex(x => x.deviceId === raw.deviceId);
-                  if (idx >= 0) updated[idx] = raw; else updated.push(raw);
-                  return updated;
-                });
-              }
-            }
-          } catch (error) {
-            console.error('DataContext: Error parsing WebSocket message:', error);
-          }
-        };
-
-        websocket.onclose = (ev) => {
-          if (!isComponentMounted) return;
-          console.log('DataContext: WebSocket closed', ev);
-          setIsConnected(false);
-
-          // Exponential backoff capped at 1 minute
-          const backoff = 5000;
-          reconnectTimeout = window.setTimeout(() => {
-            if (isComponentMounted) {
-              console.log('DataContext: Reconnecting WebSocket...');
-              connectWebSocket();
-            }
-          }, backoff);
-        };
-
-        websocket.onerror = (error) => {
-          console.error('DataContext: WebSocket error:', error);
-          setIsConnected(false);
-        };
-
-      } catch (error) {
-        console.error('DataContext: Failed to create WebSocket connection:', error);
-        setIsConnected(false);
-        reconnectTimeout = window.setTimeout(() => {
-          if (isComponentMounted) connectWebSocket();
-        }, 5000);
-      }
-    };
-
-    connectWebSocket();
-
-    return () => {
-      isComponentMounted = false;
-      if (reconnectTimeout) window.clearTimeout(reconnectTimeout);
-      if (websocket) websocket.close();
-    };
-  }, []); // run once
+  // WebSocket connection - COMPLETELY DISABLED
 
   // If WebSocket is disabled, mark connection as available (polling mode)
   useEffect(() => {
@@ -156,7 +49,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   }, []);
 
   const refreshData = useCallback(async () => {
-    console.log('DataContext: Refreshing data with weather service');
+    console.log('DataContext: refreshData called - START');
     
     // Prevent multiple simultaneous calls using refs
     if (isCurrentlyLoading.current || cooldownActive.current) {
@@ -188,6 +81,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     while (attempt <= maxRetries) {
       try {
         weatherData = await weatherService.getAllLocationsWeather();
+        console.log('DataContext: Weather service returned:', weatherData);
         break;
       } catch (err: any) {
         attempt += 1;
@@ -234,31 +128,45 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         
         console.log(`DataContext: Updated with ${sensorData.length} Manila weather readings`);
       } else {
+        console.log('DataContext: Weather service returned empty, trying backend...');
         // Try backend API as a fallback when weather service returns nothing
         try {
           const resp = await sensorService.getLatestData();
+          console.log('DataContext: Backend response:', resp);
           if (resp && resp.data && resp.data.success) {
             const payload = Array.isArray(resp.data.data) ? resp.data.data : (resp.data.data ? [resp.data.data] : []);
-            setLatestSensorData(payload as any);
-            setIsConnected(true);
-            setLastFetchCount(payload.length);
-            setLastFetchAt(new Date().toISOString());
+            console.log('DataContext: Backend payload:', payload);
+            if (payload.length > 0) {
+              setLatestSensorData(payload as any);
+              setIsConnected(true);
+              setLastFetchCount(payload.length);
+              setLastFetchAt(new Date().toISOString());
+            } else {
+              // No real sensor data available - set empty array
+              console.log('DataContext: No sensor data available from backend - setting empty array');
+              setLatestSensorData([]);
+              console.log('DataContext: latestSensorData set to empty array');
+              setIsConnected(false);
+              setLastFetchCount(0);
+              setLastFetchAt(new Date().toISOString());
+              setLastFetchError(null);
+            }
           } else {
-            console.log('DataContext: Backend returned no latest data; falling back to mock data');
-            setLatestSensorData(mockData.mockSensorData);
+            console.log('DataContext: Backend returned no latest data');
+            setLatestSensorData([]);
             setIsConnected(false);
-            setLastFetchCount(mockData.mockSensorData.length);
+            setLastFetchCount(0);
             setLastFetchAt(new Date().toISOString());
-            setLastFetchError('No live backend data - using mock data');
+            setLastFetchError(null);
           }
         } catch (be) {
           const beMsg = (be && (be as any).message) ? (be as any).message : String(be);
-          console.log('DataContext: Backend latest data fetch failed, using mock data', beMsg);
-          setLatestSensorData(mockData.mockSensorData as SensorData[]);
+          console.log('DataContext: Backend latest data fetch failed', beMsg);
+          setLatestSensorData([]);
           setIsConnected(false);
-          setLastFetchCount(mockData.mockSensorData.length);
+          setLastFetchCount(0);
           setLastFetchAt(new Date().toISOString());
-          setLastFetchError('Backend fetch failed - using mock data');
+          setLastFetchError(`Backend connection failed: ${beMsg}`);
         }
       }
 
@@ -277,13 +185,13 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       }
     } catch (error) {
       console.error('Error fetching weather data:', error);
-      // Fall back to mock data so the UI remains usable offline
+      // Set empty arrays when no sensors are connected - don't fall back to mock data
       setIsConnected(false);
-      setLatestSensorData(mockData.mockSensorData);
-      setRecentAlerts(mockData.mockAlerts);
-      setLastFetchCount(mockData.mockSensorData.length);
+      setLatestSensorData([]);
+      setRecentAlerts([]);
+      setLastFetchCount(0);
       setLastFetchAt(new Date().toISOString());
-      setLastFetchError(((error as any)?.message || 'Failed to fetch sensor data') + ' - using mock data');
+      setLastFetchError(null);
     } finally {
       isCurrentlyLoading.current = false;
       setIsLoading(false);

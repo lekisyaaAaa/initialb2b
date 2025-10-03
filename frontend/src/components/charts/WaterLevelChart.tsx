@@ -54,13 +54,13 @@ const WaterLevelChart: React.FC<WaterLevelChartProps> = ({ data, height = 400, c
             type="number"
             scale="time"
             domain={['dataMin', 'dataMax']}
-            tickFormatter={(timestamp) => new Date(timestamp).toLocaleTimeString()}
+            tickFormatter={(timestamp: number | string | Date) => new Date(timestamp as any).toLocaleTimeString()}
             className="text-xs"
           />
           <YAxis
             domain={[0, 1]}
             ticks={[0, 1]}
-            tickFormatter={(value) => value === 1 ? 'Present' : 'Low'}
+            tickFormatter={(value: number | string | Date) => (value as any) === 1 ? 'Present' : 'Low'}
             label={{ value: 'Water Level', angle: -90, position: 'insideLeft' }}
             className="text-xs"
           />

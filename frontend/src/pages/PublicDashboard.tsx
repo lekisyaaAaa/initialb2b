@@ -1,12 +1,26 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import React, { useState } from 'react';
-import { Leaf, AlertTriangle, Thermometer, Droplets, Sprout, Battery, Activity, RefreshCw, TrendingUp, ArrowRight } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Leaf, AlertTriangle, Thermometer, Droplets, Sprout, Battery, Activity, RefreshCw, TrendingUp, ArrowRight, Bell } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import DarkModeToggle from '../components/DarkModeToggle';
-import weatherService from '../services/weatherService';
-import { useEffect } from 'react';
 import { useData } from '../contexts/DataContext';
+import { useAuth } from '../contexts/AuthContext';
+import { alertService } from '../services/api';
+import weatherService from '../services/weatherService';
+
+// EmptyState component for when no sensors are connected
+const EmptyState: React.FC = () => (
+  <div className="flex flex-col items-center justify-center py-16 px-4">
+    <div className="w-24 h-24 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mb-6">
+      <Activity className="h-12 w-12 text-gray-400 dark:text-gray-500" />
+    </div>
+    <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">No Sensors Connected</h3>
+    <p className="text-gray-600 dark:text-gray-400 text-center max-w-md">
+      Connect your environmental monitoring sensors to start viewing real-time data and insights.
+    </p>
+  </div>
+);
 
 // Hardcoded sample data to avoid any refresh loops or API issues
 const sampleSensorData = [
@@ -64,16 +78,85 @@ const sampleSensorData = [
 ];
 
 const PublicDashboard: React.FC = () => {
+  const { latestSensorData, isConnected, refreshData } = useData();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'alerts' | 'sensors'>('overview');
   const [isLoading, setIsLoading] = useState(false);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
+  const [showNotification, setShowNotification] = useState(false);
 
-  const handleRefresh = () => {
+  // Function to create an alert
+  const createAlert = async (type: string, message: string) => {
+    try {
+      if (!user) return; // Only authenticated users can create alerts
+
+      const response = await alertService.createAlert({
+        type: type as any,
+        message,
+        timestamp: new Date().toISOString()
+      });
+
+      if (response.data.success) {
+        setNotificationMessage('Alert sent to Admin successfully!');
+        setShowNotification(true);
+        setTimeout(() => setShowNotification(false), 5000);
+      }
+    } catch (error) {
+      console.error('Failed to create alert:', error);
+      setNotificationMessage('Failed to send alert. Please try again.');
+      setShowNotification(true);
+      setTimeout(() => setShowNotification(false), 5000);
+    }
+  };
+
+  // Monitor sensor data and create alerts for issues
+  useEffect(() => {
+    if (!latestSensorData || latestSensorData.length === 0) {
+      // No sensors connected - create alert if not already alerted recently
+      const hasRecentNoSensorAlert = alerts.some(alert =>
+        alert.type === 'connectivity' &&
+        alert.message.includes('No sensors connected') &&
+        new Date(alert.createdAt) > new Date(Date.now() - 5 * 60 * 1000) // Within last 5 minutes
+      );
+
+      if (!hasRecentNoSensorAlert) {
+        createAlert('connectivity', 'No sensors connected');
+      }
+    } else {
+      // Check for sensors with issues
+      latestSensorData.forEach(sensor => {
+        // Check for offline sensors
+        if (sensor.status === 'critical' || sensor.status === 'warning') {
+          const hasRecentOfflineAlert = alerts.some(alert =>
+            alert.type === 'device_offline' &&
+            alert.deviceId === sensor.deviceId &&
+            new Date(alert.createdAt) > new Date(Date.now() - 10 * 60 * 1000) // Within last 10 minutes
+          );
+
+          if (!hasRecentOfflineAlert) {
+            createAlert('device_offline', `Sensor ${sensor.deviceId} is experiencing issues`);
+          }
+        }
+
+        // Check for out-of-range values (basic threshold check)
+        if (sensor.temperature && (sensor.temperature < 10 || sensor.temperature > 40)) {
+          createAlert('threshold', `Temperature out of range on ${sensor.deviceId}: ${sensor.temperature}°C`);
+        }
+        if (sensor.moisture && (sensor.moisture < 20 || sensor.moisture > 80)) {
+          createAlert('threshold', `Moisture out of range on ${sensor.deviceId}: ${sensor.moisture}%`);
+        }
+        if (sensor.ph && (sensor.ph < 5.5 || sensor.ph > 8.5)) {
+          createAlert('threshold', `pH out of range on ${sensor.deviceId}: ${sensor.ph}`);
+        }
+      });
+    }
+  }, [latestSensorData, user]);
+
+  const handleRefresh = async () => {
     setIsLoading(true);
-    // Simulate loading
-    setTimeout(() => {
-      setIsLoading(false);
-      console.log('Public Dashboard: Data refreshed');
-    }, 1000);
+    await refreshData();
+    setIsLoading(false);
   };
 
   const getStatusColor = (status: string) => {
@@ -85,11 +168,23 @@ const PublicDashboard: React.FC = () => {
     }
   };
 
-  const avgTemperature = Math.round(sampleSensorData.reduce((sum, d) => sum + d.temperature, 0) / sampleSensorData.length);
-  const avgHumidity = Math.round(sampleSensorData.reduce((sum, d) => sum + d.humidity, 0) / sampleSensorData.length);
-  const avgMoisture = Math.round(sampleSensorData.reduce((sum, d) => sum + d.moisture, 0) / sampleSensorData.length);
   const [manilaWeather, setManilaWeather] = React.useState<any | null>(null);
-  const { latestSensorData } = useData();
+
+  // Check if we have any sensor data
+  const hasSensorData = Array.isArray(latestSensorData) && latestSensorData.length > 0;
+
+  const avgTemperature = hasSensorData
+    ? Math.round(latestSensorData.reduce((sum, d) => sum + (d.temperature || 0), 0) / latestSensorData.length)
+    : 0;
+  const avgHumidity = hasSensorData
+    ? Math.round(latestSensorData.reduce((sum, d) => sum + (d.humidity || 0), 0) / latestSensorData.length)
+    : 0;
+  const avgMoisture = hasSensorData
+    ? Math.round(latestSensorData.reduce((sum, d) => sum + (d.moisture || 0), 0) / latestSensorData.length)
+    : 0;
+
+  // Debug logging
+  console.log('PublicDashboard: hasSensorData =', hasSensorData, 'latestSensorData =', latestSensorData);
 
   // compute latest pH if available (use latestSensorData array)
   const latestPh = React.useMemo(() => {
@@ -219,10 +314,141 @@ const PublicDashboard: React.FC = () => {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Notification Banner */}
+        {showNotification && notificationMessage && (
+          <div className="mb-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4 flex items-center space-x-3">
+            <Bell className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+            <p className="text-blue-800 dark:text-blue-200 font-medium">{notificationMessage}</p>
+            <button
+              onClick={() => setShowNotification(false)}
+              className="ml-auto text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-200"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         {activeTab === 'overview' && (
           <div className="space-y-6">
-            {/* Premium Glass Overview Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-8 items-stretch w-full">
+            {!hasSensorData ? (
+              <EmptyState />
+            ) : (
+              <div>
+                {/* Premium Glass Overview Cards */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 items-stretch w-full">
+
+                {/* Temperature Card */}
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-red-500/20 to-letran-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                  <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-500 to-letran-500 rounded-t-2xl"></div>
+
+                    <div className="flex items-center mb-4">
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-red-100 to-red-50 dark:from-red-800 dark:to-red-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                        <Thermometer className="h-6 w-6 text-red-600 dark:text-red-300" />
+                      </div>
+                      <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                        <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">Temperature</p></div>
+                        <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">
+                          {Array.isArray(latestSensorData) && latestSensorData.length > 0 ? (latestSensorData[latestSensorData.length - 1] as any).temperature || avgTemperature : avgTemperature}°C
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 min-h-[140px]"></div>
+                  </div>
+                </div>
+
+                {/* Humidity Card */}
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-primary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                  <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-primary-500 rounded-t-2xl"></div>
+
+                    <div className="flex items-center mb-4">
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-800 dark:to-blue-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                        <Droplets className="h-6 w-6 text-blue-600 dark:text-blue-300" />
+                      </div>
+                      <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                        <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">Humidity</p></div>
+                        <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">
+                          {Array.isArray(latestSensorData) && latestSensorData.length > 0 ? (latestSensorData[latestSensorData.length - 1] as any).humidity || avgHumidity : avgHumidity}%
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 min-h-[140px]"></div>
+                  </div>
+                </div>
+
+                {/* pH Card */}
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 to-amber-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                  <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 to-amber-400 rounded-t-2xl"></div>
+
+                    <div className="flex items-center mb-4">
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-amber-100 to-amber-50 dark:from-amber-800 dark:to-amber-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                        <Droplets className="h-6 w-6 text-amber-600 dark:text-amber-300" />
+                      </div>
+                      <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                        <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">pH</p></div>
+                        <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">
+                          {latestPh !== null ? latestPh.toFixed(2) : '—'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 min-h-[140px]"></div>
+                  </div>
+                </div>
+
+                {/* Battery Card */}
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-secondary-500/20 to-secondary-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                  <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-secondary-500 to-secondary-500 rounded-t-2xl"></div>
+
+                    <div className="flex items-center mb-4">
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-secondary-100 to-secondary-50 dark:from-secondary-800 dark:to-secondary-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                        <Battery className="h-6 w-6 text-secondary-600 dark:text-secondary-300" />
+                      </div>
+                      <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                        <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">Battery</p></div>
+                        <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">
+                          {Array.isArray(latestSensorData) && latestSensorData.length > 0 ? (latestSensorData[latestSensorData.length - 1] as any).batteryLevel || 85 : 85}%
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 min-h-[140px]"></div>
+                  </div>
+                </div>
+
+                {/* EC Card */}
+                <div className="group relative overflow-hidden h-full">
+                  <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 to-purple-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                  <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-purple-400 rounded-t-2xl"></div>
+
+                    <div className="flex items-center mb-4">
+                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-purple-100 to-purple-50 dark:from-purple-800 dark:to-purple-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                        <Droplets className="h-6 w-6 text-purple-600 dark:text-purple-300" />
+                      </div>
+                      <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                        <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">EC</p></div>
+                        <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">
+                          {Array.isArray(latestSensorData) && latestSensorData.length > 0 && (latestSensorData[latestSensorData.length - 1] as any).ec ? ((latestSensorData[latestSensorData.length - 1] as any).ec).toFixed(2) : '—'} mS/cm
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 min-h-[140px]"></div>
+                  </div>
+                </div>
+
+                {/* NPK Card */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-4 gap-4 items-stretch w-full">
               
               {/* Temperature Card */}
               <div className="group relative overflow-hidden h-full">
@@ -393,6 +619,73 @@ const PublicDashboard: React.FC = () => {
                     <div className="flex flex-col justify-center flex-1 min-h-[72px]">
                       <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">Active Devices</p></div>
                       <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">
+                        {Array.isArray(latestSensorData) && latestSensorData.length > 0 ? latestSensorData.length : 0}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 min-h-[140px]"></div>
+                </div>
+              </div>
+            </div>
+              <div className="group relative overflow-hidden h-full">
+                <div className="absolute inset-0 bg-gradient-to-br from-green-500/20 to-green-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 to-green-400 rounded-t-2xl"></div>
+
+                  <div className="flex items-center mb-4">
+                    <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-green-100 to-green-50 dark:from-green-800 dark:to-green-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                      <Sprout className="h-6 w-6 text-green-600 dark:text-green-300" />
+                    </div>
+                    <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                      <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">NPK</p></div>
+                      <div className="text-sm text-espresso-900 dark:text-white">
+                        <div>N: {Array.isArray(latestSensorData) && latestSensorData.length > 0 && (latestSensorData[latestSensorData.length - 1] as any).nitrogen ? ((latestSensorData[latestSensorData.length - 1] as any).nitrogen).toFixed(0) : '—'}</div>
+                        <div>P: {Array.isArray(latestSensorData) && latestSensorData.length > 0 && (latestSensorData[latestSensorData.length - 1] as any).phosphorus ? ((latestSensorData[latestSensorData.length - 1] as any).phosphorus).toFixed(0) : '—'}</div>
+                        <div>K: {Array.isArray(latestSensorData) && latestSensorData.length > 0 && (latestSensorData[latestSensorData.length - 1] as any).potassium ? ((latestSensorData[latestSensorData.length - 1] as any).potassium).toFixed(0) : '—'}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 min-h-[140px]"></div>
+                </div>
+              </div>
+
+              {/* Water Level Card */}
+              <div className="group relative overflow-hidden h-full">
+                <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/20 to-cyan-400/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 to-cyan-400 rounded-t-2xl"></div>
+
+                  <div className="flex items-center mb-4">
+                    <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-cyan-100 to-cyan-50 dark:from-cyan-800 dark:to-cyan-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                      <Droplets className="h-6 w-6 text-cyan-600 dark:text-cyan-300" />
+                    </div>
+                    <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                      <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">Water Level</p></div>
+                      <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">
+                        {Array.isArray(latestSensorData) && latestSensorData.length > 0 && (latestSensorData[latestSensorData.length - 1] as any).waterLevel !== undefined ? ((latestSensorData[latestSensorData.length - 1] as any).waterLevel === 1 ? 'Present' : 'Low') : '—'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 min-h-[140px]"></div>
+                </div>
+              </div>
+
+              {/* Active Devices Card */}
+              <div className="group relative overflow-hidden h-full">
+                <div className="absolute inset-0 bg-gradient-to-br from-blue-500/20 to-letran-500/20 rounded-2xl blur-xl group-hover:blur-2xl transition-all duration-500"></div>
+                <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                  <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-letran-500 rounded-t-2xl"></div>
+
+                  <div className="flex items-center mb-4">
+                    <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-800 dark:to-blue-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                      <Activity className="h-6 w-6 text-blue-600 dark:text-blue-300" />
+                    </div>
+                    <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                      <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">Active Devices</p></div>
+                      <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">
                         {Array.isArray(latestSensorData) ? latestSensorData.length : sampleSensorData.length}
                       </p>
                     </div>
@@ -463,6 +756,8 @@ const PublicDashboard: React.FC = () => {
             </div>
           </div>
         )}
+        </div>
+      )}
 
         {activeTab === 'alerts' && (
           <div className="rounded-lg shadow">

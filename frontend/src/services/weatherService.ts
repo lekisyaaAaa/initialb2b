@@ -70,35 +70,36 @@ class WeatherService {
    * Get weather data for a specific location
    */
   async getLocationWeather(location: LocationConfig): Promise<WeatherData | null> {
-    const cacheKey = location.deviceId;
-    const cached = this.cachedData.get(cacheKey);
+    // Temporarily disable cache to ensure fresh data for empty state testing
+    // const cacheKey = location.deviceId;
+    // const cached = this.cachedData.get(cacheKey);
     
     // Return cached data if still valid
-    if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
-      return cached.data;
-    }
+    // if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+    //   return cached.data;
+    // }
 
     try {
       // Try primary API (OpenWeatherMap)
       const weatherData = await this.fetchOpenWeatherData(location);
       if (weatherData) {
-        this.cachedData.set(cacheKey, { data: weatherData, timestamp: Date.now() });
+        // this.cachedData.set(cacheKey, { data: weatherData, timestamp: Date.now() });
         return weatherData;
       }
 
       // Fallback to backup API
       const backupData = await this.fetchWeatherAPIData(location);
       if (backupData) {
-        this.cachedData.set(cacheKey, { data: backupData, timestamp: Date.now() });
+        // this.cachedData.set(cacheKey, { data: backupData, timestamp: Date.now() });
         return backupData;
       }
 
-      // If both APIs fail, generate realistic mock data
-      return this.generateRealisticMockData(location);
+      // If both APIs fail, return null (no mock data for empty state)
+      return null;
 
     } catch (error) {
       console.error(`Weather API error for ${location.name}:`, error);
-      return this.generateRealisticMockData(location);
+      return null; // Return null instead of mock data
     }
   }
 
@@ -252,10 +253,10 @@ class WeatherService {
    * Get real-time weather data for all Manila monitoring locations
    */
   async getAllLocationsWeather(): Promise<WeatherData[]> {
-    const promises = MONITORING_LOCATIONS.map(location => 
+    const promises = MONITORING_LOCATIONS.map(location =>
       this.getLocationWeather(location)
     );
-    
+
     const results = await Promise.all(promises);
     return results.filter((data): data is WeatherData => data !== null);
   }

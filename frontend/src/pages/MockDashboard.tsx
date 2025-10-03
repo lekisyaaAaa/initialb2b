@@ -1,19 +1,18 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useState, useEffect, useMemo } from 'react';
-import { useData } from '../contexts/DataContext';
 import { useAuth } from '../contexts/AuthContext';
 import { Alert } from '../types';
-import { 
-  Leaf, 
-  AlertTriangle, 
-  Thermometer, 
-  Droplets, 
-  Sprout, 
+import {
+  Leaf,
+  AlertTriangle,
+  Thermometer,
+  Droplets,
+  Sprout,
   Battery,
-  RefreshCw, 
-  Settings, 
+  RefreshCw,
+  Settings,
   LogIn,
-  LogOut, 
+  LogOut,
   User,
   BarChart3,
   Activity,
@@ -28,22 +27,116 @@ import ChartContainer from '../components/charts/ChartContainer';
 import AlertSummaryChart from '../components/charts/AlertSummaryChart';
 import DarkModeToggle from '../components/DarkModeToggle';
 
-const EnhancedDashboard: React.FC = () => {
-  const { latestSensorData, recentAlerts, isConnected, isLoading, refreshData } = useData();
+// Mock sensor data for demonstration
+const mockSensorData = [
+  {
+    id: 1,
+    deviceId: 'ESP32-001',
+    temperature: 28.5,
+    humidity: 65.2,
+    ph: 6.8,
+    ec: 1.2,
+    nitrogen: 45,
+    phosphorus: 12,
+    potassium: 78,
+    moisture: 42.3,
+    waterLevel: 1,
+    batteryLevel: 85,
+    status: 'normal',
+    timestamp: new Date(Date.now() - 300000).toISOString() // 5 minutes ago
+  },
+  {
+    id: 2,
+    deviceId: 'ESP32-002',
+    temperature: 27.8,
+    humidity: 68.1,
+    ph: 7.2,
+    ec: 0.9,
+    nitrogen: 52,
+    phosphorus: 15,
+    potassium: 82,
+    moisture: 38.7,
+    waterLevel: 1,
+    batteryLevel: 92,
+    status: 'normal',
+    timestamp: new Date(Date.now() - 240000).toISOString() // 4 minutes ago
+  },
+  {
+    id: 3,
+    deviceId: 'ESP32-003',
+    temperature: 29.2,
+    humidity: 62.8,
+    ph: 6.5,
+    ec: 1.5,
+    nitrogen: 38,
+    phosphorus: 9,
+    potassium: 65,
+    moisture: 45.1,
+    waterLevel: 0,
+    batteryLevel: 78,
+    status: 'warning',
+    timestamp: new Date(Date.now() - 180000).toISOString() // 3 minutes ago
+  },
+  {
+    id: 4,
+    deviceId: 'ESP32-004',
+    temperature: 26.9,
+    humidity: 71.3,
+    ph: 7.0,
+    ec: 1.1,
+    nitrogen: 48,
+    phosphorus: 14,
+    potassium: 75,
+    moisture: 41.8,
+    waterLevel: 1,
+    batteryLevel: 88,
+    status: 'normal',
+    timestamp: new Date(Date.now() - 120000).toISOString() // 2 minutes ago
+  }
+];
+
+// Mock alerts for demonstration
+const mockAlerts: Alert[] = [
+  {
+    _id: 'mock-1',
+    message: 'Temperature reading above normal range',
+    severity: 'medium',
+    deviceId: 'ESP32-003',
+    createdAt: new Date(Date.now() - 180000).toISOString(),
+    isResolved: false
+  },
+  {
+    _id: 'mock-2',
+    message: 'Low water level detected',
+    severity: 'high',
+    deviceId: 'ESP32-003',
+    createdAt: new Date(Date.now() - 150000).toISOString(),
+    isResolved: false
+  },
+  {
+    _id: 'mock-3',
+    message: 'Battery level low on ESP32-003',
+    severity: 'low',
+    deviceId: 'ESP32-003',
+    createdAt: new Date(Date.now() - 120000).toISOString(),
+    isResolved: true,
+    resolvedAt: new Date(Date.now() - 60000).toISOString()
+  }
+];
+
+const MockDashboard: React.FC = () => {
   const { user, logout, isAuthenticated } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'alerts' | 'sensors'>('overview');
-  
+
   // Check if current user is admin
   const isAdmin = isAuthenticated && user?.role === 'admin';
 
-  // Use real sensor data from DataContext instead of mock historical data
-  const safeLatestSensorData = useMemo(() => latestSensorData || [], [latestSensorData]);
-
-  // No need for mock data generation - using real sensor data from DataContext
+  // Use mock data instead of real sensor data
+  const safeLatestSensorData = useMemo(() => mockSensorData, []);
 
   // Calculate alert summary for pie chart
   const alertSummary = useMemo(() => {
-    const summary = recentAlerts.reduce((acc: Record<string, number>, alert: Alert) => {
+    const summary = mockAlerts.reduce((acc: Record<string, number>, alert: Alert) => {
       const sev = (alert.severity || 'unknown').toString();
       acc[sev] = (acc[sev] || 0) + 1;
       return acc;
@@ -53,7 +146,7 @@ const EnhancedDashboard: React.FC = () => {
       severity,
       count: count as number
     }));
-  }, [recentAlerts]);
+  }, []);
 
   // Get unique device IDs for filtering
   const deviceIds = useMemo(() => {
@@ -64,7 +157,7 @@ const EnhancedDashboard: React.FC = () => {
   // Latest readings for overview cards
   const latestReadings = useMemo(() => {
     if (safeLatestSensorData.length === 0) return null;
-    
+
     const latest = safeLatestSensorData[safeLatestSensorData.length - 1];
     return latest;
   }, [safeLatestSensorData]);
@@ -97,7 +190,7 @@ const EnhancedDashboard: React.FC = () => {
     }
   };
 
-  const unresolvedAlerts = recentAlerts.filter((alert: Alert) => !alert.isResolved);
+  const unresolvedAlerts = mockAlerts.filter((alert: Alert) => !alert.isResolved);
 
   return (
     <div className="min-h-screen bg-coffee-50 dark:bg-gray-900">
@@ -123,17 +216,17 @@ const EnhancedDashboard: React.FC = () => {
                   <div className="hidden sm:flex items-center space-x-1">
                     <div className="live-indicator">
                       <div className="pulse-dot"></div>
-                      <span>Live</span>
+                      <span>Demo</span>
                     </div>
                   </div>
                 </div>
                 <div className="flex items-center space-x-3 mt-1">
                   <p className="site-subtitle text-sm font-medium">
-                    Environmental Monitoring System
+                    Mock Environmental Monitoring System
                   </p>
-                  <div className="site-badge bg-gradient-to-r from-teal-50 to-purple-50 dark:from-teal-900/20 dark:to-purple-900/20 border-teal-200 dark:border-teal-700 text-teal-700 dark:text-teal-300 shadow-sm">
+                  <div className="site-badge bg-gradient-to-r from-orange-50 to-red-50 dark:from-orange-900/20 dark:to-red-900/20 border-orange-200 dark:border-orange-700 text-orange-700 dark:text-orange-300 shadow-sm">
                     <Activity className="w-3 h-3" />
-                    <span>Enhanced Dashboard</span>
+                    <span>Mock Data</span>
                   </div>
                 </div>
               </div>
@@ -144,18 +237,18 @@ const EnhancedDashboard: React.FC = () => {
               {/* Connection Status */}
               <div className="hidden md:flex items-center space-x-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-full border border-green-200 dark:border-green-800">
                 <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-sm"></div>
-                <span className="text-sm font-medium text-green-700 dark:text-green-300">System Online</span>
+                <span className="text-sm font-medium text-green-700 dark:text-green-300">Mock Data Active</span>
               </div>
 
               {/* Quick Stats */}
               <div className="hidden lg:flex items-center space-x-4 text-sm">
                 <div className="flex items-center space-x-1 text-gray-600 dark:text-gray-300">
                   <Thermometer className="w-4 h-4 text-red-500" />
-                  <span className="font-medium">Live Data</span>
+                  <span className="font-medium">Mock Sensors</span>
                 </div>
                 <div className="flex items-center space-x-1 text-gray-600 dark:text-gray-300">
                   <Activity className="w-4 h-4 text-teal-500" />
-                  <span className="font-medium">Real-time</span>
+                  <span className="font-medium">Demo Mode</span>
                 </div>
               </div>
 
@@ -166,11 +259,11 @@ const EnhancedDashboard: React.FC = () => {
 
               {/* Refresh Button */}
               <button
-                onClick={refreshData}
-                disabled={isLoading}
-                className="p-2 text-coffee-400 dark:text-gray-400 hover:text-coffee-600 dark:hover:text-gray-200 disabled:opacity-50 transition-colors"
+                className="p-2 text-coffee-400 dark:text-gray-400 hover:text-coffee-600 dark:hover:text-gray-200 cursor-not-allowed opacity-50"
+                disabled
+                title="Mock data - refresh disabled"
               >
-                <RefreshCw className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} />
+                <RefreshCw className="h-5 w-5" />
               </button>
 
               {/* User Menu */}
@@ -243,7 +336,7 @@ const EnhancedDashboard: React.FC = () => {
             {/* Premium Glass Quick Stats */}
             {latestReadings && (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8 items-stretch w-full">
-                
+
                 {/* Temperature Card */}
                 <div className="group relative overflow-hidden h-full">
                   <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
@@ -262,8 +355,6 @@ const EnhancedDashboard: React.FC = () => {
                     <div className="flex-1 min-h-[140px]"></div>
                   </div>
                 </div>
-
-                    {/* Manila weather snapshot removed from EnhancedDashboard per request */}
 
                 {/* Humidity Card */}
                 <div className="group relative overflow-hidden h-full">
@@ -284,7 +375,7 @@ const EnhancedDashboard: React.FC = () => {
                   </div>
                 </div>
 
-                {/* pH Card (replaces Moisture per request) */}
+                {/* pH Card */}
                 <div className="group relative overflow-hidden h-full">
                   <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 to-amber-400 rounded-t-2xl"></div>
@@ -345,21 +436,23 @@ const EnhancedDashboard: React.FC = () => {
                   <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-green-500 to-green-400 rounded-t-2xl"></div>
 
-                    <div className="flex items-center mb-4">
-                      <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-green-100 to-green-50 dark:from-green-800 dark:to-green-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
-                        <Sprout className="h-6 w-6 text-green-600 dark:text-green-300" />
-                      </div>
-                        <div className="flex flex-col justify-center flex-1 min-h-[72px]">
-                          <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">NPK</p></div>
-                          <div className="text-sm text-espresso-900 dark:text-white">
-                            <div>N: {latestReadings?.nitrogen && !Number.isNaN(latestReadings.nitrogen) ? latestReadings.nitrogen.toFixed(0) : '—'}</div>
-                            <div>P: {latestReadings?.phosphorus && !Number.isNaN(latestReadings.phosphorus) ? latestReadings.phosphorus.toFixed(0) : '—'}</div>
-                            <div>K: {latestReadings?.potassium && !Number.isNaN(latestReadings.potassium) ? latestReadings.potassium.toFixed(0) : '—'}</div>
-                          </div>
+                    <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                      <div className="flex items-center mb-4">
+                        <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-green-100 to-green-50 dark:from-green-800 dark:to-green-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                          <Sprout className="h-6 w-6 text-green-600 dark:text-green-300" />
                         </div>
-                    </div>
+                          <div className="flex flex-col justify-center flex-1">
+                            <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">NPK</p></div>
+                            <div className="text-sm text-espresso-900 dark:text-white">
+                              <div>N: {latestReadings?.nitrogen && !Number.isNaN(latestReadings.nitrogen) ? latestReadings.nitrogen.toFixed(0) : '—'}</div>
+                              <div>P: {latestReadings?.phosphorus && !Number.isNaN(latestReadings.phosphorus) ? latestReadings.phosphorus.toFixed(0) : '—'}</div>
+                              <div>K: {latestReadings?.potassium && !Number.isNaN(latestReadings.potassium) ? latestReadings.potassium.toFixed(0) : '—'}</div>
+                            </div>
+                          </div>
+                      </div>
 
-                    <div className="flex-1 min-h-[140px]"></div>
+                      <div className="flex-1 min-h-[140px]"></div>
+                    </div>
                   </div>
                 </div>
 
@@ -397,9 +490,9 @@ const EnhancedDashboard: React.FC = () => {
                   </h3>
                 </div>
                 <div className="p-6">
-                  {recentAlerts.length > 0 ? (
+                  {mockAlerts.length > 0 ? (
                     <div className="space-y-3 max-h-64 overflow-y-auto">
-                      {recentAlerts.slice(0, 5).map((alert: Alert, index: number) => (
+                      {mockAlerts.slice(0, 5).map((alert: Alert, index: number) => (
                         <div key={alert._id || index} className="flex items-start space-x-3 p-3 rounded-lg bg-coffee-50 dark:bg-gray-800">
                           <div className={`px-2 py-1 rounded-full text-xs font-medium ${getSeverityColor((alert.severity || 'info') as string)}`}>
                             {(alert.severity || 'info').toString().toUpperCase()}
@@ -449,8 +542,8 @@ const EnhancedDashboard: React.FC = () => {
             </div>
 
             {/* Main Chart */}
-            <ChartContainer 
-              data={safeLatestSensorData} 
+            <ChartContainer
+              data={safeLatestSensorData}
               title="Current Environmental Data"
             />
 
@@ -480,7 +573,7 @@ const EnhancedDashboard: React.FC = () => {
                       <div>
                         <h3 className="text-lg font-semibold">Admin Alert: {unresolvedAlerts.length} Active Alert{unresolvedAlerts.length !== 1 ? 's' : ''}</h3>
                         <p className="text-red-100 mt-1">
-                          There {unresolvedAlerts.length === 1 ? 'is' : 'are'} {unresolvedAlerts.length} unresolved alert{unresolvedAlerts.length !== 1 ? 's' : ''} requiring your attention. 
+                          There {unresolvedAlerts.length === 1 ? 'is' : 'are'} {unresolvedAlerts.length} unresolved alert{unresolvedAlerts.length !== 1 ? 's' : ''} requiring your attention.
                           Please review and take appropriate action in the admin dashboard.
                         </p>
                       </div>
@@ -502,9 +595,9 @@ const EnhancedDashboard: React.FC = () => {
                 <h3 className="text-lg font-semibold text-coffee-900 dark:text-white">All Alerts</h3>
               </div>
               <div className="p-6">
-                {recentAlerts.length > 0 ? (
+                {mockAlerts.length > 0 ? (
                   <div className="space-y-4">
-                    {recentAlerts.map((alert: Alert, index: number) => (
+                    {mockAlerts.map((alert: Alert, index: number) => (
                       <div key={alert._id || index} className="border border-coffee-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-800">
                         <div className="flex items-start justify-between">
                           <div className="flex items-start space-x-3">
@@ -524,8 +617,8 @@ const EnhancedDashboard: React.FC = () => {
                             </div>
                           </div>
                           <div className={`px-2 py-1 rounded-full text-xs ${
-                            alert.isResolved 
-                              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' 
+                            alert.isResolved
+                              ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'
                               : 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
                           }`}>
                             {alert.isResolved ? 'Resolved' : 'Open'}
@@ -679,4 +772,4 @@ const EnhancedDashboard: React.FC = () => {
   );
 };
 
-export default EnhancedDashboard;
+export default MockDashboard;

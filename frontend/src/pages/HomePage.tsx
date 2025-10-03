@@ -40,7 +40,7 @@ const HomePage: React.FC = () => {
             </div>
             <div className="flex items-center space-x-6">
               <Link to="/dashboard" className="text-espresso-700 dark:text-gray-300 hover:text-letran-600 dark:hover:text-letran-400 transition-colors">Dashboard</Link>
-              <Link to="/enhanced-dashboard" className="text-espresso-700 dark:text-gray-300 hover:text-letran-600 dark:hover:text-letran-400 transition-colors">Analytics</Link>
+              <Link to="/mock-dashboard" className="text-espresso-700 dark:text-gray-300 hover:text-letran-600 dark:hover:text-letran-400 transition-colors">Demo Dashboard</Link>
               <Link to="/contact" className="text-espresso-700 dark:text-gray-300 hover:text-letran-600 dark:hover:text-letran-400 transition-colors">Contact</Link>
               {/* Dark Mode Toggle */}
               <DarkModeToggle />

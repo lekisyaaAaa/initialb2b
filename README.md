@@ -1,4 +1,122 @@
-caon<!-- Updated README for the Environmental Monitoring System (BeanToBin) -->
+c# BeanToBin Environmental Monitoring System
+
+## 🏠 Home Assistant + ESPHome Integration (Recommended)
+
+For the best IoT experience, this system now supports **Home Assistant + ESPHome** integration:
+
+### Why Home Assistant + ESPHome?
+- ✅ **Easier Setup**: Web-based device configuration
+- ✅ **Better Reliability**: Robust device management and monitoring
+- ✅ **Rich Features**: OTA updates, automation, device tracking
+- ✅ **Community Support**: Large user communities
+- ✅ **Future-Proof**: Easy to add new sensors and devices
+
+### Quick Setup:
+1. **Install Home Assistant**: `docker run homeassistant/home-assistant`
+2. **Setup ESPHome**: Install ESPHome add-on in HA
+3. **Configure Devices**: Use ESPHome dashboard for sensor setup
+4. **Connect Backend**: Run `setup-ha-integration.bat` to configure
+
+📖 **Complete Guide**: See [`HOME_ASSISTANT_SETUP.md`](HOME_ASSISTANT_SETUP.md)
+
+---
+
+## 🚀 Quick Start (Direct ESP32)
+
+### Recommended: Use PM2 for Reliable Service Management
+
+```bash
+# Install PM2 globally (one-time setup)
+npm install -g pm2
+
+# Start all services
+pm2 start ecosystem.config.js
+
+# Check status
+pm2 list
+
+# View logs
+pm2 logs
+
+# Stop services
+pm2 stop all
+```
+
+### Alternative: Use the Startup Script
+
+```powershell
+# Windows PowerShell
+.\start-all.ps1
+```
+
+## 🔧 Troubleshooting
+
+### "Unable to connect to server" Error
+
+If you get connection errors when trying to sign in:
+
+1. **Check if backend is running:**
+   ```bash
+   pm2 list
+   # or
+   curl http://localhost:5000/api/health
+   ```
+
+2. **Restart services:**
+   ```bash
+   pm2 restart all
+   ```
+
+3. **Check logs:**
+   ```bash
+   pm2 logs beantobin-backend
+   ```
+
+4. **Manual start (if PM2 not available):**
+   ```bash
+   cd backend
+   node server.js
+   ```
+
+### Services Should Always Run On:
+- **Frontend:** http://localhost:3002
+- **Backend:** http://localhost:5000
+
+## 🛡️ Preventive Measures
+
+### 1. Use PM2 for Production-Ready Service Management
+- PM2 automatically restarts crashed services
+- Provides process monitoring and logging
+- Better than direct `node` commands for development
+
+### 2. Environment Variables
+Ensure these are set in `backend/.env`:
+```
+PORT=5000
+NODE_ENV=development
+DATABASE_URL=postgres://...
+```
+
+### 3. Database Connection
+The system uses PostgreSQL with SQLite fallback for development.
+
+### 4. Admin Credentials
+Default admin login:
+- Username: `beantobin`
+- Password: `Bean2bin`
+
+## 📊 Monitoring
+
+- **Health Check:** http://localhost:5000/api/health
+- **PM2 Dashboard:** `pm2 monit`
+- **Logs:** `pm2 logs`
+
+## 🔄 Development Workflow
+
+1. Start services: `pm2 start ecosystem.config.js`
+2. Check status: `pm2 list`
+3. View frontend: http://localhost:3002/dashboard
+4. Stop when done: `pm2 stop all`on<!-- Updated README for the Environmental Monitoring System (BeanToBin) -->
 # BeanToBin — Environmental Monitoring System
 # BeanToBin — Environmental Monitoring System
 
@@ -188,7 +306,7 @@ Recommended quick production flows:
 - `backend/scripts/ws-device-sim.js` — WebSocket device simulator that registers and ACKs commands.
 - `scripts/render_deploy.ps1` — helper to import `render.yaml` using the Render CLI (keeps API key local).
 
----
+---rnu
 
 ## Troubleshooting
 

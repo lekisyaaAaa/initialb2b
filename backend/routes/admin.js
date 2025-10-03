@@ -12,8 +12,8 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Username and password are required' });
     }
 
-    const adminUser = process.env.LOCAL_ADMIN_USER || 'admin';
-    const adminPass = process.env.LOCAL_ADMIN_PASS || 'admin';
+    const adminUser = process.env.LOCAL_ADMIN_USER || 'beantobin';
+    const adminPass = process.env.LOCAL_ADMIN_PASS || 'Bean2bin';
 
     if (username === adminUser && password === adminPass) {
       const payload = { id: 'admin-local', username: adminUser, role: 'admin' };

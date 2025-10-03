@@ -39,6 +39,11 @@ const Alert = sequelize.define('Alert', {
     type: DataTypes.DATE,
     allowNull: true,
   },
+  status: {
+    type: DataTypes.ENUM('new', 'read'),
+    allowNull: false,
+    defaultValue: 'new',
+  },
   createdAt: {
     type: DataTypes.DATE,
     allowNull: false,
@@ -65,6 +70,7 @@ Alert.createAlert = async function (alertData) {
     resolvedAt: alertData.resolvedAt || null,
     acknowledgedBy: alertData.acknowledgedBy || null,
     acknowledgedAt: alertData.acknowledgedAt || null,
+    status: alertData.status || 'new',
     createdAt: alertData.createdAt || new Date(),
   };
   const created = await Alert.create(data);
