@@ -32,6 +32,26 @@ const broadcastSensorData = (data) => {
 // Helper function to check thresholds and create alerts
 const checkThresholds = async (sensorData) => {
   try {
+    // Guard: do not generate alerts for offline/imported/simulated data.
+    // Calls may include `isOfflineData=true` for historical or imported readings;
+    // only create alerts for real-time, live sensor packets.
+    if (sensorData && sensorData.isOfflineData) {
+      // Skip alert generation for offline or backfilled data
+      return [];
+    }
+
+    // Guard: ensure the reading timestamp is recent (avoid triggering alerts
+    // from very old/stale readings). If timestamp exists and is older than
+    // 15 minutes, treat as stale and do not generate alerts.
+    try {
+      const ts = sensorData.timestamp ? new Date(sensorData.timestamp) : null;
+      if (ts && (Date.now() - ts.getTime() > 15 * 60 * 1000)) {
+        // stale data, skip alerts
+        return [];
+      }
+    } catch (e) {
+      // ignore parsing errors and continue
+    }
     const settings = await Settings.getSettings();
     const thresholds = settings.thresholds;
     
@@ -312,7 +332,22 @@ router.post('/', [
       isOfflineData = false
     } = req.body;
 
-  // Create sensor data (Sequelize-compatible)
+    // Validate device registration and online status before accepting live sensor data
+    const Device = require('../models/Device');
+    const device = await Device.findOne({ where: { deviceId } });
+    if (!device || device.status !== 'online') {
+      // Reject data from unknown or offline devices — only accept from verified live units
+      return res.status(403).json({ success: false, message: 'Device not registered or not online' });
+    }
+
+    // Enforce recent timestamp (avoid stale readings). Accept readings no older than 5 seconds
+    const ts = timestamp ? new Date(timestamp) : new Date();
+    if (Math.abs(Date.now() - ts.getTime()) > 5 * 1000) {
+      // If the data is older than 5s, drop it to avoid false alerts from delayed sources
+      return res.status(400).json({ success: false, message: 'Stale reading - rejected' });
+    }
+
+    // Create sensor data (Sequelize-compatible)
   const sensorData = await SensorData.create({
       deviceId,
       temperature: temperature !== undefined ? parseFloat(temperature) : undefined,
@@ -333,7 +368,11 @@ router.post('/', [
     // Respond quickly — process alerts and broadcast asynchronously to avoid blocking or failing the request
   const plain = sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData);
 
-    // Fire-and-forget alerts and broadcast
+  // Fire-and-forget alerts and broadcast (only for live data). We still mark the device online via deviceManager
+  const deviceManager = require('../services/deviceManager');
+  await deviceManager.markDeviceOnline(deviceId, { lastSeen: new Date() });
+
+  // Fire-and-forget alerts and broadcast
     (async () => {
       try {
         const alerts = await checkThresholds(sensorData);

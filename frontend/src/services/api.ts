@@ -109,6 +109,12 @@ export const authService = {
 // Use the configured `api` instance whose baseURL already contains the '/api' prefix.
 export const adminAuthService = {
   loginAdmin: async (username: string, password: string) => {
+    // Ensure API base is reachable before attempting login (helps when backend runs on another port)
+    try {
+      await discoverApi({ timeout: 1200 });
+    } catch (e) {
+      // ignore - discoverApi returns {ok:false} on failure
+    }
     // First, check server health to provide a clearer error early
     try {
       await api.get('/health', { timeout: 3000 });
@@ -272,3 +278,17 @@ export const systemService = {
 };
 
 export default api;
+
+// Auto-run discovery at module import to set a reachable API baseURL early.
+(async function autoDiscover() {
+  try {
+    const disco = await discoverApi({ timeout: 1200 });
+    if (disco.ok) {
+      console.log('api: auto-discovered API host', disco.baseURL);
+    } else {
+      console.debug('api: auto-discovery did not find a reachable API');
+    }
+  } catch (e: any) {
+    console.debug('api: auto-discovery error', (e && (e.message || String(e))) || String(e));
+  }
+})();

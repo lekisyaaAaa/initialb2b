@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Activity, Cpu, HardDrive, Wifi, Database, Server, RefreshCw, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Activity, Cpu, Wifi, Database, Server, RefreshCw, AlertTriangle, CheckCircle, Clock } from 'lucide-react';
 
 interface SystemMetrics {
   server: {
@@ -49,13 +49,7 @@ export const SystemDiagnostics: React.FC<SystemDiagnosticsProps> = ({ onMetricsU
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
-  useEffect(() => {
-    loadDiagnostics();
-    const interval = setInterval(loadDiagnostics, 30000); // Update every 30 seconds
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadDiagnostics = async () => {
+  const loadDiagnostics = useCallback(async () => {
     setLoading(true);
     try {
       // Load health data
@@ -120,7 +114,13 @@ export const SystemDiagnostics: React.FC<SystemDiagnosticsProps> = ({ onMetricsU
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    loadDiagnostics();
+    const interval = setInterval(loadDiagnostics, 30000); // Update every 30 seconds
+    return () => clearInterval(interval);
+  }, [loadDiagnostics]);
 
   const getStatusColor = (status: string) => {
     return status === 'online' ? 'text-green-600' : 'text-red-600';

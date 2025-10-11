@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, AuthContextType } from '../types';
-import api, { authService } from '../services/api';
+import api, { authService, discoverApi } from '../services/api';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -15,6 +15,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   useEffect(() => {
     const init = async () => {
+    // Try to discover a reachable API host early so health checks and login
+    // use the correct backend baseURL (helps when backend runs on port 5000)
+    try {
+      const disco = await discoverApi({ timeout: 1500 });
+      if (disco.ok) {
+        console.log('AuthContext: discovered API host at startup', disco.baseURL);
+      } else {
+        console.debug('AuthContext: no API discovered at startup');
+      }
+    } catch (e: any) {
+      console.debug('AuthContext: discovery failed at startup', (e && (e.message || String(e))) || String(e));
+    }
     // Allow adminToken as an alternative key (used by admin login flow)
     const storedToken = localStorage.getItem('token') || localStorage.getItem('adminToken');
     const storedUser = localStorage.getItem('user');
@@ -78,11 +90,29 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     try {
       await api.get('/health');
     } catch (healthError: any) {
-      setIsLoading(false);
-      if (healthError.code === 'ECONNREFUSED' || healthError.code === 'ENOTFOUND' || healthError.code === 'ETIMEDOUT') {
-        return { success: false, message: 'Server offline. Please check if the backend is running.' };
+      // Attempt discovery if direct health check failed (helps when backend runs on a different port)
+      try {
+        const disco = await discoverApi({ timeout: 1500 });
+        if (disco.ok) {
+          console.log('AuthContext.login: discovered API host after health failure', disco.baseURL);
+          // try health again once
+          try {
+            await api.get('/health', { timeout: 3000 });
+          } catch (e) {
+            setIsLoading(false);
+            return { success: false, message: 'Server offline. Please check if the backend is running.' };
+          }
+        } else {
+          setIsLoading(false);
+          if (healthError.code === 'ECONNREFUSED' || healthError.code === 'ENOTFOUND' || healthError.code === 'ETIMEDOUT') {
+            return { success: false, message: 'Server offline. Please check if the backend is running.' };
+          }
+          return { success: false, message: 'Unable to connect to server. Please try again.' };
+        }
+      } catch (discErr) {
+        setIsLoading(false);
+        return { success: false, message: 'Unable to connect to server. Please try again.' };
       }
-      return { success: false, message: 'Unable to connect to server. Please try again.' };
     }
 
     // Attempt login with retry logic

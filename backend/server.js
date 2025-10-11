@@ -243,6 +243,10 @@ app.use('/api/maintenance', maintenanceRoutes);
 const adminRoutes = require('./routes/admin');
 app.use('/api/admin', adminRoutes);
 
+// Devices (heartbeats) route
+const devicesRoutes = require('./routes/devices');
+app.use('/api/devices', devicesRoutes);
+
 // API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/sensors', sensorRoutes);
@@ -351,44 +355,46 @@ const MAX_TRIES = 10;
 let attempts = 0;
 
 function onBound(boundPort) {
-  console.log(`🚀 Server running on port ${boundPort}`);
-  console.log(`📊 Health check: http://localhost:${boundPort}/api/health`);
-  console.log(`🔌 WebSocket server running on ws://localhost:${boundPort}`);
-  try {
-    console.log('Process PID:', process.pid);
-    const addr = server.address();
-    console.log('Server bound address:', addr);
-  } catch (e) {
-    console.warn('Could not determine server address/pid:', e && e.message ? e.message : e);
-  }
+  if ((process.env.NODE_ENV || 'development') !== 'test') {
+    console.log(`🚀 Server running on port ${boundPort}`);
+    console.log(`📊 Health check: http://localhost:${boundPort}/api/health`);
+    console.log(`🔌 WebSocket server running on ws://localhost:${boundPort}`);
+    try {
+      console.log('Process PID:', process.pid);
+      const addr = server.address();
+      console.log('Server bound address:', addr);
+    } catch (e) {
+      console.warn('Could not determine server address/pid:', e && e.message ? e.message : e);
+    }
 
-  // Self-check the internal ping endpoint using the actual bound port
-  try {
-    const http = require('http');
-    const selfOpts = {
-      hostname: '127.0.0.1',
-      port: boundPort,
-      path: '/internal/ping',
-      method: 'GET',
-      timeout: 2000
-    };
-    const req = http.request(selfOpts, (res) => {
-      let body = '';
-      res.on('data', (c) => body += c.toString());
-      res.on('end', () => {
-        console.log('Self-check: response', res.statusCode, body && body.toString().slice(0,200));
+    // Self-check the internal ping endpoint using the actual bound port
+    try {
+      const http = require('http');
+      const selfOpts = {
+        hostname: '127.0.0.1',
+        port: boundPort,
+        path: '/internal/ping',
+        method: 'GET',
+        timeout: 2000
+      };
+      const req = http.request(selfOpts, (res) => {
+        let body = '';
+        res.on('data', (c) => body += c.toString());
+        res.on('end', () => {
+          console.log('Self-check: response', res.statusCode, body && body.toString().slice(0,200));
+        });
       });
-    });
-    req.on('error', (err) => {
-      console.warn('Self-check: error connecting to local HTTP endpoint (this is normal during startup):', err && err.message ? err.message : err);
-    });
-    req.on('timeout', () => {
-      console.warn('Self-check: timed out connecting to local HTTP endpoint (this is normal during startup)');
-      req.destroy();
-    });
-    req.end();
-  } catch (e) {
-    console.error('Self-check setup failed:', e && e.message ? e.message : e);
+      req.on('error', (err) => {
+        console.warn('Self-check: error connecting to local HTTP endpoint (this is normal during startup):', err && err.message ? err.message : err);
+      });
+      req.on('timeout', () => {
+        console.warn('Self-check: timed out connecting to local HTTP endpoint (this is normal during startup)');
+        req.destroy();
+      });
+      req.end();
+    } catch (e) {
+      console.error('Self-check setup failed:', e && e.message ? e.message : e);
+    }
   }
 }
 
@@ -489,10 +495,17 @@ if (process.env.RUN_POLLER === 'true' || process.env.RUN_POLLER === '1') {
 }
 
 module.exports = app;
+// Export the http server as a property to allow tests to close it gracefully
+module.exports.server = server;
 
 // Simple server startup for development
-server.listen(process.env.PORT || 5000, '0.0.0.0', () => {
-  const port = process.env.PORT || 5000;
-  console.log(`🚀 Server running on port ${port}`);
-  console.log(`📊 Health check: http://localhost:${port}/api/health`);
-});
+if ((process.env.NODE_ENV || 'development') !== 'test') {
+  server.listen(process.env.PORT || 5000, '0.0.0.0', () => {
+    const port = process.env.PORT || 5000;
+    console.log(`🚀 Server running on port ${port}`);
+    console.log(`📊 Health check: http://localhost:${port}/api/health`);
+  });
+} else {
+  // In test mode, bind server to the port immediately but avoid console logs
+  server.listen(process.env.PORT || 0, '0.0.0.0');
+}

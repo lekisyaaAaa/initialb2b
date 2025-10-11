@@ -26,27 +26,34 @@ Write-Host "Starting services (backend -> localhost:$BackendPort, frontend -> co
 
 # Start backend if not healthy
 $healthUrl = "http://127.0.0.1:$BackendPort/api/health"
+
+# Resolve repository root once so relative paths resolve correctly even when this script
+# is invoked from a different working directory. Use the script's directory ($PSScriptRoot)
+# which points to the folder containing this script.
+$repoRoot = (Resolve-Path $PSScriptRoot).ProviderPath
+
+# Try to ensure PM2-managed processes are started. If PM2 isn't available, fall back to
+# starting the backend directly. Running pm2 from the repository root ensures the
+# relative `cwd` entries in `ecosystem.config.js` (./backend, ./frontend) resolve.
+try {
+  Push-Location -Path $repoRoot
+  $pm2Output = & pm2 start ecosystem.config.js 2>&1
+  Pop-Location
+  Write-Host "PM2 output (ensure processes): $pm2Output" -ForegroundColor Gray
+} catch {
+  Write-Host "PM2 not available or failed to start processes, falling back to direct start..." -ForegroundColor Yellow
+  # Start backend directly as a last-resort fallback
+  [void](Start-Process -FilePath node -ArgumentList 'server.js' -WorkingDirectory (Join-Path $repoRoot 'backend') -PassThru -WindowStyle Hidden)
+}
+
+$sw = [diagnostics.stopwatch]::StartNew()
+while (-not (Test-HttpOk $healthUrl) -and $sw.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
+  Start-Sleep -Seconds 1
+}
 if (Test-HttpOk $healthUrl) {
-  Write-Host "Backend already healthy at $healthUrl" -ForegroundColor Green
+  Write-Host "Backend started and healthy at $healthUrl" -ForegroundColor Green
 } else {
-  Write-Host "Starting backend with PM2..." -ForegroundColor Yellow
-  # Start backend using PM2 for better reliability
-  try {
-    $pm2Output = & pm2 start backend/ecosystem.config.js 2>&1
-    Write-Host "PM2 output: $pm2Output" -ForegroundColor Gray
-  } catch {
-    Write-Host "PM2 not available, falling back to direct start..." -ForegroundColor Yellow
-    [void](Start-Process -FilePath node -ArgumentList 'backend/server.js' -PassThru -WindowStyle Hidden)
-  }
-  $sw = [diagnostics.stopwatch]::StartNew()
-  while (-not (Test-HttpOk $healthUrl) -and $sw.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
-    Start-Sleep -Seconds 1
-  }
-  if (Test-HttpOk $healthUrl) {
-    Write-Host "Backend started and healthy at $healthUrl" -ForegroundColor Green
-  } else {
-    Write-Host "Backend did not become healthy within $TimeoutSeconds seconds. Check PM2 status with 'pm2 list' or logs with 'pm2 logs'" -ForegroundColor Red
-  }
+  Write-Host "Backend did not become healthy within $TimeoutSeconds seconds. Check PM2 status with 'pm2 list' or logs with 'pm2 logs'" -ForegroundColor Red
 }
 
 # Start frontend
@@ -67,9 +74,20 @@ if (-not $frontendStarted) {
   Write-Host "Starting frontend (wrapped-start) on PORT=3002..." -ForegroundColor Yellow
   # Use cmd to set PORT=3002 for the child process so CRA picks up the dev port reliably.
   # This avoids Start-Process environment limitations on Windows PowerShell 5.1.
-  $cmd = "set PORT=3002 && node frontend/scripts/wrapped-start.js"
-  # Launch frontend wrapped-start via cmd; we don't use the process object here.
-  [void](Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $cmd -WorkingDirectory (Resolve-Path .) -PassThru -WindowStyle Hidden)
+  $cmd = "set PORT=3002 && npm run start"
+
+  # First try to ensure PM2 manages the frontend (no-op if already running).
+  try {
+    Push-Location -Path $repoRoot
+    $pm2Output = & pm2 start ecosystem.config.js 2>&1
+    Pop-Location
+    Write-Host "PM2 output (frontend ensure): $pm2Output" -ForegroundColor Gray
+  } catch {
+    Write-Host "PM2 not available; launching frontend directly..." -ForegroundColor Yellow
+    # Launch frontend via cmd inside frontend working directory; use repoRoot to reliably resolve path
+    [void](Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $cmd -WorkingDirectory (Join-Path $repoRoot 'frontend') -PassThru -WindowStyle Hidden)
+  }
+
   $sw = [diagnostics.stopwatch]::StartNew()
   while ($sw.Elapsed.TotalSeconds -lt $TimeoutSeconds) {
     foreach ($p in $FrontendPorts) {

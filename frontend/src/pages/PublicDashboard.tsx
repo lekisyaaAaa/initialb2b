@@ -113,16 +113,13 @@ const PublicDashboard: React.FC = () => {
   // Monitor sensor data and create alerts for issues
   useEffect(() => {
     if (!latestSensorData || latestSensorData.length === 0) {
-      // No sensors connected - create alert if not already alerted recently
-      const hasRecentNoSensorAlert = alerts.some(alert =>
-        alert.type === 'connectivity' &&
-        alert.message.includes('No sensors connected') &&
-        new Date(alert.createdAt) > new Date(Date.now() - 5 * 60 * 1000) // Within last 5 minutes
-      );
-
-      if (!hasRecentNoSensorAlert) {
-        createAlert('connectivity', 'No sensors connected');
-      }
+      // No sensors connected: do NOT create a persisted alert in the backend.
+      // Previously the UI created a 'No sensors connected' alert which caused
+      // dashboards to show active alerts when there were no live devices.
+      // Instead, display a local UI notification only.
+      setNotificationMessage('No sensors connected — check device connections.');
+      setShowNotification(true);
+      setTimeout(() => setShowNotification(false), 5000);
     } else {
       // Check for sensors with issues
       latestSensorData.forEach(sensor => {

@@ -1,0 +1,63 @@
+// deviceManager: tracks device heartbeats and exposes helpers to mark online/offline
+const Device = require('../models/Device');
+const Alert = require('../models/Alert');
+
+// In-memory map of timers used to detect offline devices
+const offlineTimers = new Map();
+// Default offline timeout (ms) — devices must heartbeat at least every 10 seconds
+const OFFLINE_TIMEOUT_MS = parseInt(process.env.DEVICE_OFFLINE_TIMEOUT_MS || '15000', 10);
+
+async function markDeviceOnline(deviceId, metadata = {}) {
+  if (!deviceId) return null;
+  const now = new Date();
+  const [device] = await Device.findOrCreate({ where: { deviceId }, defaults: { deviceId, status: 'online', lastHeartbeat: now, metadata } });
+  if (device.lastHeartbeat == null || new Date(device.lastHeartbeat) < now) {
+    device.lastHeartbeat = now;
+    device.status = 'online';
+    device.metadata = metadata || device.metadata;
+    await device.save();
+  }
+  // reset offline timer
+  resetOfflineTimer(deviceId);
+  return device;
+}
+
+function resetOfflineTimer(deviceId) {
+  const prev = offlineTimers.get(deviceId);
+  if (prev) {
+    clearTimeout(prev);
+  }
+  const timer = setTimeout(async () => {
+    try {
+      await markDeviceOffline(deviceId);
+    } catch (e) {
+      console.error('Error marking device offline:', e && e.message ? e.message : e);
+    }
+  }, OFFLINE_TIMEOUT_MS);
+  offlineTimers.set(deviceId, timer);
+}
+
+async function markDeviceOffline(deviceId) {
+  if (!deviceId) return null;
+  const device = await Device.findOne({ where: { deviceId } });
+  if (!device) return null;
+  device.status = 'offline';
+  device.lastHeartbeat = new Date();
+  await device.save();
+  // resolve alerts related to this device
+  try {
+    await Alert.update({ isResolved: true, resolvedAt: new Date() }, { where: { deviceId, isResolved: false } });
+  } catch (e) {
+    console.warn('Failed to resolve alerts for offline device', deviceId, e && e.message ? e.message : e);
+  }
+  // emit WebSocket / broadcast event if needed
+  try {
+    if (global.wsConnections && global.wsConnections.size) {
+      const message = JSON.stringify({ type: 'device_offline', deviceId });
+      global.wsConnections.forEach(ws => { try { if (ws.readyState === 1) ws.send(message); } catch (e) {} });
+    }
+  } catch (e) { /* ignore */ }
+  return device;
+}
+
+module.exports = { markDeviceOnline, markDeviceOffline, resetOfflineTimer };

@@ -12,7 +12,6 @@ import { DeviceManagement } from '../components/DeviceManagement';
 import { ThresholdConfiguration } from '../components/ThresholdConfiguration';
 import { AlertsManagement } from '../components/AlertsManagement';
 import { SystemDiagnostics } from '../components/SystemDiagnostics';
-import { UserManagement } from '../components/UserManagement';
 import { useAuth } from '../contexts/AuthContext';
 import weatherService from '../services/weatherService';
 import { alertService } from '../services/api';
@@ -44,6 +43,7 @@ export default function AdminDashboard(): React.ReactElement {
   const [selectedSensor, setSelectedSensor] = useState<Sensor | null>(null);
   const [weatherSummary, setWeatherSummary] = useState<any | null>(null);
   const [systemStatus, setSystemStatus] = useState<{ server: string; database: string; apiLatency: number }>({ server: 'offline', database: 'offline', apiLatency: 0 });
+  const [devicesOnline, setDevicesOnline] = useState<number>(0);
   const [healthStatus, setHealthStatus] = useState<any | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -91,15 +91,22 @@ export default function AdminDashboard(): React.ReactElement {
   }
 
   async function loadLatestAlerts() {
+    // Use the recent (unresolved) alerts endpoint instead of the admin-only
+    // `/alerts/latest`. Public dashboard creates alerts via `/alerts` and
+    // `/alerts/recent` returns the unresolved alerts. This ensures the Admin
+    // dashboard shows the same active alerts as the User dashboard.
     try {
-      const response = await alertService.getLatestAlerts();
-      if (response.data.success) {
-        const alerts = response.data.data || [];
+      const response = await alertService.getRecentAlerts(50);
+      if (response?.data?.success) {
+        const alerts = Array.isArray(response.data.data) ? response.data.data : [];
         setLatestAlerts(alerts);
-        setUnreadCount(alerts.filter((alert: any) => alert.status === 'new').length);
+        setUnreadCount(alerts.filter((alert: any) => (alert.status || alert.state || '').toString() === 'new').length);
+      } else {
+        setLatestAlerts([]);
+        setUnreadCount(0);
       }
     } catch (error) {
-      console.error('Failed to load latest alerts:', error);
+      console.error('Failed to load recent alerts:', error);
       setLatestAlerts([]);
       setUnreadCount(0);
     }
@@ -183,11 +190,15 @@ export default function AdminDashboard(): React.ReactElement {
 
     async function loadAlerts() {
       try {
-        const res = await fetch('/api/alerts');
+        // Use alertService to fetch alerts and respect the backend's
+        // paginated response shape ({ success, data: { alerts, pagination } }).
+        const resp = await alertService.getAlerts({ limit: 50, isResolved: false });
         if (!mounted) return;
-        if (res.ok) {
-          const data = await res.json();
-          setAlerts(Array.isArray(data) ? data : []);
+        if (resp && resp.data && resp.data.success) {
+          // resp.data.data is the paginated payload; it may contain 'alerts' or be an array
+          const payload = resp.data.data as any;
+          const items = Array.isArray(payload) ? payload : (Array.isArray(payload.alerts) ? payload.alerts : []);
+          setAlerts(items);
         }
       } catch (e) {
         // ignore
@@ -206,6 +217,19 @@ export default function AdminDashboard(): React.ReactElement {
     }
 
     loadLatest(); loadAlerts(); loadHealth(); loadReminders(); loadLatestAlerts();
+    // load devices
+    (async function loadDevices() {
+      try {
+        const res = await fetch('/api/devices');
+        if (res.ok) {
+          const body = await res.json();
+          const list = Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : []);
+          setDevicesOnline(Array.isArray(list) ? list.filter((d:any) => d.status === 'online').length : 0);
+        }
+      } catch (e) {
+        setDevicesOnline(0);
+      }
+    })();
     // also fetch initial history for charts
     (async function loadHistory() {
       try {
@@ -382,7 +406,7 @@ export default function AdminDashboard(): React.ReactElement {
   };
 
   const [activeTab, setActiveTab] = useState<'overview' | 'devices' | 'monitoring' | 'management' | 'reports'>('overview');
-  const [activeSubTab, setActiveSubTab] = useState<'thresholds' | 'alerts' | 'diagnostics' | 'users' | 'sensors'>('thresholds');
+  const [activeSubTab, setActiveSubTab] = useState<'thresholds' | 'alerts' | 'diagnostics' | 'sensors'>('thresholds');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const navigate = useNavigate();
 
@@ -755,7 +779,13 @@ export default function AdminDashboard(): React.ReactElement {
                           </div>
 
                           <div className="space-y-3 max-h-96 overflow-y-auto">
-                            {latestAlerts.length === 0 ? (
+                            {devicesOnline === 0 ? (
+                              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                                <Bell className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                                <p>Awaiting live data — no devices are online</p>
+                                <p className="text-sm">Connect an ESP32 unit to begin receiving live alerts</p>
+                              </div>
+                            ) : latestAlerts.length === 0 ? (
                               <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                                 <Bell className="w-12 h-12 mx-auto mb-4 opacity-50" />
                                 <p>No active alerts</p>
@@ -844,26 +874,15 @@ export default function AdminDashboard(): React.ReactElement {
             {activeTab === 'management' && (
               <div className="space-y-6">
                 <div className="text-center py-8">
-                  <Users className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                  <Settings className="w-12 h-12 mx-auto mb-4 text-gray-400" />
                   <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">System Management</h3>
-                  <p className="text-gray-600 dark:text-gray-400">Manage users and sensor configurations</p>
+                  <p className="text-gray-600 dark:text-gray-400">Manage sensor configurations</p>
                 </div>
 
                 {/* Sub-tabs for management */}
                 <div className="bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 rounded-lg shadow">
                   <div className="border-b border-gray-200 dark:border-gray-600">
                     <nav className="flex overflow-x-auto">
-                      <button
-                        onClick={() => setActiveSubTab('users')}
-                        className={`px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap ${
-                          activeSubTab === 'users'
-                            ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                        }`}
-                      >
-                        <Users className="w-4 h-4 inline mr-2" />
-                        Users
-                      </button>
                       <button
                         onClick={() => setActiveSubTab('sensors')}
                         className={`px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap ${
@@ -879,7 +898,6 @@ export default function AdminDashboard(): React.ReactElement {
                   </div>
 
                   <div className="p-4 max-h-96 overflow-y-auto">
-                    {activeSubTab === 'users' && <UserManagement currentUserRole="admin" />}
                     {activeSubTab === 'sensors' && (
                       <div className="space-y-4">
                         <div className="text-center py-8">
