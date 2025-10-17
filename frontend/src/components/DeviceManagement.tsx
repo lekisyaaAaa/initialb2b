@@ -1,108 +1,166 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Wifi, WifiOff, Settings, RefreshCw, Plus, Trash2, AlertTriangle } from 'lucide-react';
 
-interface ESP32Device {
+type DeviceStatus = 'online' | 'offline';
+
+interface ManagedDevice {
   id: string;
   deviceId: string;
   name?: string;
-  status: 'online' | 'offline';
-  lastSeen: string;
+  status: DeviceStatus;
+  lastSeen: string | null;
   firmwareVersion?: string;
   ipAddress?: string;
   sensors: string[];
+  metadata?: Record<string, any> | null;
 }
 
 interface DeviceManagementProps {
-  onDeviceSelect?: (device: ESP32Device) => void;
+  onDeviceSelect?: (device: ManagedDevice) => void;
 }
 
+type BackendDevice = {
+  id?: number | string;
+  deviceId?: string;
+  status?: DeviceStatus | string;
+  lastHeartbeat?: string;
+  metadata?: Record<string, any> | null;
+  name?: string;
+};
+
+const extractSensors = (metadata: Record<string, any> | null | undefined): string[] => {
+  if (!metadata || typeof metadata !== 'object') return [];
+  if (Array.isArray(metadata.sensors)) {
+    return metadata.sensors.map((sensor: any) => String(sensor)).filter(Boolean);
+  }
+  if (metadata.sensors && typeof metadata.sensors === 'object') {
+    return Object.keys(metadata.sensors).filter(Boolean);
+  }
+  if (Array.isArray(metadata.capabilities)) {
+    return metadata.capabilities.map((sensor: any) => String(sensor)).filter(Boolean);
+  }
+  return [];
+};
+
+const generateFallbackId = () => {
+  const globalCrypto = typeof globalThis !== 'undefined'
+    ? (globalThis.crypto as { randomUUID?: () => string } | undefined)
+    : undefined;
+  if (globalCrypto?.randomUUID) {
+    return globalCrypto.randomUUID();
+  }
+  return `device-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const normalizeDevice = (device: BackendDevice): ManagedDevice => {
+  const rawMetadata = (device.metadata && typeof device.metadata === 'object') ? device.metadata : {};
+  const metadata = rawMetadata as Record<string, any>;
+  const sensors = extractSensors(metadata);
+  const rawLastSeen = device.lastHeartbeat || metadata?.lastHeartbeat || metadata?.lastSeen || null;
+  const statusValue = (device.status ?? metadata?.status ?? 'offline');
+  const status = String(statusValue).toLowerCase() === 'online' ? 'online' : 'offline';
+
+  let lastSeen: string | null = null;
+  if (rawLastSeen instanceof Date) {
+    lastSeen = rawLastSeen.toISOString();
+  } else if (typeof rawLastSeen === 'number') {
+    lastSeen = new Date(rawLastSeen).toISOString();
+  } else if (rawLastSeen) {
+    lastSeen = String(rawLastSeen);
+  }
+
+  return {
+    id: String(device.id ?? device.deviceId ?? generateFallbackId()),
+    deviceId: String(device.deviceId ?? device.id ?? generateFallbackId()),
+    name: metadata?.name || metadata?.label || device.name,
+    status,
+    lastSeen,
+    firmwareVersion: metadata?.firmwareVersion || metadata?.firmware || metadata?.version,
+    ipAddress: metadata?.ipAddress || metadata?.ip || metadata?.ipv4,
+    sensors,
+    metadata: Object.keys(metadata).length > 0 ? metadata : null,
+  };
+};
+
+const formatLastSeen = (iso?: string | null): string => {
+  if (!iso) return 'No recent heartbeat';
+  try {
+    return new Date(iso).toLocaleString();
+  } catch (error) {
+    return String(iso);
+  }
+};
+
 export const DeviceManagement: React.FC<DeviceManagementProps> = ({ onDeviceSelect }) => {
-  const [devices, setDevices] = useState<ESP32Device[]>([]);
+  const [devices, setDevices] = useState<ManagedDevice[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDevice, setSelectedDevice] = useState<ESP32Device | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
   const [showAddDevice, setShowAddDevice] = useState(false);
+  const selectedDeviceIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    loadDevices();
-    const interval = setInterval(loadDevices, 30000); // Refresh every 30 seconds
-    return () => clearInterval(interval);
+    selectedDeviceIdRef.current = selectedDeviceId;
+  }, [selectedDeviceId]);
+
+  const loadDevices = useCallback(async (options?: { initial?: boolean }) => {
+    const useSpinner = options?.initial ?? false;
+    if (useSpinner) setLoading(true); else setRefreshing(true);
+    try {
+      setError(null);
+      const response = await fetch('/api/devices', { credentials: 'include' });
+      if (!response.ok) {
+        throw new Error(`Request failed with status ${response.status}`);
+      }
+      const body = await response.json().catch(() => ({}));
+      const rawList: BackendDevice[] = Array.isArray(body?.data)
+        ? (body.data as BackendDevice[])
+        : Array.isArray(body)
+        ? (body as BackendDevice[])
+        : [];
+      const normalized = rawList.map((item) => normalizeDevice(item));
+      normalized.sort((a: ManagedDevice, b: ManagedDevice) => {
+        const aTime = a.lastSeen ? new Date(a.lastSeen).getTime() : 0;
+        const bTime = b.lastSeen ? new Date(b.lastSeen).getTime() : 0;
+        return bTime - aTime;
+      });
+      setDevices(normalized);
+      const currentSelected = selectedDeviceIdRef.current;
+      if (normalized.length === 0) {
+        setSelectedDeviceId(null);
+  } else if (currentSelected && normalized.some((device: ManagedDevice) => device.id === currentSelected)) {
+        setSelectedDeviceId(currentSelected);
+      } else {
+        setSelectedDeviceId(normalized[0].id);
+      }
+    } catch (err) {
+      console.error('Failed to load devices:', err);
+      setDevices([]);
+      setSelectedDeviceId(null);
+      setError('Unable to load devices. Please verify the backend connection.');
+    } finally {
+      if (useSpinner) setLoading(false); else setRefreshing(false);
+    }
   }, []);
 
-  const loadDevices = async () => {
-    try {
-      // In a real implementation, this would fetch from /api/sensors/devices or similar
-      // For now, we'll simulate with mock data
-      const mockDevices: ESP32Device[] = [
-        {
-          id: '1',
-          deviceId: 'esp32-001',
-          name: 'Greenhouse Main',
-          status: 'online',
-          lastSeen: new Date().toISOString(),
-          firmwareVersion: '1.2.3',
-          ipAddress: '192.168.1.100',
-          sensors: ['temperature', 'humidity', 'moisture', 'ph', 'ec']
-        },
-        {
-          id: '2',
-          deviceId: 'esp32-002',
-          name: 'Compost Area',
-          status: 'online',
-          lastSeen: new Date(Date.now() - 5 * 60 * 1000).toISOString(), // 5 minutes ago
-          firmwareVersion: '1.2.2',
-          ipAddress: '192.168.1.101',
-          sensors: ['temperature', 'humidity', 'moisture']
-        },
-        {
-          id: '3',
-          deviceId: 'esp32-003',
-          name: 'Storage Room',
-          status: 'offline',
-          lastSeen: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours ago
-          firmwareVersion: '1.1.9',
-          ipAddress: '192.168.1.102',
-          sensors: ['temperature', 'humidity']
-        }
-      ];
-      setDevices(mockDevices);
-    } catch (error) {
-      console.error('Failed to load devices:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    loadDevices({ initial: true });
+    const interval = setInterval(() => loadDevices(), 15000);
+    return () => clearInterval(interval);
+  }, [loadDevices]);
 
-  const handleDeviceSelect = (device: ESP32Device) => {
-    setSelectedDevice(device);
+  const handleDeviceSelect = (device: ManagedDevice) => {
+    setSelectedDeviceId(device.id);
     onDeviceSelect?.(device);
   };
 
-  const handleCalibrate = async (deviceId: string) => {
-    try {
-      // In a real implementation, this would call /api/sensors/calibrate/:deviceId
-      alert(`Calibration triggered for device ${deviceId}`);
-    } catch (error) {
-      console.error('Calibration failed:', error);
-    }
+  const handleCalibrate = (deviceId: string) => {
+    window.alert(`Calibration can be triggered directly from the device firmware. Device ${deviceId} will continue sending live readings.`);
   };
 
-  const handleRemoveDevice = async (deviceId: string) => {
-    if (window.confirm(`Are you sure you want to remove device ${deviceId}?`)) {
-      try {
-        // In a real implementation, this would call DELETE /api/sensors/devices/:deviceId
-        setDevices(devices.filter(d => d.id !== deviceId));
-      } catch (error) {
-        console.error('Failed to remove device:', error);
-      }
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    return status === 'online' ? 'text-green-600' : 'text-red-600';
-  };
-
-  const getStatusIcon = (status: string) => {
-    return status === 'online' ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />;
+  const handleRemoveDevice = (deviceId: string) => {
+    window.alert(`Device ${deviceId} stays registered while the hardware is active. To archive it, disable the device firmware or remove it via backend tools.`);
   };
 
   if (loading) {
@@ -117,150 +175,171 @@ export const DeviceManagement: React.FC<DeviceManagementProps> = ({ onDeviceSele
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
-          ESP32 Device Management
-        </h3>
+        <div>
+          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Device Management</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Live view of registered sensor hubs</p>
+        </div>
         <div className="flex gap-2">
           <button
-            onClick={loadDevices}
-            className="px-3 py-2 text-sm rounded-md border bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700"
+            onClick={() => loadDevices()}
+            className="px-3 py-2 text-sm rounded-md border bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
             title="Refresh devices"
+            disabled={refreshing}
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
           </button>
           <button
             onClick={() => setShowAddDevice(true)}
-            className="px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700"
+            className="px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2"
           >
-            <Plus className="w-4 h-4 mr-1" />
+            <Plus className="w-4 h-4" />
             Add Device
           </button>
         </div>
       </div>
 
+      {error && (
+        <div className="p-3 rounded-md border border-red-200 bg-red-50 text-red-700 text-sm">
+          {error}
+        </div>
+      )}
+
       <div className="grid gap-4">
-        {devices.map((device) => (
-          <div
-            key={device.id}
-            className={`p-4 rounded-lg border cursor-pointer transition-all ${
-              selectedDevice?.id === device.id
-                ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
-                : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600'
-            }`}
-            onClick={() => handleDeviceSelect(device)}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className={`p-2 rounded-full ${device.status === 'online' ? 'bg-green-100 dark:bg-green-900/20' : 'bg-red-100 dark:bg-red-900/20'}`}>
-                  {getStatusIcon(device.status)}
-                </div>
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <h4 className="font-medium text-gray-800 dark:text-gray-200">
-                      {device.name || device.deviceId}
-                    </h4>
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(device.status)} bg-current bg-opacity-10`}>
-                      {device.status}
-                    </span>
+        {devices.map((device) => {
+          const isSelected = selectedDeviceId === device.id;
+          return (
+            <div
+              key={device.id}
+              className={`p-4 rounded-lg border cursor-pointer transition-all ${
+                isSelected
+                  ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
+                  : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600'
+              }`}
+              onClick={() => handleDeviceSelect(device)}
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className={`p-2 rounded-full ${device.status === 'online' ? 'bg-green-100 dark:bg-green-900/20' : 'bg-red-100 dark:bg-red-900/20'}`}>
+                    {device.status === 'online' ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
                   </div>
-                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                    ID: {device.deviceId} • Last seen: {new Date(device.lastSeen).toLocaleString()}
-                  </div>
-                  {device.ipAddress && (
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <h4 className="font-medium text-gray-800 dark:text-gray-200">
+                        {device.name || device.deviceId}
+                      </h4>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        device.status === 'online' ? 'text-green-600 bg-green-600/10' : 'text-red-600 bg-red-600/10'
+                      }`}>
+                        {device.status}
+                      </span>
+                    </div>
                     <div className="text-sm text-gray-500 dark:text-gray-400">
-                      IP: {device.ipAddress}
+                      ID: {device.deviceId} • Last seen: {formatLastSeen(device.lastSeen)}
                     </div>
-                  )}
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <div className="text-right">
-                  <div className="text-sm text-gray-600 dark:text-gray-400">
-                    Firmware: {device.firmwareVersion || 'Unknown'}
-                  </div>
-                  <div className="text-sm text-gray-600 dark:text-gray-400">
-                    {device.sensors.length} sensors
+                    {device.ipAddress && (
+                      <div className="text-sm text-gray-500 dark:text-gray-400">IP: {device.ipAddress}</div>
+                    )}
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-1">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCalibrate(device.id);
-                    }}
-                    className="px-2 py-1 text-xs rounded border bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-100 dark:hover:bg-yellow-900/30"
-                    title="Calibrate device"
-                  >
-                    <Settings className="w-3 h-3" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleRemoveDevice(device.id);
-                    }}
-                    className="px-2 py-1 text-xs rounded border bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/30"
-                    title="Remove device"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
+                <div className="flex items-center space-x-2">
+                  <div className="text-right">
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      Firmware: {device.firmwareVersion || 'Unknown'}
+                    </div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                      {device.sensors.length} sensors
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleCalibrate(device.deviceId);
+                      }}
+                      className="px-2 py-1 text-xs rounded border bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-100 dark:hover:bg-yellow-900/30"
+                      title="Calibration guidance"
+                    >
+                      <Settings className="w-3 h-3" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleRemoveDevice(device.deviceId);
+                      }}
+                      className="px-2 py-1 text-xs rounded border bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/30"
+                      title="Removal guidance"
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </button>
+                  </div>
                 </div>
               </div>
+
+              {isSelected && (
+                <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                      <span className="font-medium text-gray-600 dark:text-gray-400">Sensors:</span>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {device.sensors.length > 0 ? (
+                          device.sensors.map((sensor) => (
+                            <span key={sensor} className="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs">
+                              {sensor}
+                            </span>
+                          ))
+                        ) : (
+                          <span className="text-gray-500 dark:text-gray-400">No sensors reported</span>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-600 dark:text-gray-400">Status:</span>
+                      <div className="text-gray-800 dark:text-gray-200">
+                        {device.status === 'online' ? 'Connected and reporting' : 'Offline'}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-600 dark:text-gray-400">Telemetry:</span>
+                      <div className="text-gray-800 dark:text-gray-200">
+                        {device.metadata?.reportingInterval
+                          ? `${device.metadata.reportingInterval} seconds`
+                          : 'Default interval'}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="font-medium text-gray-600 dark:text-gray-400">Metadata:</span>
+                      <div className="text-gray-800 dark:text-gray-200">
+                        {device.metadata ? (
+                          <code className="text-xs break-all">{JSON.stringify(device.metadata)}</code>
+                        ) : (
+                          '—'
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-
-            {selectedDevice?.id === device.id && (
-              <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div>
-                    <span className="font-medium text-gray-600 dark:text-gray-400">Sensors:</span>
-                    <div className="flex flex-wrap gap-1 mt-1">
-                      {device.sensors.map(sensor => (
-                        <span key={sensor} className="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs">
-                          {sensor}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="font-medium text-gray-600 dark:text-gray-400">Uptime:</span>
-                    <div className="text-gray-800 dark:text-gray-200">
-                      {device.status === 'online' ? 'Connected' : 'Offline'}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="font-medium text-gray-600 dark:text-gray-400">Data Rate:</span>
-                    <div className="text-gray-800 dark:text-gray-200">
-                      {device.status === 'online' ? '5 min' : 'N/A'}
-                    </div>
-                  </div>
-                  <div>
-                    <span className="font-medium text-gray-600 dark:text-gray-400">Alerts:</span>
-                    <div className="text-gray-800 dark:text-gray-200">
-                      {device.status === 'online' ? '0 active' : 'N/A'}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {devices.length === 0 && (
         <div className="text-center py-8 text-gray-500 dark:text-gray-400">
           <AlertTriangle className="w-12 h-12 mx-auto mb-4 opacity-50" />
-          <p>No ESP32 devices found</p>
-          <p className="text-sm">Add your first device to start monitoring</p>
+          <p>No devices found</p>
+          <p className="text-sm">Register a device or power on an existing unit to see it here.</p>
         </div>
       )}
 
       {showAddDevice && (
         <AddDeviceModal
           onClose={() => setShowAddDevice(false)}
-          onAdd={(device) => {
-            setDevices([...devices, device]);
-            setShowAddDevice(false);
+          onAdded={async () => {
+            await loadDevices({ initial: true });
           }}
         />
       )}
@@ -270,27 +349,53 @@ export const DeviceManagement: React.FC<DeviceManagementProps> = ({ onDeviceSele
 
 interface AddDeviceModalProps {
   onClose: () => void;
-  onAdd: (device: ESP32Device) => void;
+  onAdded: () => Promise<void> | void;
 }
 
-const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ onClose, onAdd }) => {
+const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ onClose, onAdded }) => {
   const [deviceId, setDeviceId] = useState('');
   const [name, setName] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!deviceId.trim()) return;
 
-    const newDevice: ESP32Device = {
-      id: Date.now().toString(),
-      deviceId: deviceId.trim(),
-      name: name.trim() || undefined,
-      status: 'offline',
-      lastSeen: new Date().toISOString(),
-      sensors: []
-    };
+    setSubmitting(true);
+    setError(null);
 
-    onAdd(newDevice);
+    try {
+      const response = await fetch('/api/devices/heartbeat', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          deviceId: deviceId.trim(),
+          timestamp: new Date().toISOString(),
+          metadata: {
+            label: name.trim() || undefined,
+            registeredVia: 'admin-dashboard'
+          }
+        })
+      });
+
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(payload?.message || `Request failed with status ${response.status}`);
+      }
+
+      await onAdded();
+      setSubmitting(false);
+      setDeviceId('');
+      setName('');
+      onClose();
+      return;
+    } catch (err) {
+      console.error('Failed to register device:', err);
+      setError(err instanceof Error ? err.message : 'Unable to register device.');
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -298,8 +403,14 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ onClose, onAdd }) => {
       <div className="absolute inset-0 bg-black/50" onClick={onClose} />
       <div className="relative z-70 bg-white dark:bg-gray-900 rounded-xl shadow-lg border p-6 max-w-md w-full">
         <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
-          Add ESP32 Device
+          Add Device
         </h3>
+
+        {error && (
+          <div className="p-3 rounded-md border border-red-200 bg-red-50 text-red-700 text-sm">
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -334,14 +445,16 @@ const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ onClose, onAdd }) => {
               type="button"
               onClick={onClose}
               className="px-4 py-2 rounded-md border"
+              disabled={submitting}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700"
+              className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
+              disabled={submitting}
             >
-              Add Device
+              {submitting ? 'Registering…' : 'Add Device'}
             </button>
           </div>
         </form>

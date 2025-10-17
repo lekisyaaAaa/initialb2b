@@ -4,7 +4,7 @@ import { ApiResponse, PaginatedResponse, SensorData, Alert, Settings, SensorStat
 // Create axios instance with base configuration
 // Build a normalized API base URL. Users may set REACT_APP_API_URL with or without
 // a trailing '/api'. Normalize to avoid accidentally producing '/api/api' in requests.
-const RAW_API_ROOT = (process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000').toString();
+const RAW_API_ROOT = (process.env.REACT_APP_API_URL || 'http://127.0.0.1:5000').toString();
 // Remove any trailing slashes and any repeated '/api' segments to avoid producing '/api/api'
 const API_ROOT = RAW_API_ROOT.replace(/(\/api)+\/?$/i, '').replace(/\/+$/,'');
 const api: AxiosInstance = axios.create({

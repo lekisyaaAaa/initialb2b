@@ -8,6 +8,16 @@ const WebSocket = require('ws');
 const http = require('http');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
+const sequelize = require('./services/database_pg');
+const connectDB = typeof sequelize.connectDB === 'function' ? sequelize.connectDB : async () => {
+  try {
+    await sequelize.authenticate();
+    console.log('✅ Database connected (fallback connectDB)');
+  } catch (error) {
+    console.error('❌ Database connection failed during fallback connectDB:', error.message);
+    throw error;
+  }
+};
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -199,7 +209,6 @@ app.use((err, req, res, next) => {
 app.get('/api/health', async (req, res) => {
   try {
     // Check database connection
-    const sequelize = require('./services/database_pg');
     await sequelize.authenticate();
 
     res.status(200).json({
@@ -284,68 +293,6 @@ app.use(errorHandler);
 // Default to 8000 as requested for new deployments; keep override via PORT env var
 const PORT = process.env.PORT || 8000;
 
-// Improved error diagnostics for common startup issues (EADDRINUSE)
-let _triedAlternatePort = false;
-server.on('error', (err) => {
-  if (err && err.code === 'EADDRINUSE') {
-    console.error(`\u26A0\uFE0F Port ${PORT} already in use (EADDRINUSE).`);
-    // If we haven't tried an alternate port yet, attempt PORT+1 to allow local dev to continue.
-    if (!_triedAlternatePort) {
-      const altPort = Number(PORT) + 1;
-      console.warn(`Attempting to bind to alternate port ${altPort}...`);
-      _triedAlternatePort = true;
-      try {
-        server.listen(altPort, () => {
-          console.log(`🚀 Server running on alternate port ${altPort}`);
-          console.log(`📊 Health check: http://localhost:${altPort}/api/health`);
-          console.log(`🔌 WebSocket server running on ws://localhost:${altPort}`);
-        });
-        return;
-      } catch (e) {
-        console.error('Alternate port bind failed:', e && e.message ? e.message : e);
-      }
-    }
-
-    try {
-      // Try to surface listening process information (Windows-friendly)
-      const { execSync } = require('child_process');
-      try {
-        const netstat = execSync(`netstat -ano | findstr ":${PORT}"`, { encoding: 'utf8' });
-        console.error('netstat results for port ' + PORT + ':');
-        console.error(netstat);
-        const lines = netstat.split(/\r?\n/).filter(Boolean);
-        const pids = new Set();
-        lines.forEach((line) => {
-          const parts = line.trim().split(/\s+/);
-          const pid = parts[parts.length - 1];
-          if (pid && !isNaN(pid)) pids.add(pid);
-        });
-        for (const pid of pids) {
-          try {
-            const wmic = execSync(`wmic process where processid=${pid} get ProcessId,CommandLine /format:list`, { encoding: 'utf8' });
-            console.error(`Process ${pid} info:`);
-            console.error(wmic);
-          } catch (e) {
-            // ignore per-process failures
-          }
-        }
-      } catch (e) {
-        // netstat may not be available on some platforms
-        console.error('Could not run netstat/wmic diagnostics:', e && e.message ? e.message : e);
-      }
-    } catch (e) {
-      console.error('Error while collecting diagnostics:', e && e.message ? e.message : e);
-    }
-    // If we tried alternate and still failing, log warning but don't exit
-    console.warn('Port binding failed, but continuing in development mode');
-    if ((process.env.NODE_ENV || 'development') === 'production') {
-      process.exit(1);
-    }
-  } else {
-    console.error('Server error:', err);
-  }
-});
-
 // Bind to 0.0.0.0 in development so localhost resolves (IPv4/IPv6) from browsers reliably
 const BIND_HOST = (process.env.BIND_HOST || '0.0.0.0');
 
@@ -426,9 +373,6 @@ function tryListen(port) {
   });
 }
 
-tryListen(configuredPort);
-
-
 // Graceful shutdown
 process.on('SIGTERM', () => {
   console.log('SIGTERM received, shutting down gracefully');
@@ -500,12 +444,16 @@ module.exports.server = server;
 
 // Simple server startup for development
 if ((process.env.NODE_ENV || 'development') !== 'test') {
-  server.listen(process.env.PORT || 5000, '0.0.0.0', () => {
-    const port = process.env.PORT || 5000;
-    console.log(`🚀 Server running on port ${port}`);
-    console.log(`📊 Health check: http://localhost:${port}/api/health`);
-  });
+  connectDB()
+    .then(() => {
+      tryListen(configuredPort);
+    })
+    .catch((error) => {
+      console.error('❌ Server startup aborted due to database connection failure:', error && error.message ? error.message : error);
+      process.exitCode = 1;
+    });
 } else {
   // In test mode, bind server to the port immediately but avoid console logs
-  server.listen(process.env.PORT || 0, '0.0.0.0');
+  const testPort = process.env.PORT ? Number(process.env.PORT) : 0;
+  server.listen(testPort, '0.0.0.0');
 }

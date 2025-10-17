@@ -658,8 +658,8 @@ export default function AdminDashboard(): React.ReactElement {
               <div className="space-y-6">
                 <div className="text-center py-12">
                   <Settings className="w-16 h-16 mx-auto mb-4 text-gray-400" />
-                  <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">ESP32 Device Management</h3>
-                  <p className="text-gray-600 dark:text-gray-400">Manage and monitor your ESP32 environmental sensors</p>
+                  <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">Device Management</h3>
+                  <p className="text-gray-600 dark:text-gray-400">Manage and monitor your environmental sensors</p>
                 </div>
                 <DeviceManagement />
               </div>

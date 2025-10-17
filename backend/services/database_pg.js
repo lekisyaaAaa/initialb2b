@@ -1,71 +1,70 @@
 const { Sequelize } = require('sequelize');
 const path = require('path');
-require('dotenv').config();
+const dotenv = require('dotenv');
 
-// Database reconnect configuration
-const DB_RECONNECT_INTERVAL = 5000; // 5 seconds
-const DB_MAX_RECONNECT_ATTEMPTS = 10;
-let reconnectAttempts = 0;
+// Ensure we load the backend-specific .env file.
+dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
-// In development prefer a local SQLite DB for resilience when Postgres isn't available.
-if ((process.env.NODE_ENV || 'development') !== 'production') {
-	const storage = path.join(__dirname, '..', 'data', 'dev.sqlite');
-	console.log(`Using SQLite dev DB at ${storage}`);
-	const sequelize = new Sequelize({
-		dialect: 'sqlite',
-		storage,
-		logging: false,
-		pool: {
-			max: 5,
-			min: 0,
-			acquire: 30000,
-			idle: 10000
-		}
-	});
-	module.exports = sequelize;
-} else {
-	const sequelize = new Sequelize(process.env.DATABASE_URL, {
+const isProduction = (process.env.NODE_ENV || 'development') === 'production';
+
+const baseOptions = {
+	logging: false,
+	pool: {
+		max: Number(process.env.DB_POOL_MAX || 5),
+		min: Number(process.env.DB_POOL_MIN || 0),
+		acquire: Number(process.env.DB_POOL_ACQUIRE || 30000),
+		idle: Number(process.env.DB_POOL_IDLE || 10000)
+	}
+};
+
+const useConnectionUrl = Boolean(process.env.DATABASE_URL && !process.env.DB_NAME);
+
+let sequelize;
+
+if (useConnectionUrl) {
+	sequelize = new Sequelize(process.env.DATABASE_URL, {
+		...baseOptions,
 		dialect: 'postgres',
-		logging: false,
 		dialectOptions: {
-			ssl: process.env.PGSSLMODE === 'require' ? { rejectUnauthorized: false } : false,
-		},
-		pool: {
-			max: 5,
-			min: 0,
-			acquire: 30000,
-			idle: 10000
-		},
-		retry: {
-			max: 3
+			ssl: process.env.PGSSLMODE === 'require' ? { rejectUnauthorized: false } : false
 		}
 	});
-
-	// Add reconnect logic for PostgreSQL
-	const attemptReconnect = async () => {
-		try {
-			await sequelize.authenticate();
-			console.log('✅ PostgreSQL reconnected successfully');
-			reconnectAttempts = 0;
-		} catch (error) {
-			reconnectAttempts++;
-			console.error(`❌ PostgreSQL reconnect attempt ${reconnectAttempts}/${DB_MAX_RECONNECT_ATTEMPTS} failed:`, error.message);
-
-			if (reconnectAttempts < DB_MAX_RECONNECT_ATTEMPTS) {
-				setTimeout(attemptReconnect, DB_RECONNECT_INTERVAL);
-			} else {
-				console.error('❌ Max PostgreSQL reconnect attempts reached. Server will continue without database.');
-			}
-		}
+} else {
+	const dialect = (process.env.DB_DIALECT || 'postgres').toLowerCase();
+	const connectionOptions = {
+		...baseOptions,
+		host: process.env.DB_HOST || '127.0.0.1',
+		port: process.env.DB_PORT ? Number(process.env.DB_PORT) : undefined,
+		dialect,
+		dialectOptions: {}
 	};
 
-	// Handle connection loss
-	sequelize.connectionManager.on('error', (error) => {
-		console.error('❌ PostgreSQL connection error:', error.message);
-		if (reconnectAttempts === 0) {
-			attemptReconnect();
-		}
-	});
+	if (dialect === 'postgres' && process.env.PGSSLMODE === 'require') {
+		connectionOptions.dialectOptions.ssl = { rejectUnauthorized: false };
+	}
 
-	module.exports = sequelize;
+	sequelize = new Sequelize(
+		process.env.DB_NAME,
+		process.env.DB_USER,
+		process.env.DB_PASS,
+		connectionOptions
+	);
 }
+
+const connectDB = async () => {
+	try {
+		await sequelize.authenticate();
+		const dialect = sequelize.getDialect();
+		const connectionLabel = useConnectionUrl ? 'connection URL' : `${dialect}://${process.env.DB_HOST}:${process.env.DB_PORT || '(default port)'}`;
+		console.log(`✅ Database connected successfully via ${connectionLabel}`);
+	} catch (error) {
+		console.error('❌ Unable to connect to the database:', error.message);
+		if (!isProduction) {
+			console.error('ℹ️  Check your backend/.env credentials or ensure the database service is running.');
+		}
+		throw error;
+	}
+};
+
+module.exports = sequelize;
+module.exports.connectDB = connectDB;

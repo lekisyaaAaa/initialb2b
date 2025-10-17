@@ -23,7 +23,21 @@ For the best IoT experience, this system now supports **Home Assistant + ESPHome
 
 ## 🚀 Quick Start (Direct ESP32)
 
-### Recommended: Use PM2 for Reliable Service Management
+### Recommended: Use the Startup Script (Handles Everything Automatically)
+
+```powershell
+# Windows PowerShell - This script installs dependencies, builds frontend, starts services, and verifies health
+powershell -ExecutionPolicy Bypass -File .\start-all.ps1
+```
+
+This script will:
+- Install backend and frontend dependencies if missing
+- Build the frontend production bundle
+- Start all services with PM2 (backend on port 5000, frontend on port 3002)
+- Wait for services to be healthy
+- Display status and access URLs
+
+### Alternative: Manual PM2 Setup
 
 ```bash
 # Install PM2 globally (one-time setup)
@@ -40,13 +54,6 @@ pm2 logs
 
 # Stop services
 pm2 stop all
-```
-
-### Alternative: Use the Startup Script
-
-```powershell
-# Windows PowerShell
-.\start-all.ps1
 ```
 
 ## 🔧 Troubleshooting
