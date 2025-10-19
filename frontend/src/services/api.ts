@@ -1,5 +1,5 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
-import { ApiResponse, PaginatedResponse, SensorData, Alert, Settings, SensorStats, AlertStats } from '../types';
+import { ApiResponse, PaginatedResponse, SensorData, Alert, Settings, SensorStats, AlertStats, Actuator } from '../types';
 
 // Create axios instance with base configuration
 // Build a normalized API base URL. Users may set REACT_APP_API_URL with or without
@@ -7,6 +7,7 @@ import { ApiResponse, PaginatedResponse, SensorData, Alert, Settings, SensorStat
 const RAW_API_ROOT = (process.env.REACT_APP_API_URL || 'http://127.0.0.1:5000').toString();
 // Remove any trailing slashes and any repeated '/api' segments to avoid producing '/api/api'
 const API_ROOT = RAW_API_ROOT.replace(/(\/api)+\/?$/i, '').replace(/\/+$/,'');
+export const API_BASE_URL = API_ROOT;
 const api: AxiosInstance = axios.create({
   // prefer IPv4 loopback in dev to avoid browsers resolving 'localhost' to ::1 (IPv6)
   baseURL: API_ROOT + '/api',
@@ -109,72 +110,97 @@ export const authService = {
 // Use the configured `api` instance whose baseURL already contains the '/api' prefix.
 export const adminAuthService = {
   loginAdmin: async (username: string, password: string) => {
-    // Ensure API base is reachable before attempting login (helps when backend runs on another port)
+    const normalizeRoot = (value?: string | null) => {
+      if (!value) return '';
+      return value.replace(/\s+/g, '').replace(/\/?api$/i, '').replace(/\/$/, '');
+    };
+
+    let discoveryBase = '';
     try {
-      await discoverApi({ timeout: 1200 });
+      const result = await discoverApi({ timeout: 1500 });
+      if (result.ok && result.baseURL) {
+        discoveryBase = result.baseURL;
+      }
     } catch (e) {
-      // ignore - discoverApi returns {ok:false} on failure
+      // ignore discovery errors, candidates below cover defaults
     }
-    // First, check server health to provide a clearer error early
-    try {
-      await api.get('/health', { timeout: 3000 });
-    } catch (healthErr: any) {
-      // If health check fails, try discovery to switch to a reachable host; otherwise proceed and let
-      // the login attempt handle network errors and possibly trigger the local fallback.
+
+    const candidateRoots = new Set<string>();
+    const pushCandidate = (value?: string | null) => {
+      const normalized = normalizeRoot(value);
+      if (normalized) candidateRoots.add(normalized);
+    };
+
+    pushCandidate(process.env.REACT_APP_API_URL);
+    pushCandidate(discoveryBase);
+    pushCandidate(api.defaults.baseURL);
+    pushCandidate('http://127.0.0.1:5000');
+    pushCandidate('http://127.0.0.1:8000');
+    pushCandidate('http://localhost:5000');
+    pushCandidate('http://localhost:8000');
+
+    const roots = Array.from(candidateRoots);
+    let networkIssueDetected = false;
+    let serverErrorMessage: string | null = null;
+
+    for (const root of roots) {
       try {
-        const disco = await discoverApi({ timeout: 1500 });
-        if (disco.ok) {
-          console.log('adminAuthService: discovered API host during health check failure', disco.baseURL);
-        } else {
-          console.warn('adminAuthService: health check failed and discovery did not find a host', healthErr && (healthErr.message || healthErr));
+        const base = `${root.replace(/\/$/, '')}/api`;
+        api.defaults.baseURL = base;
+        const health = await api.get('/health', { timeout: 2000 }).catch(() => null);
+        if (health && health.data && health.data.success === false) {
+          // backend reported unhealthy; attempt login regardless to surface proper error
         }
-      } catch (e:any) {
-        console.warn('adminAuthService: discovery failed after health check failure', e && (e.message || String(e)));
+
+        const resp = await api.post('/admin/login', { username, password }, { timeout: 8000 });
+        if (resp?.data?.success && resp.data.token) {
+          return { success: true, token: resp.data.token };
+        }
+        return { success: false, message: resp?.data?.message || 'Invalid username or password.' };
+      } catch (err: any) {
+        if (err?.response) {
+          if (err.response.status === 401) {
+            return { success: false, message: 'Invalid username or password.' };
+          }
+          if (err.response.status >= 500) {
+            serverErrorMessage = err.response.data?.message || 'Internal server error';
+            continue;
+          }
+          return { success: false, message: err.response.data?.message || 'Login failed' };
+        }
+
+        const lower = (err?.code || err?.message || '').toString().toLowerCase();
+        const networkIssues = ['econnrefused', 'enotfound', 'etimedout', 'network error', 'failed to fetch', 'networkrequestfailed', 'net::'];
+        if (networkIssues.some(keyword => lower.includes(keyword))) {
+          networkIssueDetected = true;
+          continue; // try the next candidate host
+        }
+
+        serverErrorMessage = err?.message || 'Unable to connect to server. Please try again.';
       }
     }
 
-    // Try login with retry attempts (idempotent)
-    const maxAttempts = 2;
-    let attempt = 0;
-    while (attempt < maxAttempts) {
-      attempt += 1;
-      try {
-        const resp = await api.post('/admin/login', { username, password }, { timeout: 8000 });
-        if (resp?.data?.success && resp.data.token) return { success: true, token: resp.data.token };
-        return { success: false, message: resp?.data?.message || 'Invalid username or password.' };
-      } catch (err: any) {
-        if (err.response) {
-          if (err.response.status === 401) return { success: false, message: 'Invalid username or password.' };
-          if (err.response.status >= 500) return { success: false, message: 'Internal server error' };
-          return { success: false, message: err.response.data?.message || 'Login failed' };
-        }
-        // On network errors, try again once, otherwise return clear message
-        const code = (err && (err.code || '') ) || (err && (err.message || '') ).toString().toLowerCase();
-        const isNetwork = code === 'econnrefused' || code === 'enotfound' || code === 'etimedout' || code.includes('network error') || code.includes('failed to fetch') || code.includes('networkrequestfailed') || code.includes('net::');
-        console.debug('adminAuthService: login network error detected, code=', code, 'isNetwork=', isNetwork);
-        if (isNetwork) {
-          // attempt a client-side local admin fallback (development only)
-          try {
-            const localUser = (process.env.REACT_APP_LOCAL_ADMIN_USER || 'admin');
-            const localPass = (process.env.REACT_APP_LOCAL_ADMIN_PASS || 'admin');
-            console.debug('adminAuthService: checking local fallback for', username, 'against', localUser);
-            if (username === localUser && password === localPass) {
-              console.debug('adminAuthService: local fallback matched, returning fake token');
-              const fakeToken = `local-dev-token-${Date.now()}`;
-              const user = { id: 'local-admin', username: localUser, role: 'admin', local: true };
-              return { success: true, token: fakeToken, user } as any;
-            }
-          } catch (e:any) {
-            console.debug('adminAuthService: local fallback check error', String(e));
-          }
-          if (attempt >= maxAttempts) return { success: false, message: 'Server offline. Please check if the backend is running.' };
-          // small delay before retry
-          await new Promise(r => setTimeout(r, 400));
-          continue;
-        }
-        return { success: false, message: 'Unable to connect to server. Please try again.' };
+    // attempt a client-side local admin fallback (development only)
+    try {
+      const localUser = (process.env.REACT_APP_LOCAL_ADMIN_USER || 'admin');
+      const localPass = (process.env.REACT_APP_LOCAL_ADMIN_PASS || 'admin');
+      if (username === localUser && password === localPass) {
+        const fakeToken = `local-dev-token-${Date.now()}`;
+        const user = { id: 'local-admin', username: localUser, role: 'admin', local: true };
+        return { success: true, token: fakeToken, user } as any;
       }
+    } catch (fallbackError) {
+      // ignore fallback errors
     }
+
+    if (networkIssueDetected) {
+      return { success: false, message: 'Server offline. Please check if the backend is running.' };
+    }
+
+    if (serverErrorMessage) {
+      return { success: false, message: serverErrorMessage };
+    }
+
     return { success: false, message: 'Unable to connect to server. Please try again.' };
   }
 };
@@ -245,6 +271,16 @@ export const alertService = {
     deviceId?: string;
   }) =>
     api.get<ApiResponse<AlertStats>>('/alerts/stats', { params }),
+};
+
+export const actuatorService = {
+  list: () => api.get<ApiResponse<Actuator[]>>('/actuators'),
+  toggle: (id: number) => api.post<ApiResponse<Actuator>>(`/actuators/${id}/toggle`),
+  setMode: (id: number, mode: 'manual' | 'auto') =>
+    api.post<ApiResponse<Actuator>>(`/actuators/${id}/mode`, { mode }),
+  runAutoControl: () => api.post<ApiResponse<any>>('/actuators/auto-control'),
+  getLogs: (params?: { page?: number; limit?: number; deviceId?: string; actuatorType?: string }) =>
+    api.get('/actuators/logs', { params }),
 };
 
 export const settingsService = {

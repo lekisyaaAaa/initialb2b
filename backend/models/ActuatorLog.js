@@ -8,7 +8,7 @@ const ActuatorLog = sequelize.define('ActuatorLog', {
     allowNull: false,
   },
   actuatorType: {
-    type: DataTypes.ENUM('pump', 'solenoid', 'cycle'),
+    type: DataTypes.ENUM('pump', 'solenoid', 'fan', 'cycle'),
     allowNull: false,
   },
   action: {

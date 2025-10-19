@@ -164,3 +164,11 @@ export interface AlertStats {
   }>;
   period: string;
 }
+
+export interface Actuator {
+  id: number;
+  name: string;
+  status: boolean;
+  mode: 'manual' | 'auto';
+  lastUpdated: string;
+}

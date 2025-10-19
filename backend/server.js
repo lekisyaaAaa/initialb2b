@@ -5,6 +5,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const WebSocket = require('ws');
+const { Server: SocketIOServer } = require('socket.io');
 const http = require('http');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
@@ -18,6 +19,11 @@ const connectDB = typeof sequelize.connectDB === 'function' ? sequelize.connectD
     throw error;
   }
 };
+const {
+  ensureDefaultActuators,
+  listActuators,
+  scheduleAutomaticControl,
+} = require('./services/actuatorService');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -32,6 +38,44 @@ const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
 const server = http.createServer(app);
+
+const isProductionEnv = (process.env.NODE_ENV || 'development') === 'production';
+const socketCorsOrigins = (process.env.SOCKETIO_CORS_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const io = new SocketIOServer(server, {
+  cors: {
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (!isProductionEnv) return callback(null, true);
+      if (socketCorsOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error('Socket origin not allowed'));
+    },
+    credentials: true,
+  },
+  serveClient: false,
+  transports: ['websocket', 'polling'],
+});
+
+global.io = io;
+
+io.on('connection', async (socket) => {
+  console.log('Socket.IO client connected', socket.id);
+  try {
+    const actuators = await listActuators();
+    socket.emit('actuatorSnapshot', actuators);
+  } catch (error) {
+    socket.emit('actuatorSnapshot', []);
+  }
+
+  socket.on('disconnect', () => {
+    console.log('Socket.IO client disconnected', socket.id);
+  });
+});
 
 // WebSocket setup for real-time data
 const wss = new WebSocket.Server({ server });
@@ -444,13 +488,30 @@ module.exports.server = server;
 
 // Simple server startup for development
 if ((process.env.NODE_ENV || 'development') !== 'test') {
+  const shouldSchedule = (process.env.NODE_ENV || 'development') !== 'test';
+
   connectDB()
-    .then(() => {
-      tryListen(configuredPort);
+    .then(async () => {
+      try {
+        await ensureDefaultActuators();
+      } catch (error) {
+        console.warn('Server startup: unable to ensure actuators exist:', error && error.message ? error.message : error);
+      }
+
+      if (shouldSchedule) {
+        scheduleAutomaticControl();
+      }
     })
     .catch((error) => {
-      console.error('❌ Server startup aborted due to database connection failure:', error && error.message ? error.message : error);
-      process.exitCode = 1;
+      console.error('❌ Database connection failed at startup:', error && error.message ? error.message : error);
+      if ((process.env.NODE_ENV || 'development') === 'production') {
+        process.exit(1);
+      } else {
+        console.warn('Continuing to start server without database connectivity; routes that require the database may fail until it reconnects.');
+      }
+    })
+    .finally(() => {
+      tryListen(configuredPort);
     });
 } else {
   // In test mode, bind server to the port immediately but avoid console logs

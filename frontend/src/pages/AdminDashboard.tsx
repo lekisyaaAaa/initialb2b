@@ -8,6 +8,7 @@ import SystemHealth from '../components/SystemHealth';
 import SensorCard from '../components/SensorCard';
 import AlertsPanel from '../components/AlertsPanel';
 import DarkModeToggle from '../components/DarkModeToggle';
+import ActuatorControls from '../components/ActuatorControls';
 import { DeviceManagement } from '../components/DeviceManagement';
 import { ThresholdConfiguration } from '../components/ThresholdConfiguration';
 import { AlertsManagement } from '../components/AlertsManagement';
@@ -430,10 +431,6 @@ export default function AdminDashboard(): React.ReactElement {
 
   // Maintenance reminders handled in top-of-file declarations
 
-  async function controlActuator(actuator: 'pump' | 'solenoid', state: boolean) {
-    try { await fetch('/api/actuators/control', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ actuator, state }) }); } catch (e) { /* ignore */ }
-  }
-
   const chartData = sensorHistory.map((s, i) => ({ time: `${i * 5}s`, temperature: s.temperature ?? 0, humidity: s.humidity ?? 0, moisture: s.moisture ?? 0, ph: s.ph ?? 0, ec: s.ec ?? 0, waterLevel: s.waterLevel ?? 0 }));
 
   return (
@@ -673,6 +670,8 @@ export default function AdminDashboard(): React.ReactElement {
                   <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">System Monitoring</h3>
                   <p className="text-gray-600 dark:text-gray-400">Configure thresholds, manage alerts, and monitor system diagnostics</p>
                 </div>
+
+                <ActuatorControls />
 
                 {/* Sub-tabs for monitoring */}
                 <div className="bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 rounded-lg shadow">

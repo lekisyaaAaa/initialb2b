@@ -29,10 +29,10 @@ child.stdout.on('data', (d) => {
   const s = d.toString();
   process.stdout.write(s);
   lastStdout = (lastStdout + s).slice(-2000);
-  if (/compiled successfully|You can now view/i.test(s)) {
+  if (/compiled (successfully|with warnings)/i.test(s) || /You can now view/i.test(s)) {
     started = true;
     clearTimeout(timeout);
-    console.log('[wrapped-start] Frontend reported successful compile.');
+    console.log('[wrapped-start] Frontend reported ready (warnings allowed).');
   }
 });
 
