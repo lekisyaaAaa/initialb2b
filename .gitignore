@@ -50,6 +50,10 @@ archive/*
 archive/organized_snapshot_*/
 archive/cleanup_*/
 
+# Local backup artifacts
+backups/
+*.zip
+
 # Misc
 package-lock.json
 # Node
