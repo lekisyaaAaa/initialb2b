@@ -20,7 +20,15 @@ router.post('/login', async (req, res) => {
       const secret = process.env.JWT_SECRET || 'devsecret';
       const token = jwt.sign(payload, secret, { expiresIn: '24h' });
       console.log('Admin login: success for', username);
-      return res.json({ success: true, token });
+      return res.json({
+        success: true,
+        token,
+        user: {
+          id: payload.id,
+          username: payload.username,
+          role: payload.role,
+        },
+      });
     }
 
     console.warn('Admin login: invalid credentials for', username);

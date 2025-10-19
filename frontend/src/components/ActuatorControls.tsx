@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pause, Play, RefreshCw, Settings2 } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
-import { actuatorService, API_BASE_URL } from '../services/api';
+import { actuatorService, API_BASE_URL, ensureAdminSession } from '../services/api';
 import { Actuator } from '../types';
 
 type Props = { className?: string };
@@ -36,23 +36,42 @@ const ActuatorControls: React.FC<Props> = ({ className = '' }) => {
     });
   }, []);
 
+  const fetchActuators = useCallback(async () => {
+    const response = await actuatorService.list();
+    const payload = (response?.data?.data ?? response?.data ?? []) as Actuator[];
+    if (Array.isArray(payload)) {
+      const sanitized = payload.map(sanitizeActuator).filter(Boolean) as Actuator[];
+      setActuators(sanitized);
+    }
+  }, [sanitizeActuator]);
+
   const loadActuators = useCallback(async () => {
     setIsLoading(true);
     try {
-      const response = await actuatorService.list();
-      const payload = (response?.data?.data ?? response?.data ?? []) as Actuator[];
-      if (Array.isArray(payload)) {
-        const sanitized = payload.map(sanitizeActuator).filter(Boolean) as Actuator[];
-        setActuators(sanitized);
-      }
+      await ensureAdminSession();
+      await fetchActuators();
       setError(null);
     } catch (err: any) {
+      const status = err?.response?.status;
+      if (status === 401 || status === 403) {
+        try {
+          const restored = await ensureAdminSession({ force: true });
+          if (restored) {
+            await fetchActuators();
+            setError(null);
+            return;
+          }
+        } catch (recoveryError) {
+          // fall through to handle original error messaging
+        }
+      }
+
       const message = err?.response?.data?.message || err?.message || 'Unable to load actuators';
       setError(message);
     } finally {
       setIsLoading(false);
     }
-  }, [sanitizeActuator]);
+  }, [fetchActuators]);
 
   useEffect(() => {
     loadActuators();

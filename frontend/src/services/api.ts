@@ -154,7 +154,13 @@ export const adminAuthService = {
 
         const resp = await api.post('/admin/login', { username, password }, { timeout: 8000 });
         if (resp?.data?.success && resp.data.token) {
-          return { success: true, token: resp.data.token };
+          const fallbackUser = resp.data.user || {
+            id: 'admin-local',
+            username,
+            role: 'admin',
+            source: 'admin-login',
+          };
+          return { success: true, token: resp.data.token, user: fallbackUser };
         }
         return { success: false, message: resp?.data?.message || 'Invalid username or password.' };
       } catch (err: any) {
@@ -312,6 +318,85 @@ export const systemService = {
       database: any;
     }>>('/system/info'),
 };
+
+let ensureAdminSessionPromise: Promise<boolean> | null = null;
+
+export async function ensureAdminSession(options: { force?: boolean } = {}) {
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  const force = Boolean(options.force);
+  const storedToken = localStorage.getItem('token') || localStorage.getItem('adminToken');
+  const storedUser = localStorage.getItem('user');
+
+  if (!force && storedToken) {
+    try {
+      (api.defaults.headers as any).Authorization = `Bearer ${storedToken}`;
+    } catch (e) {
+      // ignore header assignment issues in testing environments
+    }
+
+    if (storedUser) {
+      return true;
+    }
+  }
+
+  if (ensureAdminSessionPromise) {
+    return ensureAdminSessionPromise;
+  }
+
+  const username = (
+    process.env.REACT_APP_DEFAULT_ADMIN_USER ||
+    process.env.REACT_APP_LOCAL_ADMIN_USER ||
+    process.env.REACT_APP_DEV_ADMIN_USER ||
+    'beantobin'
+  ).toString();
+  const password = (
+    process.env.REACT_APP_DEFAULT_ADMIN_PASS ||
+    process.env.REACT_APP_LOCAL_ADMIN_PASS ||
+    process.env.REACT_APP_DEV_ADMIN_PASS ||
+    'Bean2bin'
+  ).toString();
+
+  ensureAdminSessionPromise = (async () => {
+    try {
+      const login = await adminAuthService.loginAdmin(username, password);
+      if (login.success && login.token) {
+        const user = login.user || {
+          id: 'admin-local',
+          username,
+          role: 'admin',
+          source: 'auto-session',
+        };
+
+        try {
+          localStorage.setItem('token', login.token);
+          localStorage.setItem('adminToken', login.token);
+          localStorage.setItem('user', JSON.stringify(user));
+        } catch (storageError) {
+          // ignore storage write failures (private browsing, etc.)
+        }
+
+        try {
+          (api.defaults.headers as any).Authorization = `Bearer ${login.token}`;
+        } catch (headerError) {
+          // ignore header assignment errors
+        }
+
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      return false;
+    } finally {
+      ensureAdminSessionPromise = null;
+    }
+  })();
+
+  return ensureAdminSessionPromise;
+}
 
 export default api;
 

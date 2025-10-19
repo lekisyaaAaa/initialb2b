@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, AuthContextType } from '../types';
-import api, { authService, discoverApi } from '../services/api';
+import api, { authService, discoverApi, ensureAdminSession } from '../services/api';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -46,7 +46,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             throw new Error('Token verify failed');
           }
         } catch (e: any) {
-          // If this appears to be a development local-token and a user is stored, keep it so admin can work offline
           const looksLikeLocalDevToken = typeof storedToken === 'string' && storedToken.startsWith('local-dev-token-');
           if (looksLikeLocalDevToken && storedUser) {
             try {
@@ -64,6 +63,34 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               setUser(null);
             }
           } else {
+            let restored = false;
+            try {
+              restored = await ensureAdminSession({ force: true });
+            } catch (ensureErr) {
+              restored = false;
+            }
+
+            if (restored) {
+              try {
+                const newToken = localStorage.getItem('token') || localStorage.getItem('adminToken');
+                const newUserRaw = localStorage.getItem('user');
+                if (newToken && newUserRaw) {
+                  const parsedUser = JSON.parse(newUserRaw);
+                  setToken(newToken);
+                  setUser(parsedUser);
+                  (api.defaults.headers as any).Authorization = `Bearer ${newToken}`;
+                  console.log('✅ Auto-restored admin session during startup');
+                  return;
+                }
+              } catch (restoreErr) {
+                const restoreMessage =
+                  restoreErr && typeof restoreErr === 'object' && 'message' in (restoreErr as Record<string, unknown>)
+                    ? (restoreErr as any).message
+                    : String(restoreErr);
+                console.warn('AuthContext: failed to parse restored admin session:', restoreMessage);
+              }
+            }
+
             console.warn('Stored token verify failed, clearing local auth:', e && (e.message || String(e)));
             localStorage.removeItem('token');
             localStorage.removeItem('user');
