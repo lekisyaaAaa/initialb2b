@@ -56,6 +56,15 @@ router.post('/:id/toggle', [auth, adminOnly], async (req, res) => {
       reason: `Manual toggle requested by ${req.user && req.user.username ? req.user.username : 'admin dashboard'}`,
     });
 
+    if (result.error) {
+      return res.status(502).json({
+        success: false,
+        message: result.error,
+        data: sanitizeActuator(result.actuator),
+        code: 'esp_unreachable',
+      });
+    }
+
     res.json({
       success: true,
       changed: result.changed,
@@ -87,6 +96,15 @@ router.post(
         userId: req.user && req.user.id,
         reason: `Mode set to ${requestedMode} by ${req.user && req.user.username ? req.user.username : 'admin dashboard'}`,
       });
+
+      if (result.error) {
+        return res.status(502).json({
+          success: false,
+          message: result.error,
+          data: sanitizeActuator(result.actuator),
+          code: 'esp_unreachable',
+        });
+      }
 
       if (requestedMode === 'auto') {
         // Re-run automatic control immediately to align states with latest readings.

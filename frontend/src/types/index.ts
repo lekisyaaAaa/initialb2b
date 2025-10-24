@@ -168,7 +168,10 @@ export interface AlertStats {
 export interface Actuator {
   id: number;
   name: string;
+  type?: string;
   status: boolean;
   mode: 'manual' | 'auto';
   lastUpdated: string;
+  deviceAck?: boolean;
+  deviceAckMessage?: string | null;
 }

@@ -61,12 +61,19 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     return '';
   }, []);
 
-  const fetchSensorDataFromBackend = useCallback(async (): Promise<SensorData[]> => {
+  const fetchSensorDataFromBackend = useCallback(async (): Promise<{ readings: SensorData[] }> => {
     const response = await sensorService.getLatestData();
     const payload = response?.data?.data;
-    if (Array.isArray(payload)) return payload;
-    if (payload && typeof payload === 'object') return [payload as SensorData];
-    return [];
+
+    if (Array.isArray(payload)) {
+      return { readings: payload as SensorData[] };
+    }
+
+    if (payload && typeof payload === 'object') {
+      return { readings: [payload as SensorData] };
+    }
+
+    return { readings: [] };
   }, []);
 
   const fetchAlertsFromBackend = useCallback(async (): Promise<Alert[]> => {
@@ -88,41 +95,17 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     try {
       await ensureBackendBase();
 
-      const backendSensorData = await fetchSensorDataFromBackend();
+      const { readings: backendSensorData } = await fetchSensorDataFromBackend();
+
+      setIsConnected(true);
+      setLastFetchAt(new Date().toISOString());
+
       if (backendSensorData.length > 0) {
         setLatestSensorData(backendSensorData);
-        setIsConnected(true);
         setLastFetchCount(backendSensorData.length);
-        setLastFetchAt(new Date().toISOString());
-      } else if (ENABLE_WEATHER_FALLBACK) {
-        const weatherData: WeatherData[] = await weatherService.getAllLocationsWeather();
-        const synthesized = weatherData.map((weather) => ({
-          _id: `weather_${weather.deviceId}_${Date.now()}`,
-          deviceId: weather.deviceId,
-          temperature: weather.temperature,
-          humidity: weather.humidity,
-          moisture: weather.moisture,
-          ph: weather.ph,
-          ec: weather.ec,
-          nitrogen: weather.nitrogen,
-          phosphorus: weather.phosphorus,
-          potassium: weather.potassium,
-          waterLevel: weather.waterLevel,
-          timestamp: weather.timestamp,
-          status: weather.status,
-          batteryLevel: weather.batteryLevel,
-          signalStrength: weather.signalStrength,
-        }));
-        setLatestSensorData(synthesized);
-        setIsConnected(false);
-        setLastFetchCount(synthesized.length);
-        setLastFetchAt(new Date().toISOString());
-        setLastFetchError('Showing fallback weather data while waiting for live sensors.');
       } else {
         setLatestSensorData([]);
-        setIsConnected(false);
         setLastFetchCount(0);
-        setLastFetchAt(new Date().toISOString());
       }
 
       try {
@@ -133,12 +116,45 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         setLastFetchError((alertsErr?.message as string) || 'Failed to fetch alerts');
       }
     } catch (error: any) {
-      setLatestSensorData([]);
-      setRecentAlerts([]);
       setIsConnected(false);
-      setLastFetchCount(0);
       setLastFetchAt(new Date().toISOString());
-      setLastFetchError(error?.message || 'Unable to reach backend');
+
+      if (ENABLE_WEATHER_FALLBACK) {
+        try {
+          const weatherData: WeatherData[] = await weatherService.getAllLocationsWeather();
+          const synthesized = weatherData.map((weather) => ({
+            _id: `weather_${weather.deviceId}_${Date.now()}`,
+            deviceId: weather.deviceId,
+            temperature: weather.temperature,
+            humidity: weather.humidity,
+            moisture: weather.moisture,
+            ph: weather.ph,
+            ec: weather.ec,
+            nitrogen: weather.nitrogen,
+            phosphorus: weather.phosphorus,
+            potassium: weather.potassium,
+            waterLevel: weather.waterLevel,
+            timestamp: weather.timestamp,
+            status: weather.status,
+            batteryLevel: weather.batteryLevel,
+            signalStrength: weather.signalStrength,
+          }));
+          setLatestSensorData(synthesized);
+          setRecentAlerts([]);
+          setLastFetchCount(synthesized.length);
+          setLastFetchError('Backend unreachable. Showing fallback weather data.');
+        } catch (fallbackError: any) {
+          setLatestSensorData([]);
+          setRecentAlerts([]);
+          setLastFetchCount(0);
+          setLastFetchError(fallbackError?.message || error?.message || 'Unable to reach backend');
+        }
+      } else {
+        setLatestSensorData([]);
+        setRecentAlerts([]);
+        setLastFetchCount(0);
+        setLastFetchError(error?.message || 'Unable to reach backend');
+      }
     } finally {
       isCurrentlyLoading.current = false;
       setIsLoading(false);

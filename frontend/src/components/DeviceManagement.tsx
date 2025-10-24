@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Wifi, WifiOff, Settings, RefreshCw, Plus, Trash2, AlertTriangle } from 'lucide-react';
 
 type DeviceStatus = 'online' | 'offline';

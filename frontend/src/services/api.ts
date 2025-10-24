@@ -322,6 +322,12 @@ export const systemService = {
 let ensureAdminSessionPromise: Promise<boolean> | null = null;
 
 export async function ensureAdminSession(options: { force?: boolean } = {}) {
+  const autoSessionEnabled = String(process.env.REACT_APP_ENABLE_AUTO_ADMIN_SESSION || '').toLowerCase() === 'true';
+
+  if (!autoSessionEnabled) {
+    return false;
+  }
+
   if (typeof window === 'undefined') {
     return false;
   }

@@ -1,23 +1,46 @@
+struct SensorData {
+  float temperature;
+  float humidity;
+  float moisture;
+  float ph;
+  float ec;
+  float nitrogen;
+  float phosphorus;
+  float potassium;
+  int waterLevel;
+  float batteryLevel;
+  int signalStrength;
+};
+
+SensorData readSensors();
+SensorData readSoilSensor();
+void readNPKSensor(SensorData& data);
+float readBatteryLevel();
+void controlActuators(const SensorData& data);
+void sendSensorData(const SensorData& data);
+void storeOfflineData(const SensorData& data);
+void connectToWiFi();
+
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
-#include <SoftwareSerial.h>
+#include <HardwareSerial.h>
 #include <ModbusMaster.h>
 #include <Wire.h>
 #include <SPIFFS.h>
 
 // WiFi credentials
-const char* ssid = "YOUR_WIFI_SSID";
-const char* password = "YOUR_WIFI_PASSWORD";
+const char* ssid = "Knights_IOT_5G";
+const char* password = "smbcr-5540";
 
-// Backend API endpoint
-const char* serverUrl = "http://YOUR_BACKEND_IP:3000/api/sensors";
+// Backend API endpoint (update to reachable host for the ESP32)
+const char* serverUrl = "http://127.0.0.1:5000/api/sensors";
 
 // RS485/MODBUS configuration for soil sensor
 #define RS485_RX 16  // GPIO16
 #define RS485_TX 17  // GPIO17
 #define RS485_DE 18  // GPIO18 (DE/RE pin)
-SoftwareSerial rs485Serial(RS485_RX, RS485_TX);
+HardwareSerial rs485Serial(2);
 ModbusMaster node;
 
 // NPK sensor I2C address
@@ -37,20 +60,8 @@ const unsigned long sendInterval = 30000; // 30 seconds
 // Device ID
 const char* deviceId = "ESP32_001";
 
-// Sensor data structure
-struct SensorData {
-  float temperature;
-  float humidity;
-  float moisture;
-  float ph;
-  float ec;
-  float nitrogen;
-  float phosphorus;
-  float potassium;
-  int waterLevel;
-  float batteryLevel;
-  int signalStrength;
-};
+void preTransmission();
+void postTransmission();
 
 void setup() {
   Serial.begin(115200);
@@ -65,8 +76,10 @@ void setup() {
   // Initialize RS485
   pinMode(RS485_DE, OUTPUT);
   digitalWrite(RS485_DE, LOW);
-  rs485Serial.begin(9600);
+  rs485Serial.begin(9600, SERIAL_8N1, RS485_RX, RS485_TX);
   node.begin(1, rs485Serial); // Slave ID 1
+  node.preTransmission(preTransmission);
+  node.postTransmission(postTransmission);
 
   // Initialize I2C for NPK sensor
   Wire.begin();
@@ -84,6 +97,14 @@ void setup() {
   connectToWiFi();
 
   Serial.println("ESP32 Environmental Monitor initialized");
+}
+
+void preTransmission() {
+  digitalWrite(RS485_DE, HIGH);
+}
+
+void postTransmission() {
+  digitalWrite(RS485_DE, LOW);
 }
 
 void loop() {
@@ -126,10 +147,6 @@ SensorData readSensors() {
 SensorData readSoilSensor() {
   SensorData data = {0};
 
-  // Pre-transmission: Enable RS485 transmission
-  digitalWrite(RS485_DE, HIGH);
-  delay(10);
-
   // Read temperature (register 0x0001)
   uint8_t result = node.readHoldingRegisters(0x0001, 1);
   if (result == node.ku8MBSuccess) {
@@ -159,9 +176,6 @@ SensorData readSoilSensor() {
   if (result == node.ku8MBSuccess) {
     data.ec = node.getResponseBuffer(0) / 10.0;
   }
-
-  // Post-transmission: Disable RS485 transmission
-  digitalWrite(RS485_DE, LOW);
 
   return data;
 }

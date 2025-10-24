@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pause, Play, RefreshCw, Settings2 } from 'lucide-react';
+import { Pause, Play, RefreshCw, Settings2, WifiOff } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import { actuatorService, API_BASE_URL, ensureAdminSession } from '../services/api';
 import { Actuator } from '../types';
@@ -20,9 +20,12 @@ const ActuatorControls: React.FC<Props> = ({ className = '' }) => {
     return {
       id: Number(value.id),
       name: String(value.name || ''),
+      type: value.type ? String(value.type) : undefined,
       status: Boolean(value.status),
       mode: value.mode === 'manual' ? 'manual' : 'auto',
       lastUpdated: value.lastUpdated || new Date().toISOString(),
+      deviceAck: typeof value.deviceAck === 'boolean' ? value.deviceAck : undefined,
+      deviceAckMessage: value.deviceAckMessage ? String(value.deviceAckMessage) : null,
     };
   }, []);
 
@@ -87,14 +90,24 @@ const ActuatorControls: React.FC<Props> = ({ className = '' }) => {
     socket.on('disconnect', () => setSocketState('disconnected'));
     socket.on('connect_error', () => setSocketState('disconnected'));
 
-    socket.on('actuatorSnapshot', (snapshot: any) => {
+    const handleSnapshot = (snapshot: any) => {
       if (Array.isArray(snapshot)) {
         const sanitized = snapshot.map(sanitizeActuator).filter(Boolean) as Actuator[];
         setActuators(sanitized);
       }
-    });
+    };
+
+    socket.on('actuator_snapshot', handleSnapshot);
+    socket.on('actuatorSnapshot', handleSnapshot);
 
     socket.on('actuatorUpdate', (payload: any) => {
+      const normalized = sanitizeActuator(payload);
+      if (normalized) {
+        applyActuatorUpdate(normalized);
+      }
+    });
+
+    socket.on('actuator_update', (payload: any) => {
       const normalized = sanitizeActuator(payload);
       if (normalized) {
         applyActuatorUpdate(normalized);
@@ -126,12 +139,21 @@ const ActuatorControls: React.FC<Props> = ({ className = '' }) => {
       }
       setError(null);
     } catch (err: any) {
+      const fallback = err?.response?.data?.data;
+      if (fallback) {
+        const normalized = sanitizeActuator(fallback);
+        if (normalized) {
+          applyActuatorUpdate(normalized);
+        }
+      }
+
       const message = err?.response?.data?.message || err?.message || 'Unable to toggle actuator';
       setError(message);
+      await fetchActuators().catch(() => null);
     } finally {
       setPendingState(actuator.id, false);
     }
-  }, [applyActuatorUpdate, sanitizeActuator, setPendingState]);
+  }, [applyActuatorUpdate, fetchActuators, sanitizeActuator, setPendingState]);
 
   const handleModeSwitch = useCallback(async (actuator: Actuator) => {
     const nextMode: 'manual' | 'auto' = actuator.mode === 'manual' ? 'auto' : 'manual';
@@ -144,12 +166,21 @@ const ActuatorControls: React.FC<Props> = ({ className = '' }) => {
       }
       setError(null);
     } catch (err: any) {
+      const fallback = err?.response?.data?.data;
+      if (fallback) {
+        const normalized = sanitizeActuator(fallback);
+        if (normalized) {
+          applyActuatorUpdate(normalized);
+        }
+      }
+
       const message = err?.response?.data?.message || err?.message || 'Unable to change actuator mode';
       setError(message);
+      await fetchActuators().catch(() => null);
     } finally {
       setPendingState(actuator.id, false);
     }
-  }, [applyActuatorUpdate, sanitizeActuator, setPendingState]);
+  }, [applyActuatorUpdate, fetchActuators, sanitizeActuator, setPendingState]);
 
   const isPending = useCallback((id: number) => Boolean(pending[id]), [pending]);
 
@@ -171,7 +202,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '' }) => {
             Actuator Controls
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Monitor and manage solenoid valve, water pump, and ventilation fan states in real time.
+            Monitor and manage the water pump and solenoid valve in real time.
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -204,7 +235,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '' }) => {
       {isLoading && actuators.length === 0 ? (
         <div className="py-12 text-center text-sm text-gray-500 dark:text-gray-400">Loading actuators…</div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           {actuators.map((actuator) => {
             const statusLabel = actuator.status ? 'ON' : 'OFF';
             const statusClasses = actuator.status
@@ -214,6 +245,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '' }) => {
             const modeClasses = actuator.mode === 'manual'
               ? 'text-amber-600 dark:text-amber-300'
               : 'text-emerald-600 dark:text-emerald-300';
+            const hasAckIssue = actuator.deviceAck === false;
 
             return (
               <div key={actuator.id} className="rounded-xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900/80 p-5 shadow-sm">
@@ -230,6 +262,13 @@ const ActuatorControls: React.FC<Props> = ({ className = '' }) => {
                 <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
                   Last updated: {formatTimestamp(actuator.lastUpdated)}
                 </p>
+
+                {hasAckIssue && (
+                  <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/30 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
+                    <WifiOff className="w-4 h-4" />
+                    <span>{actuator.deviceAckMessage || 'ESP32 unreachable. Command not applied.'}</span>
+                  </div>
+                )}
 
                 <div className="mt-6 flex flex-col gap-2">
                   <button

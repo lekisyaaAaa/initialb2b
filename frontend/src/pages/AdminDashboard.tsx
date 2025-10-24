@@ -2,12 +2,13 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { Leaf, Bell, Check, Settings, Activity, Users, BarChart3, Calendar } from 'lucide-react';
+import { Bell, Check, Settings, Activity, Users, BarChart3, Calendar } from 'lucide-react';
 import SensorCharts from '../components/SensorCharts';
 import SystemHealth from '../components/SystemHealth';
 import SensorCard from '../components/SensorCard';
 import AlertsPanel from '../components/AlertsPanel';
 import DarkModeToggle from '../components/DarkModeToggle';
+import HeaderFrame from '../components/layout/HeaderFrame';
 import ActuatorControls from '../components/ActuatorControls';
 import { DeviceManagement } from '../components/DeviceManagement';
 import { ThresholdConfiguration } from '../components/ThresholdConfiguration';
@@ -33,6 +34,25 @@ type Sensor = {
 };
 
 type Alert = { id: string; _id?: string; type?: string; title: string; severity: 'info' | 'warning' | 'critical'; message?: string; createdAt: string; acknowledged?: boolean };
+
+type StatusPillProps = { label: string; status: string };
+
+const StatusPill: React.FC<StatusPillProps> = ({ label, status }) => {
+  const normalized = (status ?? '').toString().toLowerCase();
+  const healthyStates = new Set(['online', 'connected', 'ok', 'ready', 'healthy', 'up', 'available', 'reachable']);
+  const isHealthy = healthyStates.has(normalized);
+  const baseColor = isHealthy
+    ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+    : 'border-red-200 bg-red-50 text-red-700 dark:border-red-700 dark:bg-red-900/20 dark:text-red-300';
+
+  // Shared status pill keeps infrastructure metrics aligned between dashboards.
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-3 py-1 text-xs font-semibold capitalize ${baseColor}`}>
+      <span className={`h-2 w-2 rounded-full ${isHealthy ? 'bg-emerald-500' : 'bg-red-500'}`} />
+      {label}: {status}
+    </span>
+  );
+};
 
 export default function AdminDashboard(): React.ReactElement {
   const { user, logout } = useAuth();
@@ -169,23 +189,59 @@ export default function AdminDashboard(): React.ReactElement {
     let mounted = true;
     async function loadLatest() {
       try {
-        const start = Date.now();
-        const res = await fetch('/api/sensors/latest');
-        const end = Date.now();
-        if (!mounted) return;
+  const start = Date.now();
+  const res = await fetch('/api/sensors/latest', { cache: 'no-store' });
+  const end = Date.now();
+  if (!mounted) return;
+  const latency = end - start;
         if (res.ok) {
           const data = await res.json();
-          const s = data && data.data ? (data.data as Sensor) : null;
-          if (s) {
-            setLatestSensor(s);
-            setSensorHistory(prev => [...prev.slice(-199), s]);
-            setSystemStatus(prev => ({ ...prev, server: 'online', database: 'online', apiLatency: end - start }));
+          console.debug('AdminDashboard::loadLatest success', { latency, data });
+          const payload = data?.data;
+          let latestReading: Sensor | null = null;
+
+          if (Array.isArray(payload)) {
+            latestReading = (payload.length > 0 ? (payload[0] as Sensor) : null);
+          } else if (payload && typeof payload === 'object') {
+            latestReading = payload as Sensor;
           }
+
+          if (latestReading) {
+            setLatestSensor(latestReading);
+            setSensorHistory(prev => {
+              const next = [...prev.slice(-199), latestReading as Sensor];
+              return next;
+            });
+          }
+
+          const derivedDatabaseStatus = (data?.databaseStatus || data?.database?.status || data?.database || data?.metadata?.databaseStatus || 'online');
+          const serverStatus = (data?.status || data?.systemStatus || data?.serverStatus || data?.server || 'online');
+          const toStatusString = (value: unknown, fallback: string) => {
+            if (typeof value === 'string' && value.trim().length > 0) {
+              return value.trim().toLowerCase();
+            }
+            return fallback;
+          };
+          const healthyValue = (value: string) => (
+            ['online', 'connected', 'ok', 'ready', 'healthy', 'up', 'available', 'reachable'].includes(value)
+              ? 'online'
+              : value
+          );
+          const normalizedServerStatus = healthyValue(toStatusString(serverStatus, 'online'));
+          const normalizedDatabaseStatus = healthyValue(toStatusString(derivedDatabaseStatus, 'online'));
+
+          setSystemStatus({
+            server: normalizedServerStatus,
+            database: normalizedDatabaseStatus,
+            apiLatency: latency,
+          });
         } else {
-          setSystemStatus(prev => ({ ...prev, server: 'offline', apiLatency: end - start }));
+          console.debug('AdminDashboard::loadLatest non-200', { status: res.status, statusText: res.statusText });
+          setSystemStatus({ server: 'offline', database: 'offline', apiLatency: latency });
         }
       } catch (e) {
-        setSystemStatus(prev => ({ ...prev, server: 'offline', database: 'offline', apiLatency: 0 }));
+        console.warn('AdminDashboard::loadLatest error', e);
+        setSystemStatus({ server: 'offline', database: 'offline', apiLatency: 0 });
       }
     }
 
@@ -334,74 +390,46 @@ export default function AdminDashboard(): React.ReactElement {
   const AdminHeader: React.FC = () => {
     React.useEffect(() => {
       document.body.classList.add('has-admin-header');
-      return () => { document.body.classList.remove('has-admin-header'); };
+      return () => document.body.classList.remove('has-admin-header');
     }, []);
 
     return createPortal(
-      (
-        <header className="admin-fixed bg-gradient-to-r from-white via-coffee-50 to-white dark:from-gray-800 dark:via-gray-800 dark:to-gray-800 shadow-xl border-b border-coffee-200/50 dark:border-gray-700/50 backdrop-blur-sm bg-opacity-95" role="banner">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="flex justify-between items-center py-6">
-              <div className="flex items-center space-x-4">
-                <a href="/" className="group relative">
-                  <div className="letran-coffee-gradient rounded-xl p-3 shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200 group-hover:rotate-3">
-                    <Leaf className="h-7 w-7 text-white drop-shadow-sm" />
-                  </div>
-                </a>
-
-                <div className="flex flex-col">
-                  <div className="flex items-center space-x-2">
-                    <h1 className="site-title dark:site-title text-2xl font-bold">
-                      Bean<span className="site-accent bg-gradient-to-r from-teal-500 to-purple-600 bg-clip-text text-transparent">To</span>Bin
-                    </h1>
-                    <div className="hidden sm:flex items-center space-x-1">
-                      <div className="live-indicator">
-                        <div className="pulse-dot"></div>
-                        <span>Admin</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center space-x-3 mt-1">
-                    <p className="site-subtitle text-sm font-medium">Environmental Monitoring System</p>
-                    <div className="site-badge bg-gradient-to-r from-teal-50 to-purple-50 dark:from-teal-900/20 dark:to-purple-900/20 border-teal-200 dark:border-teal-700 text-teal-700 dark:text-teal-300 shadow-sm">
-                      <span>Admin Dashboard</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-6">
-                <div className="hidden md:flex items-center space-x-3 px-3 py-2 bg-green-50 dark:bg-green-900/20 rounded-full border border-green-200 dark:border-green-800">
-                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-sm" />
-                  <span className="text-sm font-medium text-green-700 dark:text-green-300">System Online</span>
-                </div>
-
-                <div className="hidden lg:flex items-center space-x-4 text-sm">
-                  <div className="flex items-center space-x-1 text-gray-600 dark:text-gray-300">
-                    <span className="font-medium">Server:</span>
-                    <span className={systemStatus.server === 'online' ? 'text-green-600' : 'text-red-600'}>{systemStatus.server}</span>
-                  </div>
-                  <div className="flex items-center space-x-1 text-gray-600 dark:text-gray-300">
-                    <span className="font-medium">DB:</span>
-                    <span className={systemStatus.database === 'online' ? 'text-green-600' : 'text-red-600'}>{systemStatus.database}</span>
-                  </div>
-                  <div className="flex items-center space-x-1 text-gray-600 dark:text-gray-300">
-                    <span className="font-medium">Latency:</span>
-                    <span>{systemStatus.apiLatency}ms</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-4">
-                  <button title="Logout" onClick={() => setShowLogoutConfirm(true)} className="px-3 py-2 rounded-lg border bg-gray-100 dark:bg-gray-800 text-sm">Logout</button>
-                  <DarkModeToggle />
-                </div>
+      <HeaderFrame
+        className="admin-fixed"
+        titleSuffix="Admin"
+        subtitle="Environmental Monitoring System"
+        badgeLabel="Admin Dashboard"
+        badgeTone="emerald"
+        contextTag={(
+          <div className="hidden sm:flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
+            <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+            System Online
+          </div>
+        )}
+        rightSlot={(
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-3">
+            <div className="hidden lg:flex items-center gap-3 text-sm text-coffee-500 dark:text-slate-200">
+              <StatusPill label="Server" status={systemStatus.server} />
+              <StatusPill label="DB" status={systemStatus.database} />
+              <div className="flex items-center gap-1">
+                <span className="font-medium">Latency:</span>
+                <span>{systemStatus.apiLatency}ms</span>
               </div>
             </div>
-          </div>
 
-          <div className="h-px bg-gradient-to-r from-transparent via-teal-300 dark:via-teal-600 to-transparent opacity-50"></div>
-        </header>
-      ),
+            <div className="flex items-center gap-3">
+              <button
+                title="Logout"
+                onClick={() => setShowLogoutConfirm(true)}
+                className="rounded-lg border border-coffee-200 bg-white px-3 py-2 text-sm font-medium text-coffee-700 transition-colors hover:border-coffee-300 hover:text-coffee-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              >
+                Logout
+              </button>
+              <DarkModeToggle />
+            </div>
+          </div>
+        )}
+      />,
       document.body
     );
   };

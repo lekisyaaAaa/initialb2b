@@ -7,281 +7,365 @@ const { auth, optionalAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
-// Broadcast data to WebSocket clients
+const toPlainObject = (record) => {
+  if (!record) return null;
+  if (typeof record.get === 'function') {
+    return record.get({ plain: true });
+  }
+  if (typeof record.toJSON === 'function') {
+    return record.toJSON();
+  }
+  if (typeof record.toObject === 'function') {
+    return record.toObject();
+  }
+  if (typeof record === 'object') {
+    return { ...record };
+  }
+  return null;
+};
+
+const ensureIsoString = (value) => {
+  if (!value) {
+    return new Date().toISOString();
+  }
+  try {
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) {
+      return new Date().toISOString();
+    }
+    return date.toISOString();
+  } catch (error) {
+    return new Date().toISOString();
+  }
+};
+
+const sanitizeAlertPayload = (alert) => {
+  const plainAlert = toPlainObject(alert) || {};
+  const sanitized = {
+    ...plainAlert,
+    createdAt: ensureIsoString(plainAlert.createdAt),
+    resolvedAt: plainAlert.resolvedAt ? ensureIsoString(plainAlert.resolvedAt) : null,
+    acknowledgedAt: plainAlert.acknowledgedAt ? ensureIsoString(plainAlert.acknowledgedAt) : null,
+  };
+  if (!sanitized._id && (sanitized.id || sanitized.ID)) {
+    sanitized._id = String(sanitized.id || sanitized.ID);
+  }
+  if (plainAlert.sensorData) {
+    sanitized.sensorData = sanitizeSensorPayload(plainAlert.sensorData, []);
+  }
+  return sanitized;
+};
+
+const sanitizeSensorPayload = (sensor, alerts = []) => {
+  const plainSensor = toPlainObject(sensor) || {};
+  const sanitized = {
+    ...plainSensor,
+    timestamp: ensureIsoString(plainSensor.timestamp),
+  };
+
+  if (!sanitized._id && (sanitized.id || sanitized.ID)) {
+    sanitized._id = String(sanitized.id || sanitized.ID);
+  }
+
+  const cleanAlerts = Array.isArray(alerts) ? alerts.map(sanitizeAlertPayload) : [];
+  if (cleanAlerts.length > 0) {
+    sanitized.alerts = cleanAlerts;
+  } else {
+    delete sanitized.alerts;
+  }
+
+  return sanitized;
+};
+
+// Broadcast data to connected clients (native WebSocket + Socket.IO)
 const broadcastSensorData = (data) => {
+  const payload = sanitizeSensorPayload(data, data && data.alerts ? data.alerts : []);
+
   if (global.wsConnections && global.wsConnections.size > 0) {
     const message = JSON.stringify({
       type: 'sensor_data',
-      data: data
+      data: payload
     });
-    
-    global.wsConnections.forEach(ws => {
-      if (ws.readyState === 1) { // WebSocket.OPEN
+
+    global.wsConnections.forEach((ws) => {
+      if (ws.readyState === 1) {
         try {
           ws.send(message);
         } catch (error) {
-            
           console.error('WebSocket send error:', error);
           global.wsConnections.delete(ws);
         }
       }
     });
   }
+
+  if (global.io && typeof global.io.emit === 'function') {
+    try {
+      global.io.emit('sensor_update', payload);
+      // Support legacy clients listening on old event name.
+      global.io.emit('newSensorData', payload);
+    } catch (error) {
+      console.warn('Socket.IO emit failed for sensor_update:', error && error.message ? error.message : error);
+    }
+  }
+
+  return payload;
 };
 
 // Helper function to check thresholds and create alerts
 const checkThresholds = async (sensorData) => {
   try {
+    const plainSensor = toPlainObject(sensorData) || {};
+
     // Guard: do not generate alerts for offline/imported/simulated data.
-    // Calls may include `isOfflineData=true` for historical or imported readings;
-    // only create alerts for real-time, live sensor packets.
-    if (sensorData && sensorData.isOfflineData) {
-      // Skip alert generation for offline or backfilled data
+    if (plainSensor.isOfflineData) {
       return [];
     }
 
     // Guard: ensure the reading timestamp is recent (avoid triggering alerts
-    // from very old/stale readings). If timestamp exists and is older than
-    // 15 minutes, treat as stale and do not generate alerts.
+    // from stale readings). Skip alerts for data older than 15 minutes.
     try {
-      const ts = sensorData.timestamp ? new Date(sensorData.timestamp) : null;
+      const rawTimestamp = plainSensor.timestamp || (sensorData && sensorData.timestamp);
+      const ts = rawTimestamp ? (rawTimestamp instanceof Date ? rawTimestamp : new Date(rawTimestamp)) : null;
       if (ts && (Date.now() - ts.getTime() > 15 * 60 * 1000)) {
-        // stale data, skip alerts
         return [];
       }
-    } catch (e) {
-      // ignore parsing errors and continue
+    } catch (error) {
+      // Ignore timestamp parsing issues and continue.
     }
+
     const settings = await Settings.getSettings();
-    const thresholds = settings.thresholds;
-    
-    const alerts = [];
-    // Normalize sensorData to a plain object for consistent handling
-    const plainSensor = sensorData && typeof sensorData.get === 'function'
-      ? sensorData.get({ plain: true })
-      : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData);
-    
-    // Check temperature
-    if (sensorData.temperature > thresholds.temperature.critical) {
-      alerts.push({
-        type: 'temperature',
-        severity: 'critical',
-        message: `Critical temperature: ${sensorData.temperature}°C (threshold: ${thresholds.temperature.critical}°C)`,
-        deviceId: sensorData.deviceId,
-  sensorData: sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData),
-        threshold: { value: thresholds.temperature.critical, operator: '>' }
+    const thresholds = (settings && settings.thresholds) || {};
+    const sanitizedSensor = sanitizeSensorPayload(plainSensor, []);
+
+    const alertsToCreate = [];
+    const pushAlert = ({ type, severity, message, threshold }) => {
+      const sensorSnapshot = JSON.parse(JSON.stringify(sanitizedSensor));
+      alertsToCreate.push({
+        type,
+        severity,
+        message,
+        threshold: threshold || null,
+        deviceId: sanitizedSensor.deviceId || null,
+        sensorData: sensorSnapshot,
+        createdAt: new Date(),
+        status: 'new',
       });
-    } else if (sensorData.temperature > thresholds.temperature.warning) {
-      alerts.push({
-        type: 'temperature',
-        severity: 'high',
-        message: `High temperature: ${sensorData.temperature}°C (threshold: ${thresholds.temperature.warning}°C)`,
-        deviceId: sensorData.deviceId,
-  sensorData: sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData),
-        threshold: { value: thresholds.temperature.warning, operator: '>' }
-      });
+    };
+
+    const temperatureThresholds = thresholds.temperature || {};
+    if (typeof plainSensor.temperature === 'number') {
+      const { warning, critical } = temperatureThresholds;
+      if (typeof critical === 'number' && plainSensor.temperature > critical) {
+        pushAlert({
+          type: 'temperature',
+          severity: 'critical',
+          message: `Critical temperature: ${plainSensor.temperature}°C (threshold: ${critical}°C)`,
+          threshold: { value: critical, operator: '>' },
+        });
+      } else if (typeof warning === 'number' && plainSensor.temperature > warning) {
+        pushAlert({
+          type: 'temperature',
+          severity: 'high',
+          message: `High temperature: ${plainSensor.temperature}°C (threshold: ${warning}°C)`,
+          threshold: { value: warning, operator: '>' },
+        });
+      }
     }
-    
-    // Check humidity
-    if (sensorData.humidity > thresholds.humidity.critical) {
-      alerts.push({
-        type: 'humidity',
-        severity: 'critical',
-        message: `Critical humidity: ${sensorData.humidity}% (threshold: ${thresholds.humidity.critical}%)`,
-        deviceId: sensorData.deviceId,
-  sensorData: sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData),
-        threshold: { value: thresholds.humidity.critical, operator: '>' }
-      });
-    } else if (sensorData.humidity > thresholds.humidity.warning) {
-      alerts.push({
-        type: 'humidity',
-        severity: 'high',
-        message: `High humidity: ${sensorData.humidity}% (threshold: ${thresholds.humidity.warning}%)`,
-        deviceId: sensorData.deviceId,
-  sensorData: sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData),
-        threshold: { value: thresholds.humidity.warning, operator: '>' }
-      });
+
+    const humidityThresholds = thresholds.humidity || {};
+    if (typeof plainSensor.humidity === 'number') {
+      const { warning, critical } = humidityThresholds;
+      if (typeof critical === 'number' && plainSensor.humidity > critical) {
+        pushAlert({
+          type: 'humidity',
+          severity: 'critical',
+          message: `Critical humidity: ${plainSensor.humidity}% (threshold: ${critical}%)`,
+          threshold: { value: critical, operator: '>' },
+        });
+      } else if (typeof warning === 'number' && plainSensor.humidity > warning) {
+        pushAlert({
+          type: 'humidity',
+          severity: 'high',
+          message: `High humidity: ${plainSensor.humidity}% (threshold: ${warning}%)`,
+          threshold: { value: warning, operator: '>' },
+        });
+      }
     }
-    
-    // Check moisture (low moisture is bad)
-  if (plainSensor.moisture < thresholds.moisture.critical) {
-      alerts.push({
-        type: 'moisture',
-        severity: 'critical',
-        message: `Critical low moisture: ${sensorData.moisture}% (threshold: ${thresholds.moisture.critical}%)`,
-        deviceId: sensorData.deviceId,
-    sensorData: plainSensor,
-        threshold: { value: thresholds.moisture.critical, operator: '<' }
-      });
-    } else if (sensorData.moisture < thresholds.moisture.warning) {
-      alerts.push({
-        type: 'moisture',
-        severity: 'medium',
-        message: `Low moisture: ${sensorData.moisture}% (threshold: ${thresholds.moisture.warning}%)`,
-        deviceId: sensorData.deviceId,
-    sensorData: plainSensor,
-        threshold: { value: thresholds.moisture.warning, operator: '<' }
-      });
+
+    const moistureThresholds = thresholds.moisture || {};
+    if (typeof plainSensor.moisture === 'number') {
+      const { warning, critical } = moistureThresholds;
+      if (typeof critical === 'number' && plainSensor.moisture < critical) {
+        pushAlert({
+          type: 'moisture',
+          severity: 'critical',
+          message: `Critical low moisture: ${plainSensor.moisture}% (threshold: ${critical}%)`,
+          threshold: { value: critical, operator: '<' },
+        });
+      } else if (typeof warning === 'number' && plainSensor.moisture < warning) {
+        pushAlert({
+          type: 'moisture',
+          severity: 'medium',
+          message: `Low moisture: ${plainSensor.moisture}% (threshold: ${warning}%)`,
+          threshold: { value: warning, operator: '<' },
+        });
+      }
     }
-    
-    // Check pH level
-    if (plainSensor.ph !== undefined) {
-      if (plainSensor.ph < thresholds.ph.minCritical || plainSensor.ph > thresholds.ph.maxCritical) {
-        alerts.push({
+
+    const phThresholds = thresholds.ph || {};
+    if (typeof plainSensor.ph === 'number') {
+      const { minCritical, maxCritical, minWarning, maxWarning } = phThresholds;
+      if ((typeof minCritical === 'number' && plainSensor.ph < minCritical) ||
+          (typeof maxCritical === 'number' && plainSensor.ph > maxCritical)) {
+        pushAlert({
           type: 'ph',
           severity: 'critical',
-          message: `Critical pH level: ${plainSensor.ph} (threshold: ${thresholds.ph.minCritical}-${thresholds.ph.maxCritical})`,
-          deviceId: plainSensor.deviceId,
-          sensorData: plainSensor,
-          threshold: { value: [thresholds.ph.minCritical, thresholds.ph.maxCritical], operator: 'outside' }
+          message: `Critical pH level: ${plainSensor.ph} (threshold: ${minCritical}-${maxCritical})`,
+          threshold: { value: [minCritical, maxCritical], operator: 'outside' },
         });
-      } else if (plainSensor.ph < thresholds.ph.minWarning || plainSensor.ph > thresholds.ph.maxWarning) {
-        alerts.push({
+      } else if ((typeof minWarning === 'number' && plainSensor.ph < minWarning) ||
+                 (typeof maxWarning === 'number' && plainSensor.ph > maxWarning)) {
+        pushAlert({
           type: 'ph',
           severity: 'high',
-          message: `Warning pH level: ${plainSensor.ph} (threshold: ${thresholds.ph.minWarning}-${thresholds.ph.maxWarning})`,
-          deviceId: plainSensor.deviceId,
-          sensorData: plainSensor,
-          threshold: { value: [thresholds.ph.minWarning, thresholds.ph.maxWarning], operator: 'outside' }
+          message: `Warning pH level: ${plainSensor.ph} (threshold: ${minWarning}-${maxWarning})`,
+          threshold: { value: [minWarning, maxWarning], operator: 'outside' },
         });
       }
     }
-    
-    // Check EC level
-    if (plainSensor.ec !== undefined) {
-      if (plainSensor.ec > thresholds.ec.critical) {
-        alerts.push({
+
+    const ecThresholds = thresholds.ec || {};
+    if (typeof plainSensor.ec === 'number') {
+      const { warning, critical } = ecThresholds;
+      if (typeof critical === 'number' && plainSensor.ec > critical) {
+        pushAlert({
           type: 'ec',
           severity: 'critical',
-          message: `Critical EC level: ${plainSensor.ec} mS/cm (threshold: ${thresholds.ec.critical} mS/cm)`,
-          deviceId: plainSensor.deviceId,
-          sensorData: plainSensor,
-          threshold: { value: thresholds.ec.critical, operator: '>' }
+          message: `Critical EC level: ${plainSensor.ec} mS/cm (threshold: ${critical} mS/cm)`,
+          threshold: { value: critical, operator: '>' },
         });
-      } else if (plainSensor.ec > thresholds.ec.warning) {
-        alerts.push({
+      } else if (typeof warning === 'number' && plainSensor.ec > warning) {
+        pushAlert({
           type: 'ec',
           severity: 'high',
-          message: `High EC level: ${plainSensor.ec} mS/cm (threshold: ${thresholds.ec.warning} mS/cm)`,
-          deviceId: plainSensor.deviceId,
-          sensorData: plainSensor,
-          threshold: { value: thresholds.ec.warning, operator: '>' }
+          message: `High EC level: ${plainSensor.ec} mS/cm (threshold: ${warning} mS/cm)`,
+          threshold: { value: warning, operator: '>' },
         });
       }
     }
-    
-    // Check nitrogen level
-    if (plainSensor.nitrogen !== undefined) {
-      if (plainSensor.nitrogen < thresholds.nitrogen.minCritical) {
-        alerts.push({
+
+    const nitrogenThresholds = thresholds.nitrogen || {};
+    if (typeof plainSensor.nitrogen === 'number') {
+      const { minWarning, minCritical } = nitrogenThresholds;
+      if (typeof minCritical === 'number' && plainSensor.nitrogen < minCritical) {
+        pushAlert({
           type: 'nitrogen',
           severity: 'critical',
-          message: `Critical low nitrogen: ${plainSensor.nitrogen} mg/kg (threshold: ${thresholds.nitrogen.minCritical} mg/kg)`,
-          deviceId: plainSensor.deviceId,
-          sensorData: plainSensor,
-          threshold: { value: thresholds.nitrogen.minCritical, operator: '<' }
+          message: `Critical low nitrogen: ${plainSensor.nitrogen} mg/kg (threshold: ${minCritical} mg/kg)`,
+          threshold: { value: minCritical, operator: '<' },
         });
-      } else if (plainSensor.nitrogen < thresholds.nitrogen.minWarning) {
-        alerts.push({
+      } else if (typeof minWarning === 'number' && plainSensor.nitrogen < minWarning) {
+        pushAlert({
           type: 'nitrogen',
           severity: 'medium',
-          message: `Low nitrogen: ${plainSensor.nitrogen} mg/kg (threshold: ${thresholds.nitrogen.minWarning} mg/kg)`,
-          deviceId: plainSensor.deviceId,
-          sensorData: plainSensor,
-          threshold: { value: thresholds.nitrogen.minWarning, operator: '<' }
+          message: `Low nitrogen: ${plainSensor.nitrogen} mg/kg (threshold: ${minWarning} mg/kg)`,
+          threshold: { value: minWarning, operator: '<' },
         });
       }
     }
-    
-    // Check phosphorus level
-    if (plainSensor.phosphorus !== undefined) {
-      if (plainSensor.phosphorus < thresholds.phosphorus.minCritical) {
-        alerts.push({
+
+    const phosphorusThresholds = thresholds.phosphorus || {};
+    if (typeof plainSensor.phosphorus === 'number') {
+      const { minWarning, minCritical } = phosphorusThresholds;
+      if (typeof minCritical === 'number' && plainSensor.phosphorus < minCritical) {
+        pushAlert({
           type: 'phosphorus',
           severity: 'critical',
-          message: `Critical low phosphorus: ${plainSensor.phosphorus} mg/kg (threshold: ${thresholds.phosphorus.minCritical} mg/kg)`,
-          deviceId: plainSensor.deviceId,
-          sensorData: plainSensor,
-          threshold: { value: thresholds.phosphorus.minCritical, operator: '<' }
+          message: `Critical low phosphorus: ${plainSensor.phosphorus} mg/kg (threshold: ${minCritical} mg/kg)`,
+          threshold: { value: minCritical, operator: '<' },
         });
-      } else if (plainSensor.phosphorus < thresholds.phosphorus.minWarning) {
-        alerts.push({
+      } else if (typeof minWarning === 'number' && plainSensor.phosphorus < minWarning) {
+        pushAlert({
           type: 'phosphorus',
           severity: 'medium',
-          message: `Low phosphorus: ${plainSensor.phosphorus} mg/kg (threshold: ${thresholds.phosphorus.minWarning} mg/kg)`,
-          deviceId: plainSensor.deviceId,
-          sensorData: plainSensor,
-          threshold: { value: thresholds.phosphorus.minWarning, operator: '<' }
+          message: `Low phosphorus: ${plainSensor.phosphorus} mg/kg (threshold: ${minWarning} mg/kg)`,
+          threshold: { value: minWarning, operator: '<' },
         });
       }
     }
-    
-    // Check potassium level
-    if (plainSensor.potassium !== undefined) {
-      if (plainSensor.potassium < thresholds.potassium.minCritical) {
-        alerts.push({
+
+    const potassiumThresholds = thresholds.potassium || {};
+    if (typeof plainSensor.potassium === 'number') {
+      const { minWarning, minCritical } = potassiumThresholds;
+      if (typeof minCritical === 'number' && plainSensor.potassium < minCritical) {
+        pushAlert({
           type: 'potassium',
           severity: 'critical',
-          message: `Critical low potassium: ${plainSensor.potassium} mg/kg (threshold: ${thresholds.potassium.minCritical} mg/kg)`,
-          deviceId: plainSensor.deviceId,
-          sensorData: plainSensor,
-          threshold: { value: thresholds.potassium.minCritical, operator: '<' }
+          message: `Critical low potassium: ${plainSensor.potassium} mg/kg (threshold: ${minCritical} mg/kg)`,
+          threshold: { value: minCritical, operator: '<' },
         });
-      } else if (plainSensor.potassium < thresholds.potassium.minWarning) {
-        alerts.push({
+      } else if (typeof minWarning === 'number' && plainSensor.potassium < minWarning) {
+        pushAlert({
           type: 'potassium',
           severity: 'medium',
-          message: `Low potassium: ${plainSensor.potassium} mg/kg (threshold: ${thresholds.potassium.minWarning} mg/kg)`,
-          deviceId: plainSensor.deviceId,
-          sensorData: plainSensor,
-          threshold: { value: thresholds.potassium.minWarning, operator: '<' }
+          message: `Low potassium: ${plainSensor.potassium} mg/kg (threshold: ${minWarning} mg/kg)`,
+          threshold: { value: minWarning, operator: '<' },
         });
       }
     }
-    
-    // Check water level
+
+    const waterLevelThresholds = thresholds.waterLevel || {};
     if (plainSensor.waterLevel !== undefined) {
-      if (plainSensor.waterLevel === thresholds.waterLevel.critical) {
-        alerts.push({
+      const { critical } = waterLevelThresholds;
+      if (critical !== undefined && plainSensor.waterLevel === critical) {
+        pushAlert({
           type: 'water_level',
           severity: 'critical',
-          message: `Critical water level: No water detected`,
-          deviceId: plainSensor.deviceId,
-          sensorData: plainSensor,
-          threshold: { value: thresholds.waterLevel.critical, operator: '==' }
+          message: 'Critical water level: No water detected',
+          threshold: { value: critical, operator: '==' },
         });
       }
     }
-    
-    // Check battery level if provided
-    if (plainSensor.batteryLevel !== undefined) {
-      if (plainSensor.batteryLevel < thresholds.batteryLevel.critical) {
-        alerts.push({
+
+    const batteryThresholds = thresholds.batteryLevel || {};
+    if (typeof plainSensor.batteryLevel === 'number') {
+      const { warning, critical } = batteryThresholds;
+      if (typeof critical === 'number' && plainSensor.batteryLevel < critical) {
+        pushAlert({
           type: 'battery_low',
           severity: 'critical',
-          message: `Critical battery level: ${plainSensor.batteryLevel}% (threshold: ${thresholds.batteryLevel.critical}%)`,
-          deviceId: plainSensor.deviceId,
-          sensorData: plainSensor,
-          threshold: { value: thresholds.batteryLevel.critical, operator: '<' }
+          message: `Critical battery level: ${plainSensor.batteryLevel}% (threshold: ${critical}%)`,
+          threshold: { value: critical, operator: '<' },
         });
-      } else if (sensorData.batteryLevel < thresholds.batteryLevel.warning) {
-        alerts.push({
+      } else if (typeof warning === 'number' && plainSensor.batteryLevel < warning) {
+        pushAlert({
           type: 'battery_low',
           severity: 'medium',
-          message: `Low battery level: ${plainSensor.batteryLevel}% (threshold: ${thresholds.batteryLevel.warning}%)`,
-          deviceId: plainSensor.deviceId,
-          sensorData: plainSensor,
-          threshold: { value: thresholds.batteryLevel.warning, operator: '<' }
+          message: `Low battery level: ${plainSensor.batteryLevel}% (threshold: ${warning}%)`,
+          threshold: { value: warning, operator: '<' },
         });
       }
     }
-    
-    // Create alerts in database
-    for (const alertData of alerts) {
-      await Alert.createAlert(alertData);
+
+    if (alertsToCreate.length === 0) {
+      return [];
     }
-    
-    return alerts;
+
+    const persistedAlerts = [];
+    for (const alertData of alertsToCreate) {
+      const created = await Alert.createAlert(alertData);
+      const createdPlain = toPlainObject(created) || {};
+      persistedAlerts.push(
+        sanitizeAlertPayload({
+          ...alertData,
+          ...createdPlain,
+          sensorData: alertData.sensorData,
+        })
+      );
+    }
+
+    return persistedAlerts;
   } catch (error) {
     console.error('Error checking thresholds:', error);
     return [];

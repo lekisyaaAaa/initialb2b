@@ -24,7 +24,7 @@ const HomePage: React.FC = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-coffee-100 to-primary-100 dark:from-gray-900 dark:to-gray-800">
       {/* Header Navigation */}
-      <header className="bg-white dark:bg-gray-900 shadow-lg border-b border-coffee-200 dark:border-gray-700 letran-nav-accent">
+  <header className="site-header bg-white dark:bg-gray-900 shadow-lg border-b border-coffee-200 dark:border-gray-700 letran-nav-accent">
         <nav className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center py-4">
             <div className="flex items-center">
@@ -40,7 +40,6 @@ const HomePage: React.FC = () => {
             </div>
             <div className="flex items-center space-x-6">
               <Link to="/dashboard" className="text-espresso-700 dark:text-gray-300 hover:text-letran-600 dark:hover:text-letran-400 transition-colors">Dashboard</Link>
-              <Link to="/mock-dashboard" className="text-espresso-700 dark:text-gray-300 hover:text-letran-600 dark:hover:text-letran-400 transition-colors">Demo Dashboard</Link>
               <Link to="/contact" className="text-espresso-700 dark:text-gray-300 hover:text-letran-600 dark:hover:text-letran-400 transition-colors">Contact</Link>
               {/* Dark Mode Toggle */}
               <DarkModeToggle />

@@ -2,6 +2,8 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User, AuthContextType } from '../types';
 import api, { authService, discoverApi, ensureAdminSession } from '../services/api';
 
+const AUTO_ADMIN_SESSION_ENABLED = String(process.env.REACT_APP_ENABLE_AUTO_ADMIN_SESSION || '').toLowerCase() === 'true';
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 interface AuthProviderProps {
@@ -64,10 +66,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             }
           } else {
             let restored = false;
-            try {
-              restored = await ensureAdminSession({ force: true });
-            } catch (ensureErr) {
-              restored = false;
+            if (AUTO_ADMIN_SESSION_ENABLED) {
+              try {
+                restored = await ensureAdminSession({ force: true });
+              } catch (ensureErr) {
+                restored = false;
+              }
             }
 
             if (restored) {

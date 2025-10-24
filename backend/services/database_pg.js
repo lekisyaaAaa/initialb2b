@@ -1,4 +1,5 @@
 const { Sequelize } = require('sequelize');
+const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
 
@@ -17,19 +18,42 @@ const baseOptions = {
 	}
 };
 
-const useConnectionUrl = Boolean(process.env.DATABASE_URL && !process.env.DB_NAME);
+const preferSqlite = (() => {
+	const flag = (process.env.USE_SQLITE || process.env.DB_DIALECT || '').toString().toLowerCase();
+	return flag === 'true' || flag === '1' || flag === 'sqlite';
+})();
 
-let sequelize;
+const useConnectionUrl = !preferSqlite && Boolean(process.env.DATABASE_URL && !process.env.DB_NAME);
 
-if (useConnectionUrl) {
-	sequelize = new Sequelize(process.env.DATABASE_URL, {
+const ensureSqliteStorage = () => {
+	const storageDir = path.join(__dirname, '..', 'data');
+	if (!fs.existsSync(storageDir)) {
+		fs.mkdirSync(storageDir, { recursive: true });
+	}
+	return process.env.DB_STORAGE || path.join(storageDir, process.env.DB_SQLITE_FILENAME || 'dev.sqlite');
+};
+
+const createSqliteInstance = () => {
+	const storage = ensureSqliteStorage();
+	console.log(`Using SQLite dev DB at ${storage}`);
+	return new Sequelize({
 		...baseOptions,
-		dialect: 'postgres',
-		dialectOptions: {
-			ssl: process.env.PGSSLMODE === 'require' ? { rejectUnauthorized: false } : false
-		}
+		dialect: 'sqlite',
+		storage
 	});
-} else {
+};
+
+const createPostgresInstance = () => {
+	if (useConnectionUrl) {
+		return new Sequelize(process.env.DATABASE_URL, {
+			...baseOptions,
+			dialect: 'postgres',
+			dialectOptions: {
+				ssl: process.env.PGSSLMODE === 'require' ? { rejectUnauthorized: false } : false
+			}
+		});
+	}
+
 	const dialect = (process.env.DB_DIALECT || 'postgres').toLowerCase();
 	const connectionOptions = {
 		...baseOptions,
@@ -43,19 +67,24 @@ if (useConnectionUrl) {
 		connectionOptions.dialectOptions.ssl = { rejectUnauthorized: false };
 	}
 
-	sequelize = new Sequelize(
+	return new Sequelize(
 		process.env.DB_NAME,
 		process.env.DB_USER,
 		process.env.DB_PASS,
 		connectionOptions
 	);
-}
+};
+
+let sequelize = preferSqlite ? createSqliteInstance() : createPostgresInstance();
+let currentDialect = preferSqlite ? 'sqlite' : 'postgres';
 
 const connectDB = async () => {
 	try {
 		await sequelize.authenticate();
-		const dialect = sequelize.getDialect();
-		const connectionLabel = useConnectionUrl ? 'connection URL' : `${dialect}://${process.env.DB_HOST}:${process.env.DB_PORT || '(default port)'}`;
+		currentDialect = sequelize.getDialect();
+		const connectionLabel = currentDialect === 'sqlite'
+			? `sqlite://${ensureSqliteStorage()}`
+			: (useConnectionUrl ? 'connection URL' : `${currentDialect}://${process.env.DB_HOST}:${process.env.DB_PORT || '(default port)'}`);
 		console.log(`✅ Database connected successfully via ${connectionLabel}`);
 	} catch (error) {
 		console.error('❌ Unable to connect to the database:', error.message);
@@ -68,3 +97,4 @@ const connectDB = async () => {
 
 module.exports = sequelize;
 module.exports.connectDB = connectDB;
+module.exports.getActiveDialect = () => currentDialect;

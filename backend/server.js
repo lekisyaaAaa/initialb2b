@@ -67,8 +67,11 @@ io.on('connection', async (socket) => {
   console.log('Socket.IO client connected', socket.id);
   try {
     const actuators = await listActuators();
+    socket.emit('actuator_snapshot', actuators);
+    // Backward compatibility during migration
     socket.emit('actuatorSnapshot', actuators);
   } catch (error) {
+    socket.emit('actuator_snapshot', []);
     socket.emit('actuatorSnapshot', []);
   }
 

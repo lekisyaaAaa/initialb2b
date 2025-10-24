@@ -3,6 +3,57 @@
 @tailwind utilities;
 
 /* Custom base styles */
+:root {
+  color-scheme: light;
+  --page-background: radial-gradient(circle at 20% 18%, #f9f5f1 0%, #f2e5d8 46%, #e8d3bf 100%);
+  --surface-color: rgba(255, 252, 247, 0.97);
+  --surface-alt: rgba(248, 237, 225, 0.9);
+  --surface-glass: rgba(255, 240, 227, 0.82);
+  --surface-border: rgba(118, 84, 58, 0.14);
+  --surface-border-strong: rgba(118, 84, 58, 0.26);
+  --shadow-soft: 0 22px 44px -28px rgba(109, 76, 51, 0.38);
+  --shadow-hover: 0 30px 52px -30px rgba(109, 76, 51, 0.48);
+  --shadow-card: 0 24px 54px -32px rgba(109, 76, 51, 0.42);
+  --text-primary: #2f231b;
+  --text-secondary: #5a4231;
+  --text-muted: #856c5a;
+  --accent-primary: #b46a3a;
+  --accent-secondary: #8a4f2a;
+  --accent-tertiary: #57341f;
+  --divider-soft: rgba(160, 118, 88, 0.26);
+  --badge-background: rgba(180, 106, 61, 0.15);
+  --header-background: linear-gradient(120deg, rgba(255, 252, 246, 0.98), rgba(244, 229, 211, 0.94));
+  --header-border: rgba(148, 108, 76, 0.18);
+  --header-shadow: 0 18px 34px -22px rgba(96, 68, 46, 0.35);
+  --header-text: #2f231b;
+  --interactive-shadow: 0 16px 28px -20px rgba(122, 86, 57, 0.36);
+}
+
+.dark {
+  color-scheme: dark;
+  --page-background: radial-gradient(circle at 18% 18%, #0f172a 0%, #020617 70%);
+  --surface-color: rgba(15, 23, 42, 0.88);
+  --surface-alt: rgba(15, 23, 42, 0.82);
+  --surface-glass: rgba(15, 23, 42, 0.72);
+  --surface-border: rgba(148, 163, 184, 0.08);
+  --surface-border-strong: rgba(148, 163, 184, 0.16);
+  --shadow-soft: 0 30px 60px -35px rgba(0, 0, 0, 0.75);
+  --shadow-hover: 0 40px 80px -40px rgba(0, 0, 0, 0.78);
+  --shadow-card: 0 24px 55px -36px rgba(0, 0, 0, 0.72);
+  --text-primary: rgba(241, 245, 249, 0.97);
+  --text-secondary: rgba(226, 232, 240, 0.75);
+  --text-muted: rgba(148, 163, 184, 0.66);
+  --accent-primary: #22d3ee;
+  --accent-secondary: #60a5fa;
+  --accent-tertiary: #c084fc;
+  --divider-soft: rgba(100, 116, 139, 0.22);
+  --badge-background: rgba(94, 234, 212, 0.12);
+  --header-background: linear-gradient(120deg, rgba(18, 24, 38, 0.94), rgba(12, 17, 28, 0.9)); /* keeps dark header neutral so text remains legible */
+  --header-border: rgba(148, 163, 184, 0.12); /* subtle cool edge for structure in dark mode */
+  --header-shadow: 0 24px 40px -24px rgba(0, 0, 0, 0.7);
+  --header-text: rgba(241, 245, 249, 0.97);
+}
+
 @layer base {
   html {
     @apply scroll-smooth;
@@ -10,7 +61,12 @@
   
   body {
     @apply bg-coffee-50 text-espresso-900 font-sans antialiased;
+    background: var(--page-background);
+    color: var(--text-primary);
+    min-height: 100vh;
+    background-attachment: fixed;
     padding-top: 0; /* only add top padding when a fixed header is present */
+    line-height: 1.55;
   }
 
   /* When the admin/header portal is mounted, add top padding to the body
@@ -18,6 +74,50 @@
      is scoped to `header.admin-fixed` so regular headers are unaffected. */
   body.has-admin-header {
     padding-top: var(--admin-header-height);
+  }
+}
+
+@layer base {
+  body:not(.dark) main {
+    color: var(--text-secondary);
+  }
+
+  body:not(.dark) strong,
+  body:not(.dark) h1,
+  body:not(.dark) h2,
+  body:not(.dark) h3,
+  body:not(.dark) h4,
+  body:not(.dark) h5,
+  body:not(.dark) h6 {
+    color: var(--text-primary);
+  }
+
+  body:not(.dark) p,
+  body:not(.dark) span,
+  body:not(.dark) li {
+    color: inherit;
+  }
+
+  body a {
+    color: var(--accent-secondary);
+    transition: color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  body a:hover,
+  body a:focus-visible {
+    color: var(--accent-primary);
+  }
+
+  body:not(.dark) hr {
+    border-color: var(--divider-soft);
+  }
+
+  body:not(.dark) .badge,
+  body:not(.dark) .site-badge,
+  body:not(.dark) .letran-badge {
+    background: var(--badge-background);
+    color: var(--accent-primary);
+    border: 1px solid rgba(15, 118, 110, 0.18);
   }
 }
 
@@ -59,6 +159,7 @@ header.admin-fixed {
 @layer components {
   .btn {
     @apply px-4 py-2 rounded-lg font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2;
+    box-shadow: 0 8px 20px -12px rgba(15, 23, 42, 0.18);
   }
   
   .btn-primary {
@@ -83,10 +184,21 @@ header.admin-fixed {
   
   .card {
     @apply bg-white rounded-xl shadow-lg border border-coffee-200 p-6;
+    background: var(--surface-color);
+    border-color: var(--surface-border);
+    box-shadow: var(--shadow-card);
+    transition: transform 0.22s ease, box-shadow 0.22s ease;
+  }
+
+  body:not(.dark) .card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-hover);
   }
   
   .input {
     @apply block w-full rounded-lg border-coffee-300 shadow-sm focus:border-primary-500 focus:ring-primary-500;
+    background: var(--surface-alt);
+    border-color: var(--surface-border);
   }
   
   .alert {
@@ -111,7 +223,7 @@ header.admin-fixed {
 
   /* Coffee-themed custom components */
   .coffee-gradient {
-  background: linear-gradient(135deg, #f5f7fb 0%, #cfeef5 100%);
+    background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(244,248,255,0.94));
   }
   
   .espresso-gradient {
@@ -129,19 +241,46 @@ header.admin-fixed {
   
   .coffee-card {
     @apply bg-white rounded-xl shadow-lg border border-coffee-200 p-6 hover:shadow-xl transition-shadow duration-200;
-    background: linear-gradient(145deg, #ffffff 0%, #fefdf9 100%);
-  border-left: 4px solid #00BFA6; /* updated accent to teal */
+    background: var(--surface-color);
+    border-left: 4px solid var(--accent-primary);
+    box-shadow: var(--shadow-card);
   }
 
   .coffee-card-alt {
     @apply bg-white rounded-xl shadow-lg border border-coffee-200 p-6 hover:shadow-xl transition-shadow duration-200;
-    background: linear-gradient(145deg, #ffffff 0%, #fefdf9 100%);
-  border-top: 3px solid #00BFA6; /* updated accent to teal */
+    background: var(--surface-alt);
+    border-top: 3px solid var(--accent-primary);
+    box-shadow: var(--shadow-card);
   }
-  
+
   .coffee-button {
     @apply bg-primary-600 hover:bg-primary-700 text-white px-4 py-2 rounded-lg font-medium transition-all duration-200 shadow-md hover:shadow-lg;
-  background: linear-gradient(135deg, #00BFA6 0%, #03A9F4 100%); /* teal -> cyan */
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    box-shadow: 0 16px 30px -18px rgba(0, 0, 0, 0.45);
+  }
+
+  body:not(.dark) .coffee-gradient {
+    background: linear-gradient(140deg, #fdf1e3 0%, #f1d7b8 100%);
+  }
+
+  body:not(.dark) .coffee-card {
+    background: linear-gradient(155deg, rgba(255,249,243,0.96) 0%, rgba(250,232,212,0.92) 100%);
+    border-left: 4px solid rgba(194, 124, 78, 0.65);
+  }
+
+  body:not(.dark) .coffee-card-alt {
+    background: linear-gradient(160deg, rgba(255,246,234,0.95) 0%, rgba(247,225,198,0.9) 100%);
+    border-top: 3px solid rgba(194, 124, 78, 0.65);
+  }
+
+  body:not(.dark) .coffee-button {
+    background: linear-gradient(135deg, #d8a66c 0%, #c27c4e 100%);
+    box-shadow: 0 16px 30px -18px rgba(171, 111, 60, 0.55);
+  }
+
+  .dark .coffee-button {
+    background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
+    box-shadow: 0 16px 30px -18px rgba(14, 165, 233, 0.55);
   }
 
   .letran-button {
@@ -157,6 +296,8 @@ header.admin-fixed {
   
   .coffee-input {
     @apply w-full px-3 py-2 border border-coffee-300 rounded-lg focus:ring-2 focus:ring-letran-500 focus:border-letran-500 bg-white placeholder-espresso-400;
+    background: var(--surface-alt);
+    border-color: var(--surface-border);
   }
 
   /* Letran accent elements */
@@ -175,7 +316,7 @@ header.admin-fixed {
     font-size: clamp(1.125rem, 1.8vw, 1.375rem); /* 18px -> 22px max */
     font-weight: 800;
     letter-spacing: -0.0125em;
-    color: var(--heading, #111827);
+    color: var(--header-text, var(--heading, #111827));
     margin: 0;
     display: inline-flex;
     align-items: center;
@@ -207,11 +348,12 @@ header.admin-fixed {
     z-index: 9998 !important;
     transform: translateZ(0) !important;
     will-change: transform;
-    height: var(--admin-header-height) !important;
+    min-height: var(--admin-header-height);
+    height: auto !important;
   }
 
-  /* Explicitly ensure non-admin headers are not positioned fixed to avoid accidental overlays */
-  header:not(.admin-fixed) {
+  /* Explicitly ensure non-admin site headers are not positioned fixed to avoid accidental overlays */
+  .site-header:not(.admin-fixed) {
     position: static !important;
     top: auto !important;
     left: auto !important;
@@ -220,16 +362,18 @@ header.admin-fixed {
     z-index: auto !important;
   }
 
-  /* Visual separation: subtle border and shadow so the header reads as its own layer */
-  header {
-    box-shadow: 0 8px 24px -12px rgba(2,6,23,0.6);
-    border-bottom: 1px solid rgba(255,255,255,0.03);
+  /* Visual separation: pull structural styles from theme tokens so light/dark stay in sync */
+  .site-header {
+    background: var(--header-background);
+    color: var(--header-text);
+    box-shadow: var(--header-shadow);
+    border-bottom: 1px solid var(--header-border);
     backdrop-filter: blur(6px);
   }
 
   /* Enhanced accent for the title with gradient */
   .site-title .site-accent {
-    color: var(--tertiary-accent, #8E44AD);
+    color: var(--accent-secondary, #8E44AD);
     font-weight: 800;
     background: linear-gradient(90deg, rgba(142,68,173,0.06), transparent);
     padding: 0.06rem 0.35rem;
@@ -239,14 +383,22 @@ header.admin-fixed {
     -webkit-font-smoothing: antialiased;
   }
 
+  body:not(.dark) .site-title .site-accent {
+    background: linear-gradient(90deg, rgba(188,114,61,0.18), transparent); /* warmer highlight for light mode without losing contrast */
+  }
+
   .site-subtitle {
     font-size: 0.875rem; /* 14px */
-    color: rgba(55,65,81,0.66); /* muted slate */
+    color: rgba(55,65,81,0.66); /* muted slate (dark override below) */
     margin-top: 0.125rem;
     display: inline-flex;
     align-items: center;
     gap: 0.5rem;
     line-height: 1.08;
+  }
+
+  body:not(.dark) .site-subtitle {
+    color: var(--text-muted);
   }
 
   .site-badge {
@@ -263,6 +415,18 @@ header.admin-fixed {
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.06em;
+  }
+
+  body:not(.dark) .site-badge {
+    background: rgba(188,114,61,0.14);
+    color: #814623;
+    border: 1px solid rgba(188,114,61,0.24);
+  }
+
+  .site-header .site-title,
+  .site-header .site-subtitle,
+  .site-header .site-badge {
+    color: var(--header-text) !important; /* override tailwind text utilities so header stays readable when themes toggle */
   }
 
   /* Contact page styles */
@@ -443,6 +607,7 @@ header.admin-fixed {
 
   .coffee-shimmer {
     background: linear-gradient(45deg, #fefdf9, #f4ead2, #fefdf9);
+  }
 
   /* Feature card specific accents (inner glow and icon badge) */
   .feature-card {
@@ -605,6 +770,9 @@ header.admin-fixed {
   .feature-card[data-accent="blue"] .card-edge-glow { background: linear-gradient(90deg, rgba(59,130,246,0.95), rgba(99,102,241,0.85)); }
   .feature-card[data-accent="purple"] .card-edge-glow { background: linear-gradient(90deg, rgba(139,92,246,0.95), rgba(236,72,153,0.85)); }
   .feature-card[data-accent="maroon"] .card-edge-glow { background: linear-gradient(90deg, rgba(239,71,111,0.95), rgba(185,28,46,0.85)); }
+
+  .coffee-shimmer {
+    background: linear-gradient(45deg, #fefdf9, #f4ead2, #fefdf9);
     background-size: 200% 200%;
     animation: shimmer 3s ease-in-out infinite;
   }

@@ -1,3 +1,4 @@
+const { Op } = require('sequelize');
 const Actuator = require('../models/Actuator');
 const ActuatorLog = require('../models/ActuatorLog');
 const SensorData = require('../models/SensorData');
@@ -6,12 +7,24 @@ const sequelize = require('./database_pg');
 const DEFAULT_ACTUATORS = [
   { name: 'Water Pump', type: 'pump' },
   { name: 'Solenoid Valve', type: 'solenoid' },
-  { name: 'Ventilation Fan', type: 'fan' },
 ];
+
+const ALLOWED_ACTUATOR_NAMES = DEFAULT_ACTUATORS.map((item) => item.name);
 
 const ACTUATOR_TYPE_BY_NAME = new Map(
   DEFAULT_ACTUATORS.map((item) => [normalizeName(item.name), item.type])
 );
+
+const ACTUATOR_COMMANDS = {
+  pump: {
+    on: 'PUMP_ON',
+    off: 'PUMP_OFF',
+  },
+  solenoid: {
+    on: 'VALVE_OPEN',
+    off: 'VALVE_CLOSE',
+  },
+};
 
 let schedulerHandle = null;
 
@@ -21,28 +34,38 @@ function normalizeName(value = '') {
 
 function sanitizeActuator(actuator) {
   if (!actuator) return null;
+  const data = actuator.get ? actuator.get({ plain: true }) : actuator;
+  const lastUpdated = data.lastUpdated instanceof Date
+    ? data.lastUpdated.toISOString()
+    : new Date(data.lastUpdated || Date.now()).toISOString();
+
   return {
-    id: actuator.id,
-    name: actuator.name,
-    status: Boolean(actuator.status),
-    mode: actuator.mode,
-    lastUpdated: actuator.lastUpdated instanceof Date
-      ? actuator.lastUpdated.toISOString()
-      : new Date(actuator.lastUpdated).toISOString(),
+    id: data.id,
+    name: data.name,
+    type: data.type || actuatorTypeFromName(data.name),
+    status: Boolean(data.status),
+    mode: data.mode === 'manual' ? 'manual' : 'auto',
+    lastUpdated,
+    deviceAck: typeof data.deviceAck === 'boolean' ? data.deviceAck : undefined,
+    deviceAckMessage: data.deviceAckMessage || undefined,
   };
 }
 
 async function ensureEnumSupport() {
+  const dialect = typeof sequelize.getDialect === 'function' ? sequelize.getDialect() : null;
+  if (dialect && dialect !== 'postgres') {
+    return;
+  }
   try {
     const [tables] = await sequelize.query("SELECT 1 FROM information_schema.tables WHERE table_name = 'actuator_logs'");
     if (!Array.isArray(tables) || tables.length === 0) {
       return;
     }
-    await sequelize.query('ALTER TYPE "enum_ActuatorLogs_actuatorType" ADD VALUE IF NOT EXISTS \'fan\';');
+    // Enum already supports pump/solenoid; no additional values required.
   } catch (error) {
     const message = (error && error.message) || '';
-    if (!message.includes('enum label "fan" already exists')) {
-      console.warn('actuatorService: unable to extend actuator log enum:', message);
+    if (message) {
+      console.warn('actuatorService: enum verification warning:', message);
     }
   }
 }
@@ -65,6 +88,7 @@ async function ensureDefaultActuators() {
         status: false,
         mode: 'auto',
       });
+      continue;
     }
   }
 
@@ -72,12 +96,22 @@ async function ensureDefaultActuators() {
 }
 
 async function listActuators() {
-  const rows = await Actuator.findAll({ order: [['id', 'ASC']] });
+  const rows = await Actuator.findAll({
+    where: {
+      name: { [Op.in]: ALLOWED_ACTUATOR_NAMES },
+    },
+    order: [['id', 'ASC']],
+  });
   return rows.map(sanitizeActuator);
 }
 
 async function findActuatorById(id) {
-  return Actuator.findByPk(id);
+  const actuator = await Actuator.findByPk(id);
+  if (!actuator) return null;
+  if (!ALLOWED_ACTUATOR_NAMES.includes(actuator.name)) {
+    return null;
+  }
+  return actuator;
 }
 
 function actuatorTypeFromName(name) {
@@ -102,11 +136,47 @@ async function logActuatorAction(actuator, action, options = {}) {
 async function broadcastActuator(actuator) {
   try {
     if (global.io && typeof global.io.emit === 'function') {
-      global.io.emit('actuatorUpdate', sanitizeActuator(actuator));
+      const payload = sanitizeActuator(actuator);
+      global.io.emit('actuator_update', payload);
+      // Maintain backward compatibility with legacy clients during transition.
+      global.io.emit('actuatorUpdate', payload);
     }
   } catch (error) {
     console.warn('actuatorService: broadcast failed:', error && error.message ? error.message : error);
   }
+}
+
+const { sendCommand } = require('./espController');
+
+function resolveCommand(type, desired) {
+  const commands = ACTUATOR_COMMANDS[type];
+  if (!commands) return null;
+  return desired ? commands.on : commands.off;
+}
+
+async function sendToEsp32(actuator, desired) {
+  const type = actuatorTypeFromName(actuator.name);
+  const command = resolveCommand(type, desired);
+  if (!command) {
+    return { ok: true, message: null };
+  }
+
+  try {
+    const success = await sendCommand(command);
+    if (success) {
+      return { ok: true, message: null };
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      message: error && error.message ? error.message : `ESP32 command failed (${command})`,
+    };
+  }
+
+  return {
+    ok: false,
+    message: `ESP32 did not acknowledge ${command}`,
+  };
 }
 
 async function updateActuatorStatus(actuator, status, options = {}) {
@@ -116,8 +186,19 @@ async function updateActuatorStatus(actuator, status, options = {}) {
     return { changed: false, actuator };
   }
 
+  const dispatch = await sendToEsp32(actuator, desired);
+  if (!dispatch.ok) {
+    console.warn('actuatorService: ESP32 dispatch failed:', dispatch.message);
+    actuator.setDataValue('deviceAck', false);
+    actuator.setDataValue('deviceAckMessage', dispatch.message);
+    await broadcastActuator(actuator);
+    return { changed: false, actuator, error: dispatch.message };
+  }
+
   actuator.status = desired;
   actuator.lastUpdated = new Date();
+  actuator.setDataValue('deviceAck', true);
+  actuator.setDataValue('deviceAckMessage', null);
   await actuator.save();
 
   await logActuatorAction(actuator, desired ? 'on' : 'off', options);
@@ -125,6 +206,7 @@ async function updateActuatorStatus(actuator, status, options = {}) {
 
   return { changed: true, actuator };
 }
+
 
 async function updateActuatorMode(actuator, mode, options = {}) {
   if (!actuator) return { changed: false, actuator: null };
@@ -137,6 +219,8 @@ async function updateActuatorMode(actuator, mode, options = {}) {
 
   actuator.mode = mode;
   actuator.lastUpdated = new Date();
+  actuator.setDataValue('deviceAck', true);
+  actuator.setDataValue('deviceAckMessage', null);
   await actuator.save();
 
   await logActuatorAction(actuator, mode, options);
@@ -151,7 +235,11 @@ async function runAutomaticControl({ source = 'scheduler' } = {}) {
     return { success: false, reason: 'no-data', changed: [] };
   }
 
-  const actuators = await Actuator.findAll();
+  const actuators = await Actuator.findAll({
+    where: {
+      name: { [Op.in]: ALLOWED_ACTUATOR_NAMES },
+    },
+  });
   const byName = new Map(actuators.map((item) => [normalizeName(item.name), item]));
   const changed = [];
 
@@ -175,12 +263,18 @@ async function runAutomaticControl({ source = 'scheduler' } = {}) {
           reason: `Moisture ${moisture}% below 50% threshold (${source})`,
         });
         if (result.changed) changed.push(sanitizeActuator(result.actuator));
+        if (result.error) {
+          console.warn('actuatorService: pump command failed during auto-control:', result.error);
+        }
       } else if (moisture > 70) {
         const result = await updateActuatorStatus(pump, false, {
           ...contextBase,
           reason: `Moisture ${moisture}% above 70% threshold (${source})`,
         });
         if (result.changed) changed.push(sanitizeActuator(result.actuator));
+        if (result.error) {
+          console.warn('actuatorService: pump command failed during auto-control:', result.error);
+        }
       }
     }
 
@@ -191,31 +285,18 @@ async function runAutomaticControl({ source = 'scheduler' } = {}) {
           reason: `Moisture ${moisture}% below 50% threshold (${source})`,
         });
         if (result.changed) changed.push(sanitizeActuator(result.actuator));
+        if (result.error) {
+          console.warn('actuatorService: valve command failed during auto-control:', result.error);
+        }
       } else if (moisture > 70) {
         const result = await updateActuatorStatus(valve, false, {
           ...contextBase,
           reason: `Moisture ${moisture}% above 70% threshold (${source})`,
         });
         if (result.changed) changed.push(sanitizeActuator(result.actuator));
-      }
-    }
-  }
-
-  if (temperature !== null) {
-    const fan = byName.get(normalizeName('Ventilation Fan'));
-    if (fan && fan.mode === 'auto') {
-      if (temperature > 35) {
-        const result = await updateActuatorStatus(fan, true, {
-          ...contextBase,
-          reason: `Temperature ${temperature}°C above 35°C threshold (${source})`,
-        });
-        if (result.changed) changed.push(sanitizeActuator(result.actuator));
-      } else if (temperature < 25) {
-        const result = await updateActuatorStatus(fan, false, {
-          ...contextBase,
-          reason: `Temperature ${temperature}°C below 25°C threshold (${source})`,
-        });
-        if (result.changed) changed.push(sanitizeActuator(result.actuator));
+        if (result.error) {
+          console.warn('actuatorService: valve command failed during auto-control:', result.error);
+        }
       }
     }
   }
