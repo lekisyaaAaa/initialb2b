@@ -32,6 +32,8 @@ const alertRoutes = require('./routes/alerts');
 const settingsRoutes = require('./routes/settings');
 const actuatorRoutes = require('./routes/actuators');
 const maintenanceRoutes = require('./routes/maintenance');
+const notificationRoutes = require('./routes/notifications');
+const actuatorControlRoutes = require('./routes/actuatorControl');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -148,25 +150,35 @@ if ((process.env.NODE_ENV || 'development') !== 'production') {
 // CORS configuration - allow common local dev origins dynamically to avoid brittle lists
 const corsOptions = {
   origin: function(origin, callback) {
-    // If no origin (e.g., same-origin or curl), allow it
     if (!origin) return callback(null, true);
-    // Allow explicit list from env if provided
-    if (process.env.CORS_ORIGINS) {
-      const allowed = process.env.CORS_ORIGINS.split(',').map(s => s.trim());
-      if (allowed.includes(origin)) return callback(null, true);
-    }
-    // Allow localhost and 127.0.0.1 on any port during development
+
+    const allowLocalHosts = (allowedHost) => {
+      const localHosts = ['localhost', '127.0.0.1', '::1'];
+      return localHosts.includes(allowedHost);
+    };
+
     try {
-      const u = new URL(origin);
-      // allow IPv4 and IPv6 localhost variants during development
-      const hostname = u.hostname;
-      if ((hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') && (process.env.NODE_ENV || 'development') !== 'production') {
+      const url = new URL(origin);
+      const hostname = url.hostname;
+
+      if (process.env.CORS_ORIGINS) {
+        const allowed = process.env.CORS_ORIGINS.split(',').map((s) => s.trim());
+        if (allowed.includes(origin) || allowed.includes(hostname)) {
+          return callback(null, true);
+        }
+      }
+
+      if (allowLocalHosts(hostname)) {
         return callback(null, true);
       }
     } catch (e) {
-      // ignore parse errors and fallthrough
+      // ignore parse errors and fall through to default deny
     }
-    // Fallback: block other origins
+
+    if ((process.env.NODE_ENV || 'development') !== 'production') {
+      return callback(null, true);
+    }
+
     return callback(new Error('Not allowed by CORS'));
   },
   credentials: true,
@@ -309,6 +321,8 @@ app.use('/api/sensors', sensorRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/actuators', actuatorRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/actuator', actuatorControlRoutes);
 
 // Serve frontend production build if available (useful in local dev)
 try {

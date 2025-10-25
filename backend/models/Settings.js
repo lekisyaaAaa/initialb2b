@@ -16,6 +16,55 @@ const Settings = sequelize.define('Settings', {
   timestamps: false,
 });
 
+const DEFAULT_THRESHOLDS = {
+  temperature: { min: 18, max: 30, warning: 30, critical: 35 },
+  humidity: { min: 40, max: 70, warning: 65, critical: 75 },
+  moisture: { min: 30, max: 60, warning: 35, critical: 25 },
+  batteryLevel: { min: 0, max: 100, warning: 20, critical: 10 },
+  ph: { minWarning: 6.0, minCritical: 5.5, maxWarning: 7.5, maxCritical: 8.0 },
+  ec: { min: 0, max: 5000, warning: 2000, critical: 3000 },
+  nitrogen: { minWarning: 50, minCritical: 30 },
+  phosphorus: { minWarning: 20, minCritical: 10 },
+  potassium: { minWarning: 100, minCritical: 50 },
+  waterLevel: { critical: 0 },
+};
+
+const DEFAULT_MONITORING = {
+  dataCollectionInterval: 30,
+  dataRetentionDays: 30,
+  offlineTimeoutMinutes: 10,
+};
+
+const DEFAULT_SYSTEM = {
+  timezone: 'UTC',
+};
+
+const DEFAULT_VERMITEA = {
+  tankAreaLitersPerUnit: 0.5,
+};
+
+function mergeThresholdMetric(defaultMetric, currentMetric) {
+  if (!defaultMetric) {
+    return { ...(currentMetric || {}) };
+  }
+  return {
+    ...defaultMetric,
+    ...(currentMetric || {}),
+  };
+}
+
+function normalizeThresholds(raw) {
+  const source = raw && typeof raw === 'object' ? raw : {};
+  const merged = { ...DEFAULT_THRESHOLDS };
+
+  Object.keys(DEFAULT_THRESHOLDS).forEach((key) => {
+    merged[key] = mergeThresholdMetric(DEFAULT_THRESHOLDS[key], source[key]);
+  });
+
+  // Ensure legacy payloads that stored arrays or invalid types do not break consumers.
+  return merged;
+}
+
 // Static method to get all settings as a structured object
 Settings.getSettings = async () => {
   try {
@@ -30,38 +79,32 @@ Settings.getSettings = async () => {
       }
     });
 
-    // Set defaults if not found
-    if (!settingsObj.thresholds) {
-      settingsObj.thresholds = {
-        temperature: { warning: 30, critical: 35 },
-        humidity: { warning: 80, critical: 90 },
-        moisture: { warning: 20, critical: 10 },
-        batteryLevel: { warning: 20, critical: 10 },
-        ph: { minWarning: 6.0, minCritical: 5.5, maxWarning: 7.5, maxCritical: 8.0 },
-        ec: { warning: 2.0, critical: 3.0 },
-        nitrogen: { minWarning: 50, minCritical: 30 },
-        phosphorus: { minWarning: 20, minCritical: 10 },
-        potassium: { minWarning: 100, minCritical: 50 },
-        waterLevel: { critical: 0 } // 0 means no water
-      };
-    }
+    settingsObj.thresholds = normalizeThresholds(settingsObj.thresholds);
 
     if (!settingsObj.monitoring) {
+      settingsObj.monitoring = { ...DEFAULT_MONITORING };
+    } else {
       settingsObj.monitoring = {
-        dataCollectionInterval: 30,
-        dataRetentionDays: 30
+        ...DEFAULT_MONITORING,
+        ...(settingsObj.monitoring || {}),
       };
     }
 
     if (!settingsObj.system) {
+      settingsObj.system = { ...DEFAULT_SYSTEM };
+    } else {
       settingsObj.system = {
-        timezone: 'UTC'
+        ...DEFAULT_SYSTEM,
+        ...(settingsObj.system || {}),
       };
     }
 
     if (!settingsObj.vermitea) {
+      settingsObj.vermitea = { ...DEFAULT_VERMITEA };
+    } else {
       settingsObj.vermitea = {
-        tankAreaLitersPerUnit: 0.5
+        ...DEFAULT_VERMITEA,
+        ...(settingsObj.vermitea || {}),
       };
     }
 

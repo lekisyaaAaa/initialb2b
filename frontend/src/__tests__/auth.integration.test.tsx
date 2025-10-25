@@ -25,6 +25,7 @@ jest.mock('../services/api', () => {
     alertService: {
       getRecentAlerts: jest.fn(async () => ({ data: { success: true, data: [] } })),
     },
+    discoverApi: jest.fn(async () => ({ ok: false })),
   };
 });
 

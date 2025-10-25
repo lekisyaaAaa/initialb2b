@@ -1,8 +1,49 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, AuthContextType } from '../types';
-import api, { authService, discoverApi, ensureAdminSession } from '../services/api';
+import api, { authService, discoverApi } from '../services/api';
 
-const AUTO_ADMIN_SESSION_ENABLED = String(process.env.REACT_APP_ENABLE_AUTO_ADMIN_SESSION || '').toLowerCase() === 'true';
+const resolveStorage = (): Storage | null => {
+  try {
+    if (typeof window !== 'undefined' && typeof window.localStorage !== 'undefined') {
+      return window.localStorage;
+    }
+  } catch (error) {
+    // Storage unavailable (SSR/test environment)
+  }
+  return null;
+};
+
+const storageRemoveMany = (keys: string[]) => {
+  const storage = resolveStorage();
+  if (!storage) return;
+  keys.forEach((key) => {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // ignore per-key failures
+    }
+  });
+};
+
+const storageGet = (key: string): string | null => {
+  const storage = resolveStorage();
+  if (!storage) return null;
+  try {
+    return storage.getItem(key);
+  } catch {
+    return null;
+  }
+};
+
+const storageSet = (key: string, value: string) => {
+  const storage = resolveStorage();
+  if (!storage) return;
+  try {
+    storage.setItem(key, value);
+  } catch {
+    // ignore storage write failures (e.g., quota exceeded)
+  }
+};
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -17,23 +58,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
   useEffect(() => {
     const init = async () => {
-    // Try to discover a reachable API host early so health checks and login
-    // use the correct backend baseURL (helps when backend runs on port 5000)
-    try {
-      const disco = await discoverApi({ timeout: 1500 });
-      if (disco.ok) {
-        console.log('AuthContext: discovered API host at startup', disco.baseURL);
-      } else {
-        console.debug('AuthContext: no API discovered at startup');
+      // Try to discover a reachable API host early so health checks and login
+      // use the correct backend baseURL (helps when backend runs on port 5000)
+      try {
+        const disco = await discoverApi({ timeout: 1500 });
+        if (disco?.ok) {
+          console.log('AuthContext: discovered API host at startup', disco.baseURL);
+        } else {
+          console.debug('AuthContext: no API discovered at startup');
+        }
+      } catch (e: any) {
+        console.debug('AuthContext: discovery failed at startup', (e && (e.message || String(e))) || String(e));
       }
-    } catch (e: any) {
-      console.debug('AuthContext: discovery failed at startup', (e && (e.message || String(e))) || String(e));
-    }
-    // Allow adminToken as an alternative key (used by admin login flow)
-    const storedToken = localStorage.getItem('token') || localStorage.getItem('adminToken');
-    const storedUser = localStorage.getItem('user');
 
-    if (storedToken && storedUser) {
+  // Allow adminToken as an alternative key (used by admin login flow)
+  const storedToken = storageGet('token') || storageGet('adminToken');
+  const storedUser = storageGet('user');
+
+      if (storedToken && storedUser) {
         try {
           api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
           const verifyResp = await api.get('/auth/verify');
@@ -41,8 +83,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             const userData = verifyResp.data.data.user;
             setToken(storedToken);
             setUser(userData);
-            localStorage.setItem('user', JSON.stringify(userData));
-            localStorage.setItem('token', storedToken);
+            storageSet('user', JSON.stringify(userData));
+            storageSet('token', storedToken);
             console.log('✅ Token verified on startup for user', userData.username || userData.id);
           } else {
             throw new Error('Token verify failed');
@@ -55,49 +97,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
               setToken(storedToken);
               setUser(parsed);
               (api.defaults.headers as any).Authorization = `Bearer ${storedToken}`;
-              console.log('✅ Using local fallback token on startup for user', parsed.username || parsed.id);
+              console.log('✅ Using stored development token on startup for user', parsed.username || parsed.id);
             } catch (parseErr) {
               console.warn('Stored token verify failed, clearing local auth:', e && (e.message || String(e)));
-              localStorage.removeItem('token');
-              localStorage.removeItem('user');
+              storageRemoveMany(['token', 'user']);
               delete api.defaults.headers.common['Authorization'];
               setToken(null);
               setUser(null);
             }
           } else {
-            let restored = false;
-            if (AUTO_ADMIN_SESSION_ENABLED) {
-              try {
-                restored = await ensureAdminSession({ force: true });
-              } catch (ensureErr) {
-                restored = false;
-              }
-            }
-
-            if (restored) {
-              try {
-                const newToken = localStorage.getItem('token') || localStorage.getItem('adminToken');
-                const newUserRaw = localStorage.getItem('user');
-                if (newToken && newUserRaw) {
-                  const parsedUser = JSON.parse(newUserRaw);
-                  setToken(newToken);
-                  setUser(parsedUser);
-                  (api.defaults.headers as any).Authorization = `Bearer ${newToken}`;
-                  console.log('✅ Auto-restored admin session during startup');
-                  return;
-                }
-              } catch (restoreErr) {
-                const restoreMessage =
-                  restoreErr && typeof restoreErr === 'object' && 'message' in (restoreErr as Record<string, unknown>)
-                    ? (restoreErr as any).message
-                    : String(restoreErr);
-                console.warn('AuthContext: failed to parse restored admin session:', restoreMessage);
-              }
-            }
-
             console.warn('Stored token verify failed, clearing local auth:', e && (e.message || String(e)));
-            localStorage.removeItem('token');
-            localStorage.removeItem('user');
+            storageRemoveMany(['token', 'user']);
             delete api.defaults.headers.common['Authorization'];
             setToken(null);
             setUser(null);
@@ -108,10 +118,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsLoading(false);
     };
 
-    init();
-  }, []);
+  init();
+}, []);
 
-  const login = async (username: string, password: string): Promise<{ success: boolean; message?: string }> => {
+const login = async (username: string, password: string): Promise<{ success: boolean; message?: string }> => {
     const maxAttempts = 3;
     let attempt = 0;
     let lastError: any = null;
@@ -156,8 +166,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           const userData = resp.data.data.user;
           setToken(newToken);
           setUser(userData);
-          localStorage.setItem('token', newToken);
-          localStorage.setItem('user', JSON.stringify(userData));
+          storageSet('token', newToken);
+          storageSet('user', JSON.stringify(userData));
           (api.defaults.headers as any).Authorization = `Bearer ${newToken}`;
           setIsLoading(false);
           return { success: true };
@@ -205,10 +215,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setUser(null);
     setToken(null);
     // clear both token keys used in different flows
-    localStorage.removeItem('token');
-    localStorage.removeItem('adminToken');
-    localStorage.removeItem('user');
-    localStorage.removeItem('adminUser');
+    storageRemoveMany(['token', 'adminToken', 'user', 'adminUser']);
     try {
       // axios instances sometimes have headers.common; other mocks may set headers directly.
       const anyApi: any = api;
@@ -229,8 +236,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     setToken(newToken);
     if (newUser) setUser(newUser);
     try {
-      localStorage.setItem('token', newToken);
-      if (newUser) localStorage.setItem('user', JSON.stringify(newUser));
+      storageSet('token', newToken);
+      if (newUser) storageSet('user', JSON.stringify(newUser));
       (api.defaults.headers as any).Authorization = `Bearer ${newToken}`;
     } catch (e) {
       // ignore storage errors

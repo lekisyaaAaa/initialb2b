@@ -20,6 +20,7 @@ void controlActuators(const SensorData& data);
 void sendSensorData(const SensorData& data);
 void storeOfflineData(const SensorData& data);
 void connectToWiFi();
+void sendHeartbeat();
 
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -30,11 +31,12 @@ void connectToWiFi();
 #include <SPIFFS.h>
 
 // WiFi credentials
-const char* ssid = "Knights_IOT_5G";
-const char* password = "smbcr-5540";
+const char* ssid = "Hulaan Mo";
+const char* password = "Talingting12345";
 
-// Backend API endpoint (update to reachable host for the ESP32)
-const char* serverUrl = "http://127.0.0.1:5000/api/sensors";
+// Backend API endpoint
+const char* serverUrl = "http://192.168.254.164:5000/api/sensors";
+const char* heartbeatUrl = "http://192.168.254.164:5000/api/devices/heartbeat";
 
 // RS485/MODBUS configuration for soil sensor
 #define RS485_RX 16  // GPIO16
@@ -56,6 +58,8 @@ ModbusMaster node;
 // Timing
 unsigned long lastSendTime = 0;
 const unsigned long sendInterval = 30000; // 30 seconds
+unsigned long lastHeartbeatTime = 0;
+const unsigned long heartbeatInterval = 10000; // Keep device registered with backend
 
 // Device ID
 const char* deviceId = "ESP32_001";
@@ -96,6 +100,11 @@ void setup() {
   // Connect to WiFi
   connectToWiFi();
 
+  if (WiFi.status() == WL_CONNECTED) {
+    sendHeartbeat();
+    lastHeartbeatTime = millis();
+  }
+
   Serial.println("ESP32 Environmental Monitor initialized");
 }
 
@@ -118,6 +127,11 @@ void loop() {
   if (millis() - lastSendTime >= sendInterval) {
     sendSensorData(data);
     lastSendTime = millis();
+  }
+
+  if (WiFi.status() == WL_CONNECTED && millis() - lastHeartbeatTime >= heartbeatInterval) {
+    sendHeartbeat();
+    lastHeartbeatTime = millis();
   }
 
   delay(1000);
@@ -333,4 +347,33 @@ void connectToWiFi() {
   } else {
     Serial.println("\nWiFi connection failed");
   }
+}
+
+void sendHeartbeat() {
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
+
+  HTTPClient http;
+  http.begin(heartbeatUrl);
+  http.addHeader("Content-Type", "application/json");
+
+  DynamicJsonDocument doc(256);
+  doc["deviceId"] = deviceId;
+  JsonObject metadata = doc.createNestedObject("metadata");
+  metadata["signalStrength"] = WiFi.RSSI();
+  metadata["ip"] = WiFi.localIP().toString();
+
+  String payload;
+  serializeJson(doc, payload);
+
+  int status = http.POST(payload);
+  if (status > 0) {
+    Serial.println("Heartbeat status: " + String(status));
+  } else {
+    Serial.println("Heartbeat send failed");
+  }
+
+  http.end();
+}
 }

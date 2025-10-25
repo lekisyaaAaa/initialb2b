@@ -33,6 +33,32 @@ export interface SensorData {
   batteryLevel?: number;
   signalStrength?: number;
   isOfflineData?: boolean;
+  deviceStatus?: string;
+  deviceOnline?: boolean;
+  isStale?: boolean;
+  sampleAgeMs?: number | null;
+  sensorSummary?: SensorSummaryItem[];
+  lastSeen?: string | null;
+}
+
+export interface SensorSummaryItem {
+  key: string;
+  label: string;
+  unit?: string | null;
+  value: number | Record<string, number | null>;
+  timestamp?: string;
+}
+
+export interface DeviceSensorSummary {
+  deviceId: string;
+  deviceStatus: string;
+  deviceOnline: boolean;
+  lastHeartbeat: string | null;
+  latestTimestamp: string | null;
+  isStale: boolean;
+  sampleAgeMs: number | null;
+  sensors: SensorSummaryItem[];
+  history: SensorData[];
 }
 
 export interface Alert {
@@ -48,6 +74,20 @@ export interface Alert {
   acknowledgedBy?: string;
   acknowledgedAt?: string | Date;
   status?: 'new' | 'read';
+}
+
+export interface NotificationItem {
+  _id: string;
+  type?: string;
+  severity?: string;
+  message?: string;
+  deviceId?: string;
+  status?: 'new' | 'read';
+  createdAt?: string | Date;
+  acknowledgedAt?: string | Date | null;
+  acknowledgedBy?: string | null;
+  sensorData?: Partial<SensorData>;
+  deleted?: boolean;
 }
 
 export interface Settings {
@@ -174,4 +214,19 @@ export interface Actuator {
   lastUpdated: string;
   deviceAck?: boolean;
   deviceAckMessage?: string | null;
+}
+
+export type DevicePortStatus = 'active' | 'inactive' | 'unknown' | string;
+
+export interface DevicePort {
+  id?: number;
+  device_id?: number;
+  port_name: string;
+  port_type: string;
+  baud_rate?: number | null;
+  metadata?: Record<string, any> | null;
+  configured_at?: string | null;
+  configured_by?: number | null;
+  status?: DevicePortStatus;
+  known?: boolean;
 }

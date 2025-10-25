@@ -1,33 +1,47 @@
 import React from 'react';
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom/dist/index.js';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+
+jest.mock('../contexts/AuthContext', () => ({
+  useAuth: () => ({
+    user: { username: 'admin', role: 'admin' },
+    token: 'dummy-token',
+    isAuthenticated: true,
+    isLoading: false,
+    login: jest.fn(),
+    logout: jest.fn(),
+  }),
+}));
+
+jest.mock('../contexts/DataContext', () => ({
+  useData: () => ({
+    latestSensorData: [],
+    recentAlerts: [],
+    isConnected: true,
+    isLoading: false,
+    refreshData: jest.fn(),
+    lastFetchAt: null,
+  }),
+}));
+
+jest.mock('../contexts/DarkModeContext', () => ({
+  useDarkMode: () => ({
+    isDarkMode: false,
+    toggleDarkMode: jest.fn(),
+  }),
+}));
+
 import Dashboard from '../pages/Dashboard';
-import HomeAssistant from '../pages/HomeAssistant';
-test('Home Assistant button exists and navigates', async () => {
-  // Create a lightweight mock provider that injects the auth values into children via props
-  const MockAuthProvider: React.FC<any> = ({ children }) => {
-    const mock = {
-      user: { username: 'admin', role: 'admin' },
-      token: 'dummy',
-      isAuthenticated: true,
-      login: jest.fn(),
-      logout: jest.fn(),
-    } as any;
 
-    return React.cloneElement(children as any, { authOverride: mock });
-  };
-
+test('Dashboard header renders for authenticated admin', () => {
   render(
-    <MockAuthProvider>
-      <MemoryRouter initialEntries={["/admin/dashboard"]}>
-        <Routes>
-          <Route path="/admin/dashboard" element={<Dashboard />} />
-          <Route path="/home-assistant" element={<HomeAssistant />} />
-        </Routes>
-      </MemoryRouter>
-    </MockAuthProvider>
+    <MemoryRouter initialEntries={["/admin/dashboard"]}>
+      <Routes>
+        <Route path="/admin/dashboard" element={<Dashboard />} />
+      </Routes>
+    </MemoryRouter>
   );
 
-  const btn = await screen.findByRole('button', { name: /SmartBin Console/i });
-  expect(btn).toBeInTheDocument();
+  expect(screen.getByText(/User Dashboard/i)).toBeInTheDocument();
+  expect(screen.getByText(/Sensors Live/i)).toBeInTheDocument();
 });

@@ -3,83 +3,36 @@ const { body, query, validationResult } = require('express-validator');
 const SensorData = require('../models/SensorData');
 const Alert = require('../models/Alert');
 const Settings = require('../models/Settings');
+const Device = require('../models/Device');
+const deviceManager = require('../services/deviceManager');
 const { auth, optionalAuth } = require('../middleware/auth');
+const {
+  toPlainObject,
+  ensureIsoString,
+  sanitizeSensorPayload,
+  sanitizeAlertPayload,
+  buildSensorSummary,
+} = require('../utils/sensorFormatting');
+
+const DEVICE_STATUS_TIMEOUT_MS = Math.max(
+  2000,
+  parseInt(process.env.DEVICE_OFFLINE_TIMEOUT_MS || process.env.SENSOR_STALE_THRESHOLD_MS || '60000', 10)
+);
+
+const STALE_SENSOR_MAX_AGE_MS = Math.max(
+  2000,
+  parseInt(process.env.SENSOR_STALE_THRESHOLD_MS || process.env.DEVICE_OFFLINE_TIMEOUT_MS || '60000', 10)
+);
 
 const router = express.Router();
-
-const toPlainObject = (record) => {
-  if (!record) return null;
-  if (typeof record.get === 'function') {
-    return record.get({ plain: true });
-  }
-  if (typeof record.toJSON === 'function') {
-    return record.toJSON();
-  }
-  if (typeof record.toObject === 'function') {
-    return record.toObject();
-  }
-  if (typeof record === 'object') {
-    return { ...record };
-  }
-  return null;
-};
-
-const ensureIsoString = (value) => {
-  if (!value) {
-    return new Date().toISOString();
-  }
-  try {
-    const date = value instanceof Date ? value : new Date(value);
-    if (Number.isNaN(date.getTime())) {
-      return new Date().toISOString();
-    }
-    return date.toISOString();
-  } catch (error) {
-    return new Date().toISOString();
-  }
-};
-
-const sanitizeAlertPayload = (alert) => {
-  const plainAlert = toPlainObject(alert) || {};
-  const sanitized = {
-    ...plainAlert,
-    createdAt: ensureIsoString(plainAlert.createdAt),
-    resolvedAt: plainAlert.resolvedAt ? ensureIsoString(plainAlert.resolvedAt) : null,
-    acknowledgedAt: plainAlert.acknowledgedAt ? ensureIsoString(plainAlert.acknowledgedAt) : null,
-  };
-  if (!sanitized._id && (sanitized.id || sanitized.ID)) {
-    sanitized._id = String(sanitized.id || sanitized.ID);
-  }
-  if (plainAlert.sensorData) {
-    sanitized.sensorData = sanitizeSensorPayload(plainAlert.sensorData, []);
-  }
-  return sanitized;
-};
-
-const sanitizeSensorPayload = (sensor, alerts = []) => {
-  const plainSensor = toPlainObject(sensor) || {};
-  const sanitized = {
-    ...plainSensor,
-    timestamp: ensureIsoString(plainSensor.timestamp),
-  };
-
-  if (!sanitized._id && (sanitized.id || sanitized.ID)) {
-    sanitized._id = String(sanitized.id || sanitized.ID);
-  }
-
-  const cleanAlerts = Array.isArray(alerts) ? alerts.map(sanitizeAlertPayload) : [];
-  if (cleanAlerts.length > 0) {
-    sanitized.alerts = cleanAlerts;
-  } else {
-    delete sanitized.alerts;
-  }
-
-  return sanitized;
-};
 
 // Broadcast data to connected clients (native WebSocket + Socket.IO)
 const broadcastSensorData = (data) => {
   const payload = sanitizeSensorPayload(data, data && data.alerts ? data.alerts : []);
+  const summary = buildSensorSummary(payload);
+  payload.sensorSummary = summary;
+  payload.isStale = false;
+  payload.receivedAt = ensureIsoString(new Date());
 
   if (global.wsConnections && global.wsConnections.size > 0) {
     const message = JSON.stringify({
@@ -91,6 +44,14 @@ const broadcastSensorData = (data) => {
       if (ws.readyState === 1) {
         try {
           ws.send(message);
+          if (Array.isArray(summary) && summary.length > 0) {
+            ws.send(JSON.stringify({
+              type: 'device_sensor_summary',
+              deviceId: payload.deviceId || null,
+              sensors: summary,
+              timestamp: payload.timestamp,
+            }));
+          }
         } catch (error) {
           console.error('WebSocket send error:', error);
           global.wsConnections.delete(ws);
@@ -104,6 +65,14 @@ const broadcastSensorData = (data) => {
       global.io.emit('sensor_update', payload);
       // Support legacy clients listening on old event name.
       global.io.emit('newSensorData', payload);
+      if (Array.isArray(summary) && summary.length > 0) {
+        global.io.emit('device_sensor_update', {
+          deviceId: payload.deviceId || null,
+          sensors: summary,
+          timestamp: payload.timestamp,
+          isStale: false,
+        });
+      }
     } catch (error) {
       console.warn('Socket.IO emit failed for sensor_update:', error && error.message ? error.message : error);
     }
@@ -417,11 +386,22 @@ router.post('/', [
     } = req.body;
 
     // Validate device registration and online status before accepting live sensor data
-    const Device = require('../models/Device');
-    const device = await Device.findOne({ where: { deviceId } });
+    let device = await Device.findOne({ where: { deviceId } });
     if (!device || device.status !== 'online') {
-      // Reject data from unknown or offline devices — only accept from verified live units
-      return res.status(403).json({ success: false, message: 'Device not registered or not online' });
+      try {
+        // Auto-register devices that skipped the heartbeat flow so readings are not discarded.
+        device = await deviceManager.markDeviceOnline(deviceId, {
+          autoRegisteredAt: new Date().toISOString(),
+          source: 'sensor_post_auto_register'
+        });
+      } catch (error) {
+        console.warn('Failed to auto-register device from sensor data:', error && error.message ? error.message : error);
+      }
+
+      if (!device || device.status !== 'online') {
+        // Reject data from unknown or offline devices if auto-registration still failed
+        return res.status(403).json({ success: false, message: 'Device not registered or not online' });
+      }
     }
 
     // Enforce recent timestamp (avoid stale readings). Accept readings no older than 5 seconds
@@ -453,8 +433,12 @@ router.post('/', [
   const plain = sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData);
 
   // Fire-and-forget alerts and broadcast (only for live data). We still mark the device online via deviceManager
-  const deviceManager = require('../services/deviceManager');
-  await deviceManager.markDeviceOnline(deviceId, { lastSeen: new Date() });
+  const metadataUpdate = Object.assign(
+    {},
+    device && typeof device.metadata === 'object' ? device.metadata : {},
+    { lastSeen: new Date().toISOString() }
+  );
+  await deviceManager.markDeviceOnline(deviceId, metadataUpdate);
 
   // Fire-and-forget alerts and broadcast
     (async () => {
@@ -597,12 +581,52 @@ router.get('/latest', optionalAuth, async (req, res) => {
       latestData = null;
     }
 
+    const now = Date.now();
+
     if (!latestData) {
-      // Return a graceful empty result (poller expects a successful response); use 200 with empty data
-      return res.json({ success: true, data: [] });
+      return res.json({ success: true, data: null, systemStatus: 'online', databaseStatus: 'connected', status: 'offline' });
     }
 
-    res.json({ success: true, data: latestData });
+    const candidateDeviceId = deviceId || latestData.deviceId;
+    let deviceRecord = null;
+
+    if (candidateDeviceId && Device && typeof Device.findOne === 'function') {
+      try {
+        deviceRecord = await Device.findOne({ where: { deviceId: candidateDeviceId } });
+      } catch (deviceErr) {
+        console.warn('Failed to load device while resolving latest sensor data:', deviceErr && deviceErr.message ? deviceErr.message : deviceErr);
+      }
+    }
+
+    const timestampMs = latestData.timestamp ? new Date(latestData.timestamp).getTime() : NaN;
+    const timestampFresh = Number.isFinite(timestampMs) && (now - timestampMs) <= STALE_SENSOR_MAX_AGE_MS;
+
+    let deviceFresh = false;
+    if (deviceRecord) {
+      const heartbeatMs = deviceRecord.lastHeartbeat ? new Date(deviceRecord.lastHeartbeat).getTime() : NaN;
+      const heartbeatFresh = Number.isFinite(heartbeatMs) && (now - heartbeatMs) <= DEVICE_STATUS_TIMEOUT_MS;
+      deviceFresh = deviceRecord.status === 'online' && heartbeatFresh;
+      latestData.deviceStatus = deviceRecord.status;
+      latestData.deviceLastHeartbeat = deviceRecord.lastHeartbeat || null;
+    }
+
+    const sanitizedLatest = sanitizeSensorPayload(latestData, latestData.alerts || []);
+    sanitizedLatest.deviceId = sanitizedLatest.deviceId || candidateDeviceId || null;
+    sanitizedLatest.deviceStatus = deviceRecord ? deviceRecord.status : (deviceFresh ? 'online' : 'offline');
+    sanitizedLatest.deviceLastHeartbeat = deviceRecord && deviceRecord.lastHeartbeat ? ensureIsoString(deviceRecord.lastHeartbeat) : null;
+    sanitizedLatest.deviceOnline = deviceFresh;
+    sanitizedLatest.isStale = !timestampFresh;
+    sanitizedLatest.sampleAgeMs = Number.isFinite(timestampMs) ? now - timestampMs : null;
+    sanitizedLatest.sensorSummary = buildSensorSummary(sanitizedLatest);
+    sanitizedLatest.lastSeen = sanitizedLatest.timestamp;
+
+    res.json({
+      success: true,
+      status: sanitizedLatest.deviceOnline ? 'online' : 'offline',
+      systemStatus: sanitizedLatest.deviceOnline ? 'online' : (sanitizedLatest.isStale ? 'stale' : 'offline'),
+      databaseStatus: 'connected',
+      data: sanitizedLatest,
+    });
 
   } catch (error) {
     console.error('Error fetching latest sensor data:', error);

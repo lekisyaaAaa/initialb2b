@@ -91,23 +91,6 @@ const LoginPage: React.FC = () => {
           // ignore
         }
 
-        if (!discovered) {
-          const localUser = (process.env.REACT_APP_LOCAL_ADMIN_USER || 'admin');
-          const localPass = (process.env.REACT_APP_LOCAL_ADMIN_PASS || 'admin');
-          if (formData.username.trim() === localUser && formData.password === localPass) {
-            const fakeToken = `local-dev-token-${Date.now()}`;
-            const user = { id: 'local-admin', username: localUser, role: 'admin', local: true } as any;
-            if (setAuth) {
-              setAuth(fakeToken, user);
-            } else {
-              localStorage.setItem('adminToken', fakeToken);
-              localStorage.setItem('token', fakeToken);
-              localStorage.setItem('user', JSON.stringify(user));
-            }
-            navigate('/admin/dashboard');
-            return;
-          }
-        }
         // otherwise continue to normal login attempt
       }
 

@@ -1,6 +1,8 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const router = express.Router();
+const { auth, adminOnly } = require('../middleware/auth');
+const adminDevicePortsController = require('../controllers/adminDevicePortsController');
 
 // POST /api/admin/login
 router.post('/login', async (req, res) => {
@@ -38,5 +40,10 @@ router.post('/login', async (req, res) => {
     return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
+
+// Device port management (admin only)
+router.get('/devices/:deviceId/ports/enumerate', auth, adminOnly, adminDevicePortsController.enumerate);
+router.get('/devices/:deviceId/ports', auth, adminOnly, adminDevicePortsController.list);
+router.post('/devices/:deviceId/ports', auth, adminOnly, adminDevicePortsController.assign);
 
 module.exports = router;

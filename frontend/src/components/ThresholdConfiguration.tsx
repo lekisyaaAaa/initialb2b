@@ -1,170 +1,281 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Save, RefreshCw, AlertTriangle, CheckCircle } from 'lucide-react';
 
+type MetricKey = 'temperature' | 'humidity' | 'moisture' | 'ec';
+
+interface MetricThreshold {
+  min: number;
+  max: number;
+  warning: number;
+  critical: number;
+}
+
+interface PhThreshold {
+  minWarning: number;
+  minCritical: number;
+  maxWarning: number;
+  maxCritical: number;
+}
+
 interface Thresholds {
-  temperature: {
-    min: number;
-    max: number;
-    warning: number;
-    critical: number;
-  };
-  humidity: {
-    min: number;
-    max: number;
-    warning: number;
-    critical: number;
-  };
-  moisture: {
-    min: number;
-    max: number;
-    warning: number;
-    critical: number;
-  };
-  ph: {
-    min: number;
-    max: number;
-    warning: number;
-    critical: number;
-  };
-  ec: {
-    min: number;
-    max: number;
-    warning: number;
-    critical: number;
-  };
+  temperature: MetricThreshold;
+  humidity: MetricThreshold;
+  moisture: MetricThreshold;
+  ph: PhThreshold;
+  ec: MetricThreshold;
 }
 
 interface ThresholdConfigurationProps {
   onThresholdsChange?: (thresholds: Thresholds) => void;
 }
 
+const DEFAULT_THRESHOLDS: Thresholds = {
+  temperature: { min: 18, max: 30, warning: 30, critical: 35 },
+  humidity: { min: 40, max: 70, warning: 65, critical: 75 },
+  moisture: { min: 30, max: 60, warning: 35, critical: 25 },
+  ph: { minWarning: 6.0, minCritical: 5.5, maxWarning: 7.5, maxCritical: 8.0 },
+  ec: { min: 0, max: 5000, warning: 2000, critical: 3000 },
+};
+
+const cloneDefaults = (): Thresholds => ({
+  temperature: { ...DEFAULT_THRESHOLDS.temperature },
+  humidity: { ...DEFAULT_THRESHOLDS.humidity },
+  moisture: { ...DEFAULT_THRESHOLDS.moisture },
+  ph: { ...DEFAULT_THRESHOLDS.ph },
+  ec: { ...DEFAULT_THRESHOLDS.ec },
+});
+
+const metricFriendlyName: Record<MetricKey, string> = {
+  temperature: 'temperature',
+  humidity: 'humidity',
+  moisture: 'moisture',
+  ec: 'ec',
+};
+
 export const ThresholdConfiguration: React.FC<ThresholdConfigurationProps> = ({ onThresholdsChange }) => {
-  const [thresholds, setThresholds] = useState<Thresholds>({
-    temperature: { min: 18, max: 30, warning: 25, critical: 32 },
-    humidity: { min: 40, max: 70, warning: 65, critical: 75 },
-    moisture: { min: 30, max: 60, warning: 35, critical: 25 },
-    ph: { min: 6.0, max: 8.0, warning: 5.5, critical: 5.0 },
-    ec: { min: 0, max: 2000, warning: 1500, critical: 2500 }
-  });
+  const [thresholds, setThresholds] = useState<Thresholds>(() => cloneDefaults());
 
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [hasChanges, setHasChanges] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errors, setErrors] = useState<string[]>([]);
+
+  const toNumber = useCallback((value: unknown, fallback: number): number => {
+    if (value === null || value === undefined || (typeof value === 'string' && value.trim() === '')) {
+      return fallback;
+    }
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }, []);
+
+  const normalizeMetric = useCallback((incoming: any, defaults: MetricThreshold): MetricThreshold => ({
+    min: toNumber(incoming?.min, defaults.min),
+    max: toNumber(incoming?.max, defaults.max),
+    warning: toNumber(incoming?.warning, defaults.warning),
+    critical: toNumber(incoming?.critical, defaults.critical),
+  }), [toNumber]);
+
+  const normalizePh = useCallback((incoming: any, defaults: PhThreshold): PhThreshold => ({
+    minWarning: toNumber(incoming?.minWarning, defaults.minWarning),
+    minCritical: toNumber(incoming?.minCritical, defaults.minCritical),
+    maxWarning: toNumber(incoming?.maxWarning, defaults.maxWarning),
+    maxCritical: toNumber(incoming?.maxCritical, defaults.maxCritical),
+  }), [toNumber]);
 
   useEffect(() => {
     loadThresholds();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadThresholds = async () => {
+    setLoading(true);
     try {
       const response = await fetch('/api/settings');
       if (response.ok) {
         const data = await response.json();
-        if (data.thresholds) {
-          setThresholds(data.thresholds);
-          setLastSaved(new Date());
-        }
+        const rawThresholds = data?.data?.thresholds || data?.thresholds || {};
+        const next: Thresholds = {
+          temperature: normalizeMetric(rawThresholds.temperature, DEFAULT_THRESHOLDS.temperature),
+          humidity: normalizeMetric(rawThresholds.humidity, DEFAULT_THRESHOLDS.humidity),
+          moisture: normalizeMetric(rawThresholds.moisture, DEFAULT_THRESHOLDS.moisture),
+          ph: normalizePh(rawThresholds.ph, DEFAULT_THRESHOLDS.ph),
+          ec: normalizeMetric(rawThresholds.ec, DEFAULT_THRESHOLDS.ec),
+        };
+        setThresholds(next);
+        setLastSaved(new Date());
+        setHasChanges(false);
+        setErrors([]);
       }
     } catch (error) {
       console.error('Failed to load thresholds:', error);
+      setErrors(['Unable to load thresholds. Please try again.']);
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleThresholdChange = (sensor: keyof Thresholds, field: string, value: number) => {
+  const handleMetricChange = (sensor: MetricKey, field: keyof MetricThreshold, value: number) => {
+    if (!Number.isFinite(value)) {
+      return;
+    }
     setThresholds(prev => ({
       ...prev,
       [sensor]: {
         ...prev[sensor],
-        [field]: value
-      }
+        [field]: value,
+      },
     }));
     setHasChanges(true);
   };
 
-  const validateThresholds = (): string[] => {
+  const handlePhChange = (field: keyof PhThreshold, value: number) => {
+    if (!Number.isFinite(value)) {
+      return;
+    }
+    setThresholds(prev => ({
+      ...prev,
+      ph: {
+        ...prev.ph,
+        [field]: value,
+      },
+    }));
+    setHasChanges(true);
+  };
+
+  const validateThresholds = useCallback((payload: Thresholds): string[] => {
     const errors: string[] = [];
 
-    Object.entries(thresholds).forEach(([sensor, config]) => {
-      if (config.min >= config.max) {
-        errors.push(`${sensor}: Min must be less than Max`);
+    const bounds: Record<MetricKey, { min: number; max: number }> = {
+      temperature: { min: -50, max: 100 },
+      humidity: { min: 0, max: 100 },
+      moisture: { min: 0, max: 100 },
+      ec: { min: 0, max: 10000 },
+    };
+
+    (Object.keys(bounds) as MetricKey[]).forEach((metric) => {
+      const config = payload[metric];
+      const { min, max, warning, critical } = config;
+      const range = bounds[metric];
+
+      if (min >= max) {
+        errors.push(`${metricFriendlyName[metric]}: min must be lower than max`);
       }
-      if (config.warning >= config.critical) {
-        errors.push(`${sensor}: Warning must be less than Critical`);
+      if (min < range.min || min > range.max) {
+        errors.push(`${metricFriendlyName[metric]}: min must be between ${range.min} and ${range.max}`);
       }
-      // For moisture, low values are critical, so warning should be higher than critical
-      if (sensor === 'moisture') {
-        if (config.warning <= config.critical) {
-          errors.push(`${sensor}: Warning must be greater than Critical for moisture`);
+      if (max < range.min || max > range.max) {
+        errors.push(`${metricFriendlyName[metric]}: max must be between ${range.min} and ${range.max}`);
+      }
+      if (warning < range.min || warning > range.max) {
+        errors.push(`${metricFriendlyName[metric]}: warning must be between ${range.min} and ${range.max}`);
+      }
+      if (critical < range.min || critical > range.max) {
+        errors.push(`${metricFriendlyName[metric]}: critical must be between ${range.min} and ${range.max}`);
+      }
+
+      if (metric === 'moisture') {
+        if (critical >= warning) {
+          errors.push('moisture: critical must be lower than warning');
         }
+      } else if (critical <= warning) {
+        errors.push(`${metricFriendlyName[metric]}: critical must be higher than warning`);
       }
     });
 
+    const { minWarning, minCritical, maxWarning, maxCritical } = payload.ph;
+    const phValues = [minWarning, minCritical, maxWarning, maxCritical];
+    phValues.forEach((value) => {
+      if (value < 0 || value > 14) {
+        errors.push('ph: values must be between 0 and 14');
+      }
+    });
+    if (minCritical >= minWarning) {
+      errors.push('ph: minimum critical must be lower than minimum warning');
+    }
+    if (maxCritical <= maxWarning) {
+      errors.push('ph: maximum critical must be higher than maximum warning');
+    }
+    if (!(minCritical < minWarning && minWarning < maxWarning && maxWarning < maxCritical)) {
+      errors.push('ph: thresholds must follow minCritical < minWarning < maxWarning < maxCritical');
+    }
+
     return errors;
-  };
+  }, []);
 
   const handleSave = async () => {
-    const errors = validateThresholds();
-    if (errors.length > 0) {
-      alert(`Validation errors:\n${errors.join('\n')}`);
+    const validation = validateThresholds(thresholds);
+    if (validation.length > 0) {
+      setErrors(validation);
       return;
     }
 
     setSaving(true);
+    setErrors([]);
     try {
       const response = await fetch('/api/settings/thresholds', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ thresholds })
+        body: JSON.stringify({
+          temperature: thresholds.temperature,
+          humidity: thresholds.humidity,
+          moisture: thresholds.moisture,
+          ph: thresholds.ph,
+          ec: thresholds.ec,
+        }),
       });
 
       if (response.ok) {
         setLastSaved(new Date());
         setHasChanges(false);
         onThresholdsChange?.(thresholds);
+        setErrors([]);
       } else {
-        throw new Error('Failed to save thresholds');
+        const body = await response.json().catch(() => null);
+        const serverErrors: string[] = Array.isArray(body?.errors) ? body.errors.map((err: any) => (typeof err === 'string' ? err : err?.msg || JSON.stringify(err))) : [];
+        const message = body?.message ? [body.message] : [];
+        const combined = [...message, ...serverErrors];
+        setErrors(combined.length > 0 ? combined : ['Failed to save thresholds. Please try again.']);
       }
     } catch (error) {
       console.error('Failed to save thresholds:', error);
-      alert('Failed to save thresholds. Please try again.');
+      setErrors(['Failed to save thresholds. Please try again.']);
     } finally {
       setSaving(false);
     }
   };
 
-  const sensorConfigs = [
+  const sensorConfigs: Array<{ key: MetricKey; label: string; unit: string; description: string; step: string }> = [
     {
-      key: 'temperature' as keyof Thresholds,
+      key: 'temperature',
       label: 'Temperature',
       unit: '°C',
-      description: 'Optimal range: 18-30°C'
+      description: 'Optimal range: 18-30°C',
+      step: '0.1',
     },
     {
-      key: 'humidity' as keyof Thresholds,
+      key: 'humidity',
       label: 'Humidity',
       unit: '%',
-      description: 'Optimal range: 40-70%'
+      description: 'Optimal range: 40-70%',
+      step: '1',
     },
     {
-      key: 'moisture' as keyof Thresholds,
+      key: 'moisture',
       label: 'Soil Moisture',
       unit: '%',
-      description: 'Optimal range: 30-60%'
+      description: 'Optimal range: 30-60%',
+      step: '1',
     },
     {
-      key: 'ph' as keyof Thresholds,
-      label: 'pH Level',
-      unit: '',
-      description: 'Optimal range: 6.0-8.0'
-    },
-    {
-      key: 'ec' as keyof Thresholds,
+      key: 'ec',
       label: 'EC (Conductivity)',
       unit: 'µS/cm',
-      description: 'Electrical conductivity'
-    }
+      description: 'Electrical conductivity',
+      step: '1',
+    },
   ];
 
   return (
@@ -186,10 +297,11 @@ export const ThresholdConfiguration: React.FC<ThresholdConfigurationProps> = ({ 
           )}
           <button
             onClick={loadThresholds}
-            className="px-3 py-2 text-sm rounded-md border bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700"
+            className="px-3 py-2 text-sm rounded-md border bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-50"
+            disabled={loading}
             title="Refresh thresholds"
           >
-            <RefreshCw className="w-4 h-4" />
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
           </button>
           <button
             onClick={handleSave}
@@ -222,9 +334,22 @@ export const ThresholdConfiguration: React.FC<ThresholdConfigurationProps> = ({ 
         </div>
       )}
 
+      {errors.length > 0 && (
+        <div className="p-3 bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 rounded-md">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-5 h-5 text-rose-600 mt-0.5" />
+            <div className="text-sm text-rose-700 dark:text-rose-200 space-y-1">
+              {errors.map((error, index) => (
+                <div key={index}>{error}</div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid gap-6">
         {sensorConfigs.map((config) => (
-          <div key={config.key} className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+          <div key={config.key as string} className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
             <div className="flex items-center justify-between mb-4">
               <div>
                 <h4 className="font-medium text-gray-800 dark:text-gray-200">
@@ -249,9 +374,9 @@ export const ThresholdConfiguration: React.FC<ThresholdConfigurationProps> = ({ 
                 </label>
                 <input
                   type="number"
-                  step={config.key === 'ph' ? '0.1' : '1'}
+                  step={config.step}
                   value={thresholds[config.key].min}
-                  onChange={(e) => handleThresholdChange(config.key, 'min', parseFloat(e.target.value))}
+                  onChange={(e) => handleMetricChange(config.key as MetricKey, 'min', parseFloat(e.target.value))}
                   className="w-full px-3 py-2 rounded-md border bg-white dark:bg-gray-700 text-sm"
                 />
               </div>
@@ -262,9 +387,9 @@ export const ThresholdConfiguration: React.FC<ThresholdConfigurationProps> = ({ 
                 </label>
                 <input
                   type="number"
-                  step={config.key === 'ph' ? '0.1' : '1'}
+                  step={config.step}
                   value={thresholds[config.key].max}
-                  onChange={(e) => handleThresholdChange(config.key, 'max', parseFloat(e.target.value))}
+                  onChange={(e) => handleMetricChange(config.key as MetricKey, 'max', parseFloat(e.target.value))}
                   className="w-full px-3 py-2 rounded-md border bg-white dark:bg-gray-700 text-sm"
                 />
               </div>
@@ -275,9 +400,9 @@ export const ThresholdConfiguration: React.FC<ThresholdConfigurationProps> = ({ 
                 </label>
                 <input
                   type="number"
-                  step={config.key === 'ph' ? '0.1' : '1'}
+                  step={config.step}
                   value={thresholds[config.key].warning}
-                  onChange={(e) => handleThresholdChange(config.key, 'warning', parseFloat(e.target.value))}
+                  onChange={(e) => handleMetricChange(config.key as MetricKey, 'warning', parseFloat(e.target.value))}
                   className="w-full px-3 py-2 rounded-md border bg-white dark:bg-gray-700 text-sm"
                 />
               </div>
@@ -288,9 +413,9 @@ export const ThresholdConfiguration: React.FC<ThresholdConfigurationProps> = ({ 
                 </label>
                 <input
                   type="number"
-                  step={config.key === 'ph' ? '0.1' : '1'}
+                  step={config.step}
                   value={thresholds[config.key].critical}
-                  onChange={(e) => handleThresholdChange(config.key, 'critical', parseFloat(e.target.value))}
+                  onChange={(e) => handleMetricChange(config.key as MetricKey, 'critical', parseFloat(e.target.value))}
                   className="w-full px-3 py-2 rounded-md border bg-white dark:bg-gray-700 text-sm"
                 />
               </div>
@@ -317,6 +442,60 @@ export const ThresholdConfiguration: React.FC<ThresholdConfigurationProps> = ({ 
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+        <h4 className="font-medium text-gray-800 dark:text-gray-200 mb-4">pH Thresholds</h4>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Minimum Warning (pH)
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              value={thresholds.ph.minWarning}
+              onChange={(e) => handlePhChange('minWarning', parseFloat(e.target.value))}
+              className="w-full px-3 py-2 rounded-md border bg-white dark:bg-gray-700 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Minimum Critical (pH)
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              value={thresholds.ph.minCritical}
+              onChange={(e) => handlePhChange('minCritical', parseFloat(e.target.value))}
+              className="w-full px-3 py-2 rounded-md border bg-white dark:bg-gray-700 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Maximum Warning (pH)
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              value={thresholds.ph.maxWarning}
+              onChange={(e) => handlePhChange('maxWarning', parseFloat(e.target.value))}
+              className="w-full px-3 py-2 rounded-md border bg-white dark:bg-gray-700 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+              Maximum Critical (pH)
+            </label>
+            <input
+              type="number"
+              step="0.1"
+              value={thresholds.ph.maxCritical}
+              onChange={(e) => handlePhChange('maxCritical', parseFloat(e.target.value))}
+              className="w-full px-3 py-2 rounded-md border bg-white dark:bg-gray-700 text-sm"
+            />
+          </div>
+        </div>
       </div>
 
       <div className="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-md">

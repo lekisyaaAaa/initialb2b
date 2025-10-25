@@ -2,6 +2,7 @@ const express = require('express');
 const { query, validationResult, body } = require('express-validator');
 const Alert = require('../models/Alert');
 const { auth, adminOnly } = require('../middleware/auth');
+const { sanitizeAlertPayload } = require('../utils/sensorFormatting');
 
 const router = express.Router();
 
@@ -101,6 +102,43 @@ router.get('/recent', auth, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error fetching recent alerts'
+    });
+  }
+});
+
+// @route   GET /api/alerts/active
+// @desc    Get unresolved (active) alerts
+// @access  Private
+router.get('/active', auth, async (req, res) => {
+  try {
+    const {
+      deviceId,
+      severity,
+      limit = 50,
+      sort = 'desc',
+    } = req.query;
+
+    const where = { isResolved: false };
+    if (deviceId) where.deviceId = deviceId;
+    if (severity) where.severity = severity;
+
+    const direction = typeof sort === 'string' && sort.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+    const numericLimit = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
+
+    const alerts = await Alert.findAll({
+      where,
+      order: [['createdAt', direction]],
+      limit: numericLimit,
+    });
+
+    const payload = alerts.map((alert) => sanitizeAlertPayload(alert));
+
+    res.json({ success: true, data: payload });
+  } catch (error) {
+    console.error('Error fetching active alerts:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching active alerts',
     });
   }
 });

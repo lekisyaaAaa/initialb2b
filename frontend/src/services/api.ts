@@ -1,5 +1,16 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
-import { ApiResponse, PaginatedResponse, SensorData, Alert, Settings, SensorStats, AlertStats, Actuator } from '../types';
+import {
+  ApiResponse,
+  PaginatedResponse,
+  SensorData,
+  Alert,
+  Settings,
+  SensorStats,
+  AlertStats,
+  Actuator,
+  NotificationItem,
+  DeviceSensorSummary,
+} from '../types';
 
 // Create axios instance with base configuration
 // Build a normalized API base URL. Users may set REACT_APP_API_URL with or without
@@ -186,19 +197,6 @@ export const adminAuthService = {
       }
     }
 
-    // attempt a client-side local admin fallback (development only)
-    try {
-      const localUser = (process.env.REACT_APP_LOCAL_ADMIN_USER || 'admin');
-      const localPass = (process.env.REACT_APP_LOCAL_ADMIN_PASS || 'admin');
-      if (username === localUser && password === localPass) {
-        const fakeToken = `local-dev-token-${Date.now()}`;
-        const user = { id: 'local-admin', username: localUser, role: 'admin', local: true };
-        return { success: true, token: fakeToken, user } as any;
-      }
-    } catch (fallbackError) {
-      // ignore fallback errors
-    }
-
     if (networkIssueDetected) {
       return { success: false, message: 'Server offline. Please check if the backend is running.' };
     }
@@ -222,7 +220,7 @@ export const sensorService = {
     api.get<PaginatedResponse<SensorData>>('/sensors/data', { params }),
   
   getLatestData: (deviceId?: string) =>
-    api.get<ApiResponse<SensorData[]>>('/sensors/latest', {
+    api.get<ApiResponse<SensorData | SensorData[] | null>>('/sensors/latest', {
       params: deviceId ? { deviceId } : undefined,
     }),
   
@@ -256,6 +254,9 @@ export const alertService = {
   getLatestAlerts: () =>
     api.get<ApiResponse<Alert[]>>('/alerts/latest'),
 
+  getActiveAlerts: (params?: { deviceId?: string; severity?: string; limit?: number; sort?: 'asc' | 'desc' }) =>
+    api.get<ApiResponse<Alert[]>>('/alerts/active', { params }),
+
   createAlert: (alertData: {
     type: 'sensor' | 'connectivity' | 'threshold' | 'device_offline' | 'other';
     message: string;
@@ -272,11 +273,37 @@ export const alertService = {
   acknowledgeAlert: (alertId: string) =>
     api.put<ApiResponse<Alert>>(`/alerts/${alertId}/acknowledge`),
 
+  resolveAll: (payload?: { deviceId?: string }) =>
+    api.put<ApiResponse<{ resolved: number }>>('/alerts/resolve-all', payload),
+
   getStats: (params?: {
     period?: 'day' | 'week' | 'month';
     deviceId?: string;
   }) =>
     api.get<ApiResponse<AlertStats>>('/alerts/stats', { params }),
+};
+
+export const notificationService = {
+  list: (params?: { status?: 'new' | 'read'; limit?: number }) =>
+    api.get<ApiResponse<NotificationItem[]>>('/notifications', { params }),
+
+  stats: () =>
+    api.get<ApiResponse<{ total: number; unread: number; resolved: number }>>('/notifications/stats'),
+
+  markAsRead: (notificationId: string) =>
+    api.patch<ApiResponse<NotificationItem>>(`/notifications/${notificationId}/mark-read`),
+
+  markAsUnread: (notificationId: string) =>
+    api.patch<ApiResponse<NotificationItem>>(`/notifications/${notificationId}/mark-unread`),
+
+  remove: (notificationId: string) =>
+    api.delete<ApiResponse<NotificationItem>>(`/notifications/${notificationId}`),
+};
+
+export const deviceService = {
+  list: () => api.get<ApiResponse<any[]>>('/devices'),
+  getSensors: (deviceId: string, params?: { limit?: number }) =>
+    api.get<ApiResponse<DeviceSensorSummary>>(`/devices/${encodeURIComponent(deviceId)}/sensors`, { params }),
 };
 
 export const actuatorService = {
@@ -318,91 +345,6 @@ export const systemService = {
       database: any;
     }>>('/system/info'),
 };
-
-let ensureAdminSessionPromise: Promise<boolean> | null = null;
-
-export async function ensureAdminSession(options: { force?: boolean } = {}) {
-  const autoSessionEnabled = String(process.env.REACT_APP_ENABLE_AUTO_ADMIN_SESSION || '').toLowerCase() === 'true';
-
-  if (!autoSessionEnabled) {
-    return false;
-  }
-
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  const force = Boolean(options.force);
-  const storedToken = localStorage.getItem('token') || localStorage.getItem('adminToken');
-  const storedUser = localStorage.getItem('user');
-
-  if (!force && storedToken) {
-    try {
-      (api.defaults.headers as any).Authorization = `Bearer ${storedToken}`;
-    } catch (e) {
-      // ignore header assignment issues in testing environments
-    }
-
-    if (storedUser) {
-      return true;
-    }
-  }
-
-  if (ensureAdminSessionPromise) {
-    return ensureAdminSessionPromise;
-  }
-
-  const username = (
-    process.env.REACT_APP_DEFAULT_ADMIN_USER ||
-    process.env.REACT_APP_LOCAL_ADMIN_USER ||
-    process.env.REACT_APP_DEV_ADMIN_USER ||
-    'beantobin'
-  ).toString();
-  const password = (
-    process.env.REACT_APP_DEFAULT_ADMIN_PASS ||
-    process.env.REACT_APP_LOCAL_ADMIN_PASS ||
-    process.env.REACT_APP_DEV_ADMIN_PASS ||
-    'Bean2bin'
-  ).toString();
-
-  ensureAdminSessionPromise = (async () => {
-    try {
-      const login = await adminAuthService.loginAdmin(username, password);
-      if (login.success && login.token) {
-        const user = login.user || {
-          id: 'admin-local',
-          username,
-          role: 'admin',
-          source: 'auto-session',
-        };
-
-        try {
-          localStorage.setItem('token', login.token);
-          localStorage.setItem('adminToken', login.token);
-          localStorage.setItem('user', JSON.stringify(user));
-        } catch (storageError) {
-          // ignore storage write failures (private browsing, etc.)
-        }
-
-        try {
-          (api.defaults.headers as any).Authorization = `Bearer ${login.token}`;
-        } catch (headerError) {
-          // ignore header assignment errors
-        }
-
-        return true;
-      }
-
-      return false;
-    } catch (error) {
-      return false;
-    } finally {
-      ensureAdminSessionPromise = null;
-    }
-  })();
-
-  return ensureAdminSessionPromise;
-}
 
 export default api;
 

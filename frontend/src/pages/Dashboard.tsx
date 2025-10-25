@@ -182,8 +182,8 @@ const Dashboard: React.FC = () => {
       <HeaderFrame
         titleSuffix="Dashboard"
         subtitle="Live environmental monitoring"
-        badgeLabel={isAdmin ? 'Admin Dashboard' : 'User Dashboard'}
-        badgeTone={isAdmin ? 'emerald' : 'default'}
+        badgeLabel="User Dashboard"
+        badgeTone="default"
         contextTag={connectionBadge}
         rightSlot={headerActions}
       />

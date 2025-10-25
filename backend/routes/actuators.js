@@ -17,6 +17,9 @@ ensureDefaultActuators().catch((error) => {
   console.warn('actuators: failed to ensure default records', error && error.message ? error.message : error);
 });
 
+const ALLOWED_ACTUATOR_TYPES = ['pump', 'solenoid'];
+const ALLOWED_ACTIONS = ['on', 'off'];
+
 function respondValidationErrors(req, res) {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -38,6 +41,85 @@ router.get('/', [auth, adminOnly], async (req, res) => {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
+
+router.post(
+  '/control',
+  [
+    auth,
+    adminOnly,
+  body('actuatorType').isString().trim().toLowerCase().isIn(ALLOWED_ACTUATOR_TYPES).withMessage('Actuator type must be pump or solenoid'),
+  body('action').isString().trim().toLowerCase().isIn(ALLOWED_ACTIONS).withMessage('Action must be on or off'),
+  body('deviceId').optional().isString().trim().notEmpty().withMessage('deviceId must be a non-empty string'),
+    body('reason').optional().isString().isLength({ max: 255 }).withMessage('reason must be a string up to 255 characters'),
+  ],
+  async (req, res) => {
+    try {
+      if (respondValidationErrors(req, res)) {
+        return;
+      }
+
+      const { actuatorType, action, deviceId, reason } = req.body;
+      const availableActuators = await listActuators();
+      const target = availableActuators.find((item) => item.type === actuatorType);
+
+      if (!target) {
+        return res.status(404).json({ success: false, message: 'Actuator not found' });
+      }
+
+      const actuator = await findActuatorById(target.id);
+      if (!actuator) {
+        return res.status(404).json({ success: false, message: 'Actuator not found' });
+      }
+
+      const controlOptions = {
+        deviceId: deviceId || 'system',
+        reason: reason || null,
+        triggeredBy: 'manual',
+        userId: req.user && req.user.id ? req.user.id : null,
+        skipLog: true,
+      };
+
+      const desiredStatus = action === 'on';
+      const result = await updateActuatorStatus(actuator, desiredStatus, controlOptions);
+
+      if (result.error) {
+        return res.status(502).json({
+          success: false,
+          message: result.error,
+          data: sanitizeActuator(result.actuator),
+          code: 'esp_unreachable',
+        });
+      }
+
+      try {
+        if (typeof ActuatorLog.create === 'function') {
+          await ActuatorLog.create({
+            deviceId: controlOptions.deviceId,
+            actuatorType,
+            action,
+            reason: controlOptions.reason,
+            triggeredBy: 'manual',
+            userId: controlOptions.userId,
+          });
+        }
+      } catch (logError) {
+        console.warn('actuators: manual control log failed', logError && logError.message ? logError.message : logError);
+      }
+
+      const responseMessage = `${actuatorType} turned ${action} successfully`;
+
+      return res.json({
+        success: true,
+        changed: result.changed,
+        message: responseMessage,
+        data: sanitizeActuator(result.actuator),
+      });
+    } catch (error) {
+      console.error('actuators: control failed', error);
+      res.status(500).json({ success: false, message: 'Server error' });
+    }
+  }
+);
 
 router.post('/:id/toggle', [auth, adminOnly], async (req, res) => {
   try {

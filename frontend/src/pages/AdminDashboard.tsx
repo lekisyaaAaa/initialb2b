@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { Bell, Check, Settings, Activity, Users, BarChart3, Calendar } from 'lucide-react';
+import { Bell, Check, Settings, Activity, Users, BarChart3, Calendar, RefreshCw } from 'lucide-react';
 import SensorCharts from '../components/SensorCharts';
 import SystemHealth from '../components/SystemHealth';
 import SensorCard from '../components/SensorCard';
@@ -16,7 +16,7 @@ import { AlertsManagement } from '../components/AlertsManagement';
 import { SystemDiagnostics } from '../components/SystemDiagnostics';
 import { useAuth } from '../contexts/AuthContext';
 import weatherService from '../services/weatherService';
-import { alertService } from '../services/api';
+import api, { alertService, sensorService } from '../services/api';
 
 type Sensor = {
   id: string;
@@ -34,6 +34,13 @@ type Sensor = {
 };
 
 type Alert = { id: string; _id?: string; type?: string; title: string; severity: 'info' | 'warning' | 'critical'; message?: string; createdAt: string; acknowledged?: boolean };
+type DeviceSummary = {
+  deviceId: string;
+  status: string;
+  lastHeartbeat?: string | null;
+  signalStrength?: number | null;
+  metadata?: Record<string, any> | null;
+};
 
 type StatusPillProps = { label: string; status: string };
 
@@ -65,6 +72,8 @@ export default function AdminDashboard(): React.ReactElement {
   const [weatherSummary, setWeatherSummary] = useState<any | null>(null);
   const [systemStatus, setSystemStatus] = useState<{ server: string; database: string; apiLatency: number }>({ server: 'offline', database: 'offline', apiLatency: 0 });
   const [devicesOnline, setDevicesOnline] = useState<number>(0);
+  const [deviceInventory, setDeviceInventory] = useState<DeviceSummary[]>([]);
+  const [deviceError, setDeviceError] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<any | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -74,7 +83,6 @@ export default function AdminDashboard(): React.ReactElement {
   const [reminders, setReminders] = useState<Array<any>>([]);
   const [remindersLoading, setRemindersLoading] = useState(false);
   const [sensorStatus, setSensorStatus] = useState<string>('Checking...');
-  const [isAddingSensor, setIsAddingSensor] = useState(false);
   const [actuatorLogs, setActuatorLogs] = useState<any[]>([]);
   const [latestAlerts, setLatestAlerts] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -111,6 +119,45 @@ export default function AdminDashboard(): React.ReactElement {
     }
   }
 
+  const refreshDeviceInventory = React.useCallback(async () => {
+    try {
+      const res = await fetch('/api/devices');
+      if (!res.ok) {
+        throw new Error(`Request failed with status ${res.status}`);
+      }
+      const body = await res.json().catch(() => ({}));
+      const rawList = Array.isArray(body?.data) ? body.data : (Array.isArray(body) ? body : []);
+      const normalized: DeviceSummary[] = (rawList || []).map((device: any) => ({
+        deviceId: (device?.deviceId || device?.device_id || device?.id || device?.name || 'unknown-device').toString(),
+        status: (device?.status || device?.deviceStatus || 'offline').toString().toLowerCase(),
+        lastHeartbeat: device?.lastHeartbeat || device?.last_seen || device?.updatedAt || device?.createdAt || null,
+        signalStrength: typeof device?.signalStrength === 'number' ? device.signalStrength : (typeof device?.rssi === 'number' ? device.rssi : null),
+        metadata: device?.metadata || device?.info || null,
+      }));
+
+      setDeviceInventory(normalized);
+      const onlineCount = normalized.filter((device) => device.status === 'online').length;
+      setDevicesOnline(onlineCount);
+      setSensorStatus(onlineCount > 0 ? `${onlineCount} device${onlineCount === 1 ? '' : 's'} online` : 'No sensors connected');
+      setDeviceError(null);
+    } catch (e: any) {
+      console.warn('AdminDashboard::refreshDeviceInventory', e?.message || e);
+      setDeviceInventory([]);
+      setDevicesOnline(0);
+      setSensorStatus('No sensors connected');
+      setDeviceError('Unable to load device inventory');
+    }
+  }, []);
+
+  const formatHeartbeat = React.useCallback((value?: string | null) => {
+    if (!value) return 'No heartbeat recorded';
+    try {
+      return new Date(value).toLocaleString();
+    } catch (e) {
+      return String(value);
+    }
+  }, []);
+
   async function loadLatestAlerts() {
     // Use the recent (unresolved) alerts endpoint instead of the admin-only
     // `/alerts/latest`. Public dashboard creates alerts via `/alerts` and
@@ -133,12 +180,15 @@ export default function AdminDashboard(): React.ReactElement {
     }
   }
 
-  async function markAlertAsRead(alertId: string) {
+  async function markAlertAsRead(alertId?: string) {
+    if (!alertId) {
+      return;
+    }
     try {
       await alertService.markAsRead(alertId);
       // Update local state
-      setLatestAlerts(prev => prev.map(alert =>
-        alert._id === alertId ? { ...alert, status: 'read' } : alert
+      setLatestAlerts((prev) => prev.map((alert) =>
+        (alert.id === alertId || alert._id === alertId) ? { ...alert, status: 'read' } : alert
       ));
       setUnreadCount(prev => Math.max(0, prev - 1));
     } catch (error) {
@@ -159,28 +209,6 @@ export default function AdminDashboard(): React.ReactElement {
     alert('Schedule requested (best-effort).');
   }
 
-  async function addSensor() {
-    setIsAddingSensor(true);
-    try {
-      // Register a new sensor
-      const res = await fetch('/api/sensors/register', { 
-        method: 'POST', 
-        headers: { 'Content-Type': 'application/json' }, 
-        body: JSON.stringify({ deviceId: 'new-sensor-' + Date.now() }) 
-      });
-      if (res.ok) {
-        setSensorStatus('Sensor successfully connected');
-        // Sensor data will be refreshed automatically by the polling interval
-      } else {
-        setSensorStatus('No sensors connected');
-      }
-    } catch (e) {
-      setSensorStatus('No sensors connected');
-    } finally {
-      setIsAddingSensor(false);
-    }
-  }
-
   // Search UI state
 
   function fmtLastSeen(iso?: string | null) { if (!iso) return 'No data'; try { return new Date(iso).toLocaleString(); } catch { return String(iso); } }
@@ -189,59 +217,84 @@ export default function AdminDashboard(): React.ReactElement {
     let mounted = true;
     async function loadLatest() {
       try {
-  const start = Date.now();
-  const res = await fetch('/api/sensors/latest', { cache: 'no-store' });
-  const end = Date.now();
-  if (!mounted) return;
-  const latency = end - start;
-        if (res.ok) {
-          const data = await res.json();
-          console.debug('AdminDashboard::loadLatest success', { latency, data });
-          const payload = data?.data;
-          let latestReading: Sensor | null = null;
+        const start = Date.now();
+        const [latestResp, healthResp] = await Promise.all([
+          sensorService.getLatestData().catch((err) => {
+            console.warn('AdminDashboard::loadLatest sensor fetch error', err);
+            throw err;
+          }),
+          api.get('/health').catch((err) => {
+            console.warn('AdminDashboard::loadLatest health fetch error', err?.message || err);
+            return null;
+          })
+        ]);
 
-          if (Array.isArray(payload)) {
-            latestReading = (payload.length > 0 ? (payload[0] as Sensor) : null);
-          } else if (payload && typeof payload === 'object') {
-            latestReading = payload as Sensor;
-          }
+        if (!mounted) return;
 
-          if (latestReading) {
-            setLatestSensor(latestReading);
-            setSensorHistory(prev => {
-              const next = [...prev.slice(-199), latestReading as Sensor];
-              return next;
-            });
-          }
+        const latency = Date.now() - start;
+        const payload = latestResp?.data?.data;
+        let latestReading: Sensor | null = null;
 
-          const derivedDatabaseStatus = (data?.databaseStatus || data?.database?.status || data?.database || data?.metadata?.databaseStatus || 'online');
-          const serverStatus = (data?.status || data?.systemStatus || data?.serverStatus || data?.server || 'online');
-          const toStatusString = (value: unknown, fallback: string) => {
-            if (typeof value === 'string' && value.trim().length > 0) {
-              return value.trim().toLowerCase();
-            }
-            return fallback;
-          };
-          const healthyValue = (value: string) => (
-            ['online', 'connected', 'ok', 'ready', 'healthy', 'up', 'available', 'reachable'].includes(value)
-              ? 'online'
-              : value
-          );
-          const normalizedServerStatus = healthyValue(toStatusString(serverStatus, 'online'));
-          const normalizedDatabaseStatus = healthyValue(toStatusString(derivedDatabaseStatus, 'online'));
+        if (Array.isArray(payload)) {
+          latestReading = payload.length > 0 ? (payload[0] as Sensor) : null;
+        } else if (payload && typeof payload === 'object' && Object.keys(payload).length > 0) {
+          latestReading = payload as Sensor;
+        }
 
-          setSystemStatus({
-            server: normalizedServerStatus,
-            database: normalizedDatabaseStatus,
-            apiLatency: latency,
+        if (latestReading) {
+          setLatestSensor(latestReading);
+          setSensorHistory((prev) => {
+            const next = [...prev.slice(-199), latestReading as Sensor];
+            return next;
           });
         } else {
-          console.debug('AdminDashboard::loadLatest non-200', { status: res.status, statusText: res.statusText });
-          setSystemStatus({ server: 'offline', database: 'offline', apiLatency: latency });
+          setLatestSensor(null);
         }
-      } catch (e) {
-        console.warn('AdminDashboard::loadLatest error', e);
+
+        const statusPayload: any = latestResp?.data || {};
+        const healthPayload: any = healthResp?.data || {};
+
+        const primaryServerStatus =
+          statusPayload?.status ??
+          statusPayload?.systemStatus ??
+          healthPayload?.status ??
+          'online';
+
+        const primaryDatabaseStatus =
+          statusPayload?.databaseStatus ??
+          statusPayload?.database?.status ??
+          healthPayload?.database?.status ??
+          'online';
+
+        const toStatusString = (value: unknown, fallback: string) => {
+          if (typeof value === 'string' && value.trim().length > 0) {
+            return value.trim().toLowerCase();
+          }
+          if (typeof value === 'boolean') {
+            return value ? 'online' : 'offline';
+          }
+          return fallback;
+        };
+
+        const healthyValue = (value: string) => (
+          ['online', 'connected', 'ok', 'ready', 'healthy', 'up', 'available', 'reachable'].includes(value)
+            ? 'online'
+            : value
+        );
+
+        const normalizedServerStatus = healthyValue(toStatusString(primaryServerStatus, 'online'));
+        const normalizedDatabaseStatus = healthyValue(toStatusString(primaryDatabaseStatus, 'online'));
+
+        setSystemStatus({
+          server: normalizedServerStatus,
+          database: normalizedDatabaseStatus,
+          apiLatency: latency,
+        });
+      } catch (error) {
+        console.warn('AdminDashboard::loadLatest error', error);
+        if (!mounted) return;
         setSystemStatus({ server: 'offline', database: 'offline', apiLatency: 0 });
+        setLatestSensor(null);
       }
     }
 
@@ -275,18 +328,7 @@ export default function AdminDashboard(): React.ReactElement {
 
     loadLatest(); loadAlerts(); loadHealth(); loadReminders(); loadLatestAlerts();
     // load devices
-    (async function loadDevices() {
-      try {
-        const res = await fetch('/api/devices');
-        if (res.ok) {
-          const body = await res.json();
-          const list = Array.isArray(body.data) ? body.data : (Array.isArray(body) ? body : []);
-          setDevicesOnline(Array.isArray(list) ? list.filter((d:any) => d.status === 'online').length : 0);
-        }
-      } catch (e) {
-        setDevicesOnline(0);
-      }
-    })();
+    refreshDeviceInventory();
     // also fetch initial history for charts
     (async function loadHistory() {
       try {
@@ -302,21 +344,24 @@ export default function AdminDashboard(): React.ReactElement {
         // ignore
       }
     })();
+    const idDevices = setInterval(refreshDeviceInventory, 15000);
     const id1 = setInterval(loadLatest, 5000);
     const id2 = setInterval(loadAlerts, 15000);
     const id3 = setInterval(loadHealth, 10000);
     const id4 = setInterval(loadReminders, 60_000);
     const id5 = setInterval(loadLatestAlerts, 10000); // Poll for new alerts every 10 seconds
-    return () => { mounted = false; clearInterval(id1); clearInterval(id2); clearInterval(id3); clearInterval(id4); clearInterval(id5); };
-  }, []);
+    return () => { mounted = false; clearInterval(idDevices); clearInterval(id1); clearInterval(id2); clearInterval(id3); clearInterval(id4); clearInterval(id5); };
+  }, [refreshDeviceInventory]);
 
   useEffect(() => {
-    if (latestSensor) {
-      setSensorStatus('Sensor successfully connected');
+    if (devicesOnline > 0) {
+      setSensorStatus(`${devicesOnline} device${devicesOnline === 1 ? '' : 's'} online`);
+    } else if (latestSensor) {
+      setSensorStatus('Sensor activity detected');
     } else {
       setSensorStatus('No sensors connected');
     }
-  }, [latestSensor]);
+  }, [devicesOnline, latestSensor]);
 
   // (User management removed) 
 
@@ -699,7 +744,73 @@ export default function AdminDashboard(): React.ReactElement {
                   <p className="text-gray-600 dark:text-gray-400">Configure thresholds, manage alerts, and monitor system diagnostics</p>
                 </div>
 
-                <ActuatorControls />
+                <div className="bg-white dark:bg-gray-900/70 border border-gray-200 dark:border-gray-800 rounded-xl shadow p-6">
+                  <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-4">
+                    <div>
+                      <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Device Inventory</h4>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Tracking registered field devices and their latest heartbeat status.
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span className="px-3 py-1 text-xs font-medium rounded-full border border-emerald-200 bg-emerald-50 text-emerald-600 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                        {devicesOnline} online / {deviceInventory.length} detected
+                      </span>
+                      <button
+                        type="button"
+                        onClick={refreshDeviceInventory}
+                        className="inline-flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
+                      >
+                        <RefreshCw className="w-4 h-4" /> Refresh
+                      </button>
+                    </div>
+                  </div>
+                  {deviceError && (
+                    <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200">
+                      {deviceError}
+                    </div>
+                  )}
+                  {deviceInventory.length === 0 ? (
+                    <div className="text-center py-8 text-sm text-gray-500 dark:text-gray-400">
+                      No devices are registered yet. The monitoring widgets will activate automatically once a device reports in.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {deviceInventory.map((device) => (
+                        <div key={device.deviceId} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white/70 dark:bg-gray-900/50">
+                          <div className="flex items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                                Device {device.deviceId}
+                              </p>
+                              <p className="text-xs text-gray-500 dark:text-gray-400">
+                                Last heartbeat: {formatHeartbeat(device.lastHeartbeat)}
+                              </p>
+                            </div>
+                            <StatusPill label="Status" status={device.status} />
+                          </div>
+                          <div className="mt-3 space-y-2 text-xs text-gray-600 dark:text-gray-400">
+                            {device.signalStrength !== null && device.signalStrength !== undefined && (
+                              <div>Signal strength: {device.signalStrength} dBm</div>
+                            )}
+                            {device.metadata && Object.keys(device.metadata).length > 0 && (
+                              <div>
+                                Metadata: {Object.entries(device.metadata).filter(([key]) => key !== '_id').map(([key, value]) => `${key}: ${value}`).join(', ')}
+                              </div>
+                            )}
+                            {device.status !== 'online' && (
+                              <div className="text-amber-600 dark:text-amber-300">
+                                Awaiting reconnect. Commands remain disabled until the device is back online.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <ActuatorControls deviceOnline={devicesOnline > 0} />
 
                 {/* Sub-tabs for monitoring */}
                 <div className="bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 rounded-lg shadow">
@@ -806,74 +917,76 @@ export default function AdminDashboard(): React.ReactElement {
                           </div>
 
                           <div className="space-y-3 max-h-96 overflow-y-auto">
-                            {devicesOnline === 0 ? (
-                              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                                <Bell className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                                <p>Awaiting live data — no devices are online</p>
-                                <p className="text-sm">Connect an ESP32 unit to begin receiving live alerts</p>
+                            {devicesOnline === 0 && (
+                              <div className="text-xs text-amber-600 dark:text-amber-300">
+                                No devices are currently online. Showing the most recent unresolved alerts for reference.
                               </div>
-                            ) : latestAlerts.length === 0 ? (
+                            )}
+                            {latestAlerts.length === 0 ? (
                               <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                                 <Bell className="w-12 h-12 mx-auto mb-4 opacity-50" />
                                 <p>No active alerts</p>
                                 <p className="text-sm">All systems are operating normally</p>
                               </div>
                             ) : (
-                              latestAlerts.map((alert: any) => (
-                                <div key={alert._id} className={`p-4 rounded-lg border ${
-                                  alert.status === 'new'
-                                    ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700'
-                                    : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-600'
-                                }`}>
-                                  <div className="flex items-start justify-between">
-                                    <div className="flex-1">
-                                      <div className="flex items-center space-x-2 mb-2">
-                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                          alert.status === 'new'
-                                            ? 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
-                                            : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                                        }`}>
-                                          {alert.type || 'System'}
-                                        </span>
-                                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                          alert.severity === 'critical' ? 'bg-red-100 text-red-800' :
-                                          alert.severity === 'warning' ? 'bg-yellow-100 text-yellow-800' :
-                                          'bg-blue-100 text-blue-800'
-                                        }`}>
-                                          {alert.severity || 'info'}
-                                        </span>
+                              latestAlerts.map((alert: any) => {
+                                const alertId = alert.id || alert._id || alert.uuid || alert.timestamp;
+                                return (
+                                  <div key={alertId} className={`p-4 rounded-lg border ${
+                                    alert.status === 'new'
+                                      ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700'
+                                      : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-600'
+                                  }`}>
+                                    <div className="flex items-start justify-between">
+                                      <div className="flex-1">
+                                        <div className="flex items-center space-x-2 mb-2">
+                                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                            alert.status === 'new'
+                                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
+                                              : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
+                                          }`}>
+                                            {alert.type || 'System'}
+                                          </span>
+                                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                                            alert.severity === 'critical' ? 'bg-red-100 text-red-800' :
+                                            alert.severity === 'warning' ? 'bg-yellow-100 text-yellow-800' :
+                                            'bg-blue-100 text-blue-800'
+                                          }`}>
+                                            {alert.severity || 'info'}
+                                          </span>
+                                          {alert.status === 'new' && (
+                                            <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                                          )}
+                                        </div>
+                                        <h5 className="font-medium text-gray-800 dark:text-gray-100 mb-1">
+                                          {alert.title || alert.message?.split('.')[0] || 'Alert'}
+                                        </h5>
+                                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
+                                          {alert.message}
+                                        </p>
+                                        <div className="flex items-center space-x-4 text-xs text-gray-500">
+                                          <span>Created: {new Date(alert.createdAt).toLocaleString()}</span>
+                                          {alert.deviceId && <span>Device: {alert.deviceId}</span>}
+                                        </div>
+                                      </div>
+                                      <div className="flex flex-col gap-2 ml-4">
                                         {alert.status === 'new' && (
-                                          <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                                          <button
+                                            onClick={() => markAlertAsRead(alertId)}
+                                            className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
+                                            title="Mark as read"
+                                          >
+                                            Acknowledge
+                                          </button>
                                         )}
-                                      </div>
-                                      <h5 className="font-medium text-gray-800 dark:text-gray-100 mb-1">
-                                        {alert.title || alert.message?.split('.')[0] || 'Alert'}
-                                      </h5>
-                                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                                        {alert.message}
-                                      </p>
-                                      <div className="flex items-center space-x-4 text-xs text-gray-500">
-                                        <span>Created: {new Date(alert.createdAt).toLocaleString()}</span>
-                                        {alert.deviceId && <span>Device: {alert.deviceId}</span>}
-                                      </div>
-                                    </div>
-                                    <div className="flex flex-col gap-2 ml-4">
-                                      {alert.status === 'new' && (
-                                        <button
-                                          onClick={() => markAlertAsRead(alert._id)}
-                                          className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
-                                          title="Mark as read"
-                                        >
-                                          Acknowledge
+                                        <button className="px-3 py-1 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded text-xs hover:bg-gray-300 dark:hover:bg-gray-500">
+                                          Details
                                         </button>
-                                      )}
-                                      <button className="px-3 py-1 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded text-xs hover:bg-gray-300 dark:hover:bg-gray-500">
-                                        Details
-                                      </button>
+                                      </div>
                                     </div>
                                   </div>
-                                </div>
-                              ))
+                                );
+                              })
                             )}
                           </div>
                         </div>
@@ -936,12 +1049,55 @@ export default function AdminDashboard(): React.ReactElement {
                           <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                             <h4 className="font-medium text-gray-800 dark:text-gray-100 mb-2">Sensor Status</h4>
                             <p className="text-sm text-gray-600 dark:text-gray-400">{sensorStatus}</p>
+                            {devicesOnline === 0 && (
+                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                Waiting for ESP32 devices to report a heartbeat.
+                              </p>
+                            )}
                           </div>
                           <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                            <h4 className="font-medium text-gray-800 dark:text-gray-100 mb-2">Add New Sensor</h4>
-                            <button onClick={addSensor} disabled={isAddingSensor} className="w-full px-4 py-2 text-sm rounded-md bg-green-600 text-white disabled:opacity-50">
-                              {isAddingSensor ? 'Adding...' : 'Add Sensor'}
-                            </button>
+                            <div className="flex items-start justify-between mb-3">
+                              <div>
+                                <h4 className="font-medium text-gray-800 dark:text-gray-100">Connected Sensors</h4>
+                                <p className="text-xs text-gray-600 dark:text-gray-400">Live device inventory reported by the backend.</p>
+                              </div>
+                              <button
+                                onClick={refreshDeviceInventory}
+                                className="px-3 py-1 text-xs rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700"
+                              >
+                                Refresh
+                              </button>
+                            </div>
+                            {deviceError && (
+                              <div className="text-xs text-rose-600 dark:text-rose-300 mb-2">{deviceError}</div>
+                            )}
+                            {deviceInventory.length === 0 ? (
+                              <p className="text-sm text-gray-600 dark:text-gray-400">No sensors detected yet.</p>
+                            ) : (
+                              <ul className="space-y-2 max-h-56 overflow-auto pr-1">
+                                {deviceInventory.map((device) => {
+                                  const online = device.status === 'online';
+                                  return (
+                                    <li key={device.deviceId} className="flex items-start justify-between gap-3 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2">
+                                      <div className="text-sm text-gray-700 dark:text-gray-200">
+                                        <div className="font-medium text-gray-900 dark:text-gray-100">{device.deviceId}</div>
+                                        <div className="text-xs text-gray-500 dark:text-gray-400">Last heartbeat: {formatHeartbeat(device.lastHeartbeat)}</div>
+                                        {device.metadata?.name && (
+                                          <div className="text-xs text-gray-500 dark:text-gray-400">Label: {device.metadata.name}</div>
+                                        )}
+                                      </div>
+                                      <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                                        online
+                                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200'
+                                          : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200'
+                                      }`}>
+                                        {online ? 'Online' : 'Offline'}
+                                      </span>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -1026,13 +1182,25 @@ export default function AdminDashboard(): React.ReactElement {
                   <div className="p-4 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow flex flex-col justify-between min-h-[200px]">
                     <div>
                       <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">Sensor Management</h3>
-                      <p className="text-sm text-gray-600">Add and manage connected sensors.</p>
+                      <p className="text-sm text-gray-600">Overview of sensors currently reporting data.</p>
                       <p className="text-sm text-gray-500 mt-1">{sensorStatus}</p>
-                    </div>
-                    <div className="mt-4">
-                      <button onClick={addSensor} disabled={isAddingSensor} title="Add a new sensor" className="w-full px-4 py-2 text-sm rounded-md bg-green-600 text-white disabled:opacity-50">
-                        {isAddingSensor ? 'Adding...' : 'Add Sensors'}
-                      </button>
+                      <div className="mt-3 space-y-2">
+                        {deviceInventory.length === 0 ? (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">No sensors connected.</p>
+                        ) : (
+                          deviceInventory.slice(0, 3).map((device) => (
+                            <div key={device.deviceId} className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1">
+                              <span className="font-medium text-gray-700 dark:text-gray-200">{device.deviceId}</span>
+                              <span className={device.status === 'online' ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}>
+                                {device.status === 'online' ? 'Online' : 'Offline'}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                        {deviceInventory.length > 3 && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400">+{deviceInventory.length - 3} more sensor(s)</p>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>

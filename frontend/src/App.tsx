@@ -9,6 +9,7 @@ import ContactPage from './pages/ContactPage';
 import Dashboard from './pages/Dashboard';
 import LoginPage from './pages/LoginPage';
 import AdminDashboard from './pages/AdminDashboard';
+import DevicePortsPage from './pages/DevicePortsPage';
 import LogsPage from './pages/LogsPage';
 import ThresholdsPage from './pages/ThresholdsPage';
 import HomeAssistant from './pages/HomeAssistant';
@@ -41,6 +42,7 @@ function App() {
                 <Route path="/admin" element={<ProtectedRoute><Navigate to="/admin/dashboard" replace /></ProtectedRoute>} />
                 {/* Explicit dashboard path kept for compatibility */}
                 <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
+                <Route path="/admin/devices/:deviceId/ports" element={<ProtectedRoute><DevicePortsPage /></ProtectedRoute>} />
                 {/* dev-only debug route removed */}
                 <Route path="/logs" element={<ProtectedRoute><LogsPage /></ProtectedRoute>} />
                 <Route path="/thresholds" element={<ProtectedRoute><ThresholdsPage /></ProtectedRoute>} />

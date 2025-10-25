@@ -48,131 +48,152 @@ router.get('/', auth, async (req, res) => {
 // @route   PUT /api/settings/thresholds
 // @desc    Update alert thresholds
 // @access  Private (Admin only)
-router.put('/thresholds', [auth, adminOnly], [
-  body('temperature.warning').optional().isFloat({ min: -50, max: 100 }).withMessage('Temperature warning must be between -50 and 100'),
-  body('temperature.critical').optional().isFloat({ min: -50, max: 100 }).withMessage('Temperature critical must be between -50 and 100'),
-  body('humidity.warning').optional().isFloat({ min: 0, max: 100 }).withMessage('Humidity warning must be between 0 and 100'),
-  body('humidity.critical').optional().isFloat({ min: 0, max: 100 }).withMessage('Humidity critical must be between 0 and 100'),
-  body('moisture.warning').optional().isFloat({ min: 0, max: 100 }).withMessage('Moisture warning must be between 0 and 100'),
-  body('moisture.critical').optional().isFloat({ min: 0, max: 100 }).withMessage('Moisture critical must be between 0 and 100'),
-  body('batteryLevel.warning').optional().isFloat({ min: 0, max: 100 }).withMessage('Battery warning must be between 0 and 100'),
-  body('batteryLevel.critical').optional().isFloat({ min: 0, max: 100 }).withMessage('Battery critical must be between 0 and 100'),
-  body('ph.minWarning').optional().isFloat({ min: 0, max: 14 }).withMessage('pH min warning must be between 0 and 14'),
-  body('ph.minCritical').optional().isFloat({ min: 0, max: 14 }).withMessage('pH min critical must be between 0 and 14'),
-  body('ph.maxWarning').optional().isFloat({ min: 0, max: 14 }).withMessage('pH max warning must be between 0 and 14'),
-  body('ph.maxCritical').optional().isFloat({ min: 0, max: 14 }).withMessage('pH max critical must be between 0 and 14'),
-  body('ec.warning').optional().isFloat({ min: 0 }).withMessage('EC warning must be positive'),
-  body('ec.critical').optional().isFloat({ min: 0 }).withMessage('EC critical must be positive'),
-  body('nitrogen.minWarning').optional().isFloat({ min: 0 }).withMessage('Nitrogen min warning must be positive'),
-  body('nitrogen.minCritical').optional().isFloat({ min: 0 }).withMessage('Nitrogen min critical must be positive'),
-  body('phosphorus.minWarning').optional().isFloat({ min: 0 }).withMessage('Phosphorus min warning must be positive'),
-  body('phosphorus.minCritical').optional().isFloat({ min: 0 }).withMessage('Phosphorus min critical must be positive'),
-  body('potassium.minWarning').optional().isFloat({ min: 0 }).withMessage('Potassium min warning must be positive'),
-  body('potassium.minCritical').optional().isFloat({ min: 0 }).withMessage('Potassium min critical must be positive'),
-  body('waterLevel.critical').optional().isInt({ min: 0, max: 1 }).withMessage('Water level critical must be 0 or 1')
-], async (req, res) => {
+router.put('/thresholds', [auth, adminOnly], async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
-    }
-
     const settings = await Settings.getSettings();
-    
-    // Update thresholds with provided values
-    const newThresholds = { ...settings.thresholds.toObject() };
-    
-    if (req.body.temperature) {
-      newThresholds.temperature = { ...newThresholds.temperature, ...req.body.temperature };
-    }
-    if (req.body.humidity) {
-      newThresholds.humidity = { ...newThresholds.humidity, ...req.body.humidity };
-    }
-    if (req.body.moisture) {
-      newThresholds.moisture = { ...newThresholds.moisture, ...req.body.moisture };
-    }
-    if (req.body.batteryLevel) {
-      newThresholds.batteryLevel = { ...newThresholds.batteryLevel, ...req.body.batteryLevel };
-    }
-    if (req.body.ph) {
-      newThresholds.ph = { ...newThresholds.ph, ...req.body.ph };
-    }
-    if (req.body.ec) {
-      newThresholds.ec = { ...newThresholds.ec, ...req.body.ec };
-    }
-    if (req.body.nitrogen) {
-      newThresholds.nitrogen = { ...newThresholds.nitrogen, ...req.body.nitrogen };
-    }
-    if (req.body.phosphorus) {
-      newThresholds.phosphorus = { ...newThresholds.phosphorus, ...req.body.phosphorus };
-    }
-    if (req.body.potassium) {
-      newThresholds.potassium = { ...newThresholds.potassium, ...req.body.potassium };
-    }
-    if (req.body.waterLevel) {
-      newThresholds.waterLevel = { ...newThresholds.waterLevel, ...req.body.waterLevel };
-    }
+    const existing = settings.thresholds || {};
+    const payloadRoot = req.body && typeof req.body === 'object' ? req.body : {};
+    const payload = payloadRoot.thresholds && typeof payloadRoot.thresholds === 'object'
+      ? payloadRoot.thresholds
+      : payloadRoot;
 
-    // Validate that critical thresholds are more restrictive than warning thresholds
+    const metrics = ['temperature', 'humidity', 'moisture', 'batteryLevel', 'ec'];
+
+    const parseMetric = (name) => {
+      const current = existing[name] || {};
+      const incoming = payload[name] || {};
+      const base = { ...current };
+      ['min', 'max', 'warning', 'critical'].forEach((key) => {
+        if (incoming[key] === undefined) {
+          return;
+        }
+        const value = Number(incoming[key]);
+        if (Number.isFinite(value)) {
+          base[key] = value;
+        }
+      });
+      return base;
+    };
+
+    const nextThresholds = { ...existing };
+    metrics.forEach((metric) => {
+      nextThresholds[metric] = parseMetric(metric);
+    });
+
+    const incomingPh = payload.ph || {};
+    const currentPh = existing.ph || {};
+    nextThresholds.ph = {
+      ...currentPh,
+      ...(Number.isFinite(Number(incomingPh.minWarning)) ? { minWarning: Number(incomingPh.minWarning) } : {}),
+      ...(Number.isFinite(Number(incomingPh.minCritical)) ? { minCritical: Number(incomingPh.minCritical) } : {}),
+      ...(Number.isFinite(Number(incomingPh.maxWarning)) ? { maxWarning: Number(incomingPh.maxWarning) } : {}),
+      ...(Number.isFinite(Number(incomingPh.maxCritical)) ? { maxCritical: Number(incomingPh.maxCritical) } : {}),
+    };
+
     const validationErrors = [];
-    
-    if (newThresholds.temperature.critical <= newThresholds.temperature.warning) {
-      validationErrors.push('Temperature critical threshold must be higher than warning threshold');
+
+    const rangeWithin = (value, min, max) => Number.isFinite(value) && value >= min && value <= max;
+
+    const metricBounds = {
+      temperature: { min: -50, max: 100 },
+      humidity: { min: 0, max: 100 },
+      moisture: { min: 0, max: 100 },
+      batteryLevel: { min: 0, max: 100 },
+      ec: { min: 0, max: 10000 },
+    };
+
+    metrics.forEach((metric) => {
+      const limits = metricBounds[metric];
+      const data = nextThresholds[metric] || {};
+      const minValue = Number.isFinite(Number(data.min)) ? Number(data.min) : null;
+      const maxValue = Number.isFinite(Number(data.max)) ? Number(data.max) : null;
+      const warning = Number.isFinite(Number(data.warning)) ? Number(data.warning) : null;
+      const critical = Number.isFinite(Number(data.critical)) ? Number(data.critical) : null;
+
+      if (minValue !== null && maxValue !== null && minValue >= maxValue) {
+        validationErrors.push(`${metric}: min must be lower than max`);
+      }
+
+      if (limits) {
+        if (minValue !== null && !rangeWithin(minValue, limits.min, limits.max)) {
+          validationErrors.push(`${metric}: min must be between ${limits.min} and ${limits.max}`);
+        }
+        if (maxValue !== null && !rangeWithin(maxValue, limits.min, limits.max)) {
+          validationErrors.push(`${metric}: max must be between ${limits.min} and ${limits.max}`);
+        }
+        if (warning !== null && !rangeWithin(warning, limits.min, limits.max)) {
+          validationErrors.push(`${metric}: warning must be between ${limits.min} and ${limits.max}`);
+        }
+        if (critical !== null && !rangeWithin(critical, limits.min, limits.max)) {
+          validationErrors.push(`${metric}: critical must be between ${limits.min} and ${limits.max}`);
+        }
+      }
+
+      if (warning !== null && critical !== null) {
+        if (metric === 'moisture' || metric === 'batteryLevel') {
+          if (critical >= warning) {
+            validationErrors.push(`${metric}: critical must be lower than warning`);
+          }
+        } else if (critical <= warning) {
+          validationErrors.push(`${metric}: critical must be higher than warning`);
+        }
+      }
+    });
+
+    const { minWarning, minCritical, maxWarning, maxCritical } = nextThresholds.ph || {};
+    const validPh = [minWarning, minCritical, maxWarning, maxCritical].map((value) => Number(value));
+    const phInRange = (value) => Number.isFinite(value) && value >= 0 && value <= 14;
+
+    validPh.forEach((value) => {
+      if (!phInRange(value)) {
+        validationErrors.push('ph: values must be between 0 and 14');
+      }
+    });
+
+    if (Number.isFinite(minCritical) && Number.isFinite(minWarning) && minCritical >= minWarning) {
+      validationErrors.push('ph: minimum critical must be lower than minimum warning');
     }
-    if (newThresholds.humidity.critical <= newThresholds.humidity.warning) {
-      validationErrors.push('Humidity critical threshold must be higher than warning threshold');
+    if (Number.isFinite(maxCritical) && Number.isFinite(maxWarning) && maxCritical <= maxWarning) {
+      validationErrors.push('ph: maximum critical must be higher than maximum warning');
     }
-    if (newThresholds.moisture.critical >= newThresholds.moisture.warning) {
-      validationErrors.push('Moisture critical threshold must be lower than warning threshold');
-    }
-    if (newThresholds.batteryLevel.critical >= newThresholds.batteryLevel.warning) {
-      validationErrors.push('Battery critical threshold must be lower than warning threshold');
-    }
-    if (newThresholds.ph.minCritical >= newThresholds.ph.minWarning) {
-      validationErrors.push('pH min critical threshold must be lower than min warning threshold');
-    }
-    if (newThresholds.ph.maxCritical <= newThresholds.ph.maxWarning) {
-      validationErrors.push('pH max critical threshold must be higher than max warning threshold');
-    }
-    if (newThresholds.ec.critical <= newThresholds.ec.warning) {
-      validationErrors.push('EC critical threshold must be higher than warning threshold');
-    }
-    if (newThresholds.nitrogen.minCritical >= newThresholds.nitrogen.minWarning) {
-      validationErrors.push('Nitrogen min critical threshold must be lower than min warning threshold');
-    }
-    if (newThresholds.phosphorus.minCritical >= newThresholds.phosphorus.minWarning) {
-      validationErrors.push('Phosphorus min critical threshold must be lower than min warning threshold');
-    }
-    if (newThresholds.potassium.minCritical >= newThresholds.potassium.minWarning) {
-      validationErrors.push('Potassium min critical threshold must be lower than min warning threshold');
+    if (
+      Number.isFinite(minWarning) &&
+      Number.isFinite(maxWarning) &&
+      Number.isFinite(minCritical) &&
+      Number.isFinite(maxCritical) &&
+      !(minCritical <= minWarning && minWarning < maxWarning && maxWarning <= maxCritical)
+    ) {
+      validationErrors.push('ph: thresholds must be ordered as minCritical < minWarning < maxWarning < maxCritical');
     }
 
     if (validationErrors.length > 0) {
       return res.status(400).json({
         success: false,
         message: 'Threshold validation failed',
-        errors: validationErrors
+        errors: validationErrors,
       });
     }
 
-    settings.thresholds = newThresholds;
-    await settings.save();
+    const thresholdRecord = await Settings.findOne({ where: { key: 'thresholds' } });
+    const serialized = JSON.stringify(nextThresholds);
+    if (thresholdRecord) {
+      thresholdRecord.value = serialized;
+      await thresholdRecord.save();
+    } else {
+      await Settings.create({ key: 'thresholds', value: serialized });
+    }
 
     res.json({
       success: true,
       message: 'Thresholds updated successfully',
-      data: settings.thresholds
+      data: nextThresholds,
     });
 
   } catch (error) {
     console.error('Error updating thresholds:', error);
     res.status(500).json({
       success: false,
-      message: 'Error updating thresholds'
+      message: 'Error updating thresholds',
     });
   }
 });

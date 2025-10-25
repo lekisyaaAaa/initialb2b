@@ -5,7 +5,7 @@ const Alert = require('../models/Alert');
 // In-memory map of timers used to detect offline devices
 const offlineTimers = new Map();
 // Default offline timeout (ms) — devices must heartbeat at least every 10 seconds
-const OFFLINE_TIMEOUT_MS = parseInt(process.env.DEVICE_OFFLINE_TIMEOUT_MS || '15000', 10);
+const OFFLINE_TIMEOUT_MS = parseInt(process.env.DEVICE_OFFLINE_TIMEOUT_MS || process.env.SENSOR_STALE_THRESHOLD_MS || '60000', 10);
 
 async function markDeviceOnline(deviceId, metadata = {}) {
   if (!deviceId) return null;
@@ -27,6 +27,12 @@ function resetOfflineTimer(deviceId) {
   if (prev) {
     clearTimeout(prev);
   }
+  offlineTimers.delete(deviceId);
+
+  if ((process.env.NODE_ENV || 'development') === 'test') {
+    return;
+  }
+
   const timer = setTimeout(async () => {
     try {
       await markDeviceOffline(deviceId);
@@ -34,6 +40,11 @@ function resetOfflineTimer(deviceId) {
       console.error('Error marking device offline:', e && e.message ? e.message : e);
     }
   }, OFFLINE_TIMEOUT_MS);
+
+  if (typeof timer.unref === 'function') {
+    timer.unref();
+  }
+
   offlineTimers.set(deviceId, timer);
 }
 

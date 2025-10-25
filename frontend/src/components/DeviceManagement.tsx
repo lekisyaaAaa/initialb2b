@@ -1,5 +1,7 @@
- import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Wifi, WifiOff, Settings, RefreshCw, Plus, Trash2, AlertTriangle } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Wifi, WifiOff, RefreshCw, AlertTriangle } from 'lucide-react';
+import { deviceService } from '../services/api';
+import { DeviceSensorSummary, SensorSummaryItem } from '../types';
 
 type DeviceStatus = 'online' | 'offline';
 
@@ -9,37 +11,21 @@ interface ManagedDevice {
   name?: string;
   status: DeviceStatus;
   lastSeen: string | null;
-  firmwareVersion?: string;
-  ipAddress?: string;
-  sensors: string[];
   metadata?: Record<string, any> | null;
 }
 
 interface DeviceManagementProps {
   onDeviceSelect?: (device: ManagedDevice) => void;
+  onDevicesSnapshot?: (devices: ManagedDevice[]) => void;
 }
 
 type BackendDevice = {
   id?: number | string;
   deviceId?: string;
   status?: DeviceStatus | string;
-  lastHeartbeat?: string;
+  lastHeartbeat?: string | number | Date | null;
   metadata?: Record<string, any> | null;
   name?: string;
-};
-
-const extractSensors = (metadata: Record<string, any> | null | undefined): string[] => {
-  if (!metadata || typeof metadata !== 'object') return [];
-  if (Array.isArray(metadata.sensors)) {
-    return metadata.sensors.map((sensor: any) => String(sensor)).filter(Boolean);
-  }
-  if (metadata.sensors && typeof metadata.sensors === 'object') {
-    return Object.keys(metadata.sensors).filter(Boolean);
-  }
-  if (Array.isArray(metadata.capabilities)) {
-    return metadata.capabilities.map((sensor: any) => String(sensor)).filter(Boolean);
-  }
-  return [];
 };
 
 const generateFallbackId = () => {
@@ -55,7 +41,6 @@ const generateFallbackId = () => {
 const normalizeDevice = (device: BackendDevice): ManagedDevice => {
   const rawMetadata = (device.metadata && typeof device.metadata === 'object') ? device.metadata : {};
   const metadata = rawMetadata as Record<string, any>;
-  const sensors = extractSensors(metadata);
   const rawLastSeen = device.lastHeartbeat || metadata?.lastHeartbeat || metadata?.lastSeen || null;
   const statusValue = (device.status ?? metadata?.status ?? 'offline');
   const status = String(statusValue).toLowerCase() === 'online' ? 'online' : 'offline';
@@ -75,9 +60,6 @@ const normalizeDevice = (device: BackendDevice): ManagedDevice => {
     name: metadata?.name || metadata?.label || device.name,
     status,
     lastSeen,
-    firmwareVersion: metadata?.firmwareVersion || metadata?.firmware || metadata?.version,
-    ipAddress: metadata?.ipAddress || metadata?.ip || metadata?.ipv4,
-    sensors,
     metadata: Object.keys(metadata).length > 0 ? metadata : null,
   };
 };
@@ -91,13 +73,27 @@ const formatLastSeen = (iso?: string | null): string => {
   }
 };
 
-export const DeviceManagement: React.FC<DeviceManagementProps> = ({ onDeviceSelect }) => {
+const formatSensorValue = (item: SensorSummaryItem) => {
+  if (typeof item.value === 'number') {
+    return `${item.value}${item.unit ? ` ${item.unit}` : ''}`.trim();
+  }
+  if (item.value && typeof item.value === 'object') {
+    const entries = Object.entries(item.value)
+      .filter(([, value]) => value !== null && value !== undefined)
+      .map(([key, value]) => `${key.toUpperCase()}: ${value}`);
+    return entries.join(', ') || '—';
+  }
+  return '—';
+};
+
+export const DeviceManagement: React.FC<DeviceManagementProps> = ({ onDeviceSelect, onDevicesSnapshot }) => {
   const [devices, setDevices] = useState<ManagedDevice[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedDeviceId, setSelectedDeviceId] = useState<string | null>(null);
-  const [showAddDevice, setShowAddDevice] = useState(false);
+  const [sensorSnapshots, setSensorSnapshots] = useState<Record<string, DeviceSensorSummary | undefined>>({});
+  const [sensorFetching, setSensorFetching] = useState<Record<string, boolean>>({});
   const selectedDeviceIdRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -109,27 +105,26 @@ export const DeviceManagement: React.FC<DeviceManagementProps> = ({ onDeviceSele
     if (useSpinner) setLoading(true); else setRefreshing(true);
     try {
       setError(null);
-      const response = await fetch('/api/devices', { credentials: 'include' });
-      if (!response.ok) {
-        throw new Error(`Request failed with status ${response.status}`);
-      }
-      const body = await response.json().catch(() => ({}));
+      const response = await deviceService.list();
+      const body = response?.data ?? {};
       const rawList: BackendDevice[] = Array.isArray(body?.data)
         ? (body.data as BackendDevice[])
         : Array.isArray(body)
         ? (body as BackendDevice[])
         : [];
       const normalized = rawList.map((item) => normalizeDevice(item));
-      normalized.sort((a: ManagedDevice, b: ManagedDevice) => {
+      normalized.sort((a, b) => {
         const aTime = a.lastSeen ? new Date(a.lastSeen).getTime() : 0;
         const bTime = b.lastSeen ? new Date(b.lastSeen).getTime() : 0;
         return bTime - aTime;
       });
       setDevices(normalized);
+      onDevicesSnapshot?.(normalized);
+
       const currentSelected = selectedDeviceIdRef.current;
       if (normalized.length === 0) {
         setSelectedDeviceId(null);
-  } else if (currentSelected && normalized.some((device: ManagedDevice) => device.id === currentSelected)) {
+      } else if (currentSelected && normalized.some((device) => device.id === currentSelected)) {
         setSelectedDeviceId(currentSelected);
       } else {
         setSelectedDeviceId(normalized[0].id);
@@ -142,26 +137,48 @@ export const DeviceManagement: React.FC<DeviceManagementProps> = ({ onDeviceSele
     } finally {
       if (useSpinner) setLoading(false); else setRefreshing(false);
     }
+  }, [onDevicesSnapshot]);
+
+  const updateSensorSnapshot = useCallback(async (deviceId: string) => {
+    if (!deviceId) return;
+    setSensorFetching((prev) => ({ ...prev, [deviceId]: true }));
+    try {
+      const response = await deviceService.getSensors(deviceId, { limit: 25 });
+      const payload = response?.data?.data;
+      setSensorSnapshots((prev) => ({ ...prev, [deviceId]: payload }));
+    } catch (error) {
+      console.warn('Failed to load sensors for device', deviceId, error);
+      setSensorSnapshots((prev) => ({ ...prev, [deviceId]: undefined }));
+    } finally {
+      setSensorFetching((prev) => ({ ...prev, [deviceId]: false }));
+    }
   }, []);
 
   useEffect(() => {
     loadDevices({ initial: true });
-    const interval = setInterval(() => loadDevices(), 15000);
+    const interval = setInterval(() => loadDevices(), 20000);
     return () => clearInterval(interval);
   }, [loadDevices]);
 
-  const handleDeviceSelect = (device: ManagedDevice) => {
+  useEffect(() => {
+    if (!selectedDeviceId) return;
+    const target = devices.find((device) => device.id === selectedDeviceId);
+    if (!target) return;
+
+    const fetchSnapshot = () => updateSensorSnapshot(target.deviceId);
+    fetchSnapshot();
+    const interval = setInterval(fetchSnapshot, 15000);
+    return () => clearInterval(interval);
+  }, [devices, selectedDeviceId, updateSensorSnapshot]);
+
+  const handleDeviceSelect = useCallback((device: ManagedDevice) => {
     setSelectedDeviceId(device.id);
     onDeviceSelect?.(device);
-  };
+    updateSensorSnapshot(device.deviceId);
+  }, [onDeviceSelect, updateSensorSnapshot]);
 
-  const handleCalibrate = (deviceId: string) => {
-    window.alert(`Calibration can be triggered directly from the device firmware. Device ${deviceId} will continue sending live readings.`);
-  };
-
-  const handleRemoveDevice = (deviceId: string) => {
-    window.alert(`Device ${deviceId} stays registered while the hardware is active. To archive it, disable the device firmware or remove it via backend tools.`);
-  };
+  const selectedDevice = useMemo(() => devices.find((device) => device.id === selectedDeviceId) || null, [devices, selectedDeviceId]);
+  const selectedSensorLoading = selectedDevice ? sensorFetching[selectedDevice.deviceId] : false;
 
   if (loading) {
     return (
@@ -179,24 +196,15 @@ export const DeviceManagement: React.FC<DeviceManagementProps> = ({ onDeviceSele
           <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Device Management</h3>
           <p className="text-sm text-gray-500 dark:text-gray-400">Live view of registered sensor hubs</p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => loadDevices()}
-            className="px-3 py-2 text-sm rounded-md border bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
-            title="Refresh devices"
-            disabled={refreshing}
-          >
-            <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-            <span>Refresh</span>
-          </button>
-          <button
-            onClick={() => setShowAddDevice(true)}
-            className="px-3 py-2 text-sm rounded-md bg-blue-600 text-white hover:bg-blue-700 flex items-center gap-2"
-          >
-            <Plus className="w-4 h-4" />
-            Add Device
-          </button>
-        </div>
+        <button
+          onClick={() => loadDevices()}
+          className="px-3 py-2 text-sm rounded-md border bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+          title="Refresh devices"
+          disabled={refreshing}
+        >
+          <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+          <span>Refresh</span>
+        </button>
       </div>
 
       {error && (
@@ -208,6 +216,9 @@ export const DeviceManagement: React.FC<DeviceManagementProps> = ({ onDeviceSele
       <div className="grid gap-4">
         {devices.map((device) => {
           const isSelected = selectedDeviceId === device.id;
+          const snapshot = sensorSnapshots[device.deviceId];
+          const sensorCount = snapshot?.sensors?.length ?? 0;
+
           return (
             <div
               key={device.id}
@@ -237,89 +248,59 @@ export const DeviceManagement: React.FC<DeviceManagementProps> = ({ onDeviceSele
                     <div className="text-sm text-gray-500 dark:text-gray-400">
                       ID: {device.deviceId} • Last seen: {formatLastSeen(device.lastSeen)}
                     </div>
-                    {device.ipAddress && (
-                      <div className="text-sm text-gray-500 dark:text-gray-400">IP: {device.ipAddress}</div>
-                    )}
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-2">
-                  <div className="text-right">
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      Firmware: {device.firmwareVersion || 'Unknown'}
-                    </div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      {device.sensors.length} sensors
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleCalibrate(device.deviceId);
-                      }}
-                      className="px-2 py-1 text-xs rounded border bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-300 hover:bg-yellow-100 dark:hover:bg-yellow-900/30"
-                      title="Calibration guidance"
-                    >
-                      <Settings className="w-3 h-3" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleRemoveDevice(device.deviceId);
-                      }}
-                      className="px-2 py-1 text-xs rounded border bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/30"
-                      title="Removal guidance"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
+                <div className="text-sm text-gray-600 dark:text-gray-400 text-right">
+                  <div>{sensorCount} sensors</div>
+                  {snapshot?.latestTimestamp && (
+                    <div>Latest: {formatLastSeen(snapshot.latestTimestamp)}</div>
+                  )}
                 </div>
               </div>
 
               {isSelected && (
                 <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
-                    <div>
-                      <span className="font-medium text-gray-600 dark:text-gray-400">Sensors:</span>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {device.sensors.length > 0 ? (
-                          device.sensors.map((sensor) => (
-                            <span key={sensor} className="px-2 py-1 bg-gray-100 dark:bg-gray-700 rounded text-xs">
-                              {sensor}
-                            </span>
-                          ))
-                        ) : (
-                          <span className="text-gray-500 dark:text-gray-400">No sensors reported</span>
-                        )}
-                      </div>
+                  <div className="flex items-center justify-between mb-3 text-sm">
+                    <div className="text-gray-600 dark:text-gray-400">
+                      Realtime status: {snapshot?.deviceOnline ? 'Online' : 'Offline'}
                     </div>
-                    <div>
-                      <span className="font-medium text-gray-600 dark:text-gray-400">Status:</span>
-                      <div className="text-gray-800 dark:text-gray-200">
-                        {device.status === 'online' ? 'Connected and reporting' : 'Offline'}
-                      </div>
-                    </div>
-                    <div>
-                      <span className="font-medium text-gray-600 dark:text-gray-400">Telemetry:</span>
-                      <div className="text-gray-800 dark:text-gray-200">
-                        {device.metadata?.reportingInterval
-                          ? `${device.metadata.reportingInterval} seconds`
-                          : 'Default interval'}
-                      </div>
-                    </div>
-                    <div>
-                      <span className="font-medium text-gray-600 dark:text-gray-400">Metadata:</span>
-                      <div className="text-gray-800 dark:text-gray-200">
-                        {device.metadata ? (
-                          <code className="text-xs break-all">{JSON.stringify(device.metadata)}</code>
-                        ) : (
-                          '—'
-                        )}
-                      </div>
-                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateSensorSnapshot(device.deviceId);
+                      }}
+                      className="inline-flex items-center gap-2 px-2 py-1 text-xs rounded-md border bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700"
+                      disabled={sensorFetching[device.deviceId]}
+                    >
+                      <RefreshCw className={`w-3 h-3 ${sensorFetching[device.deviceId] ? 'animate-spin' : ''}`} />
+                      Refresh sensors
+                    </button>
                   </div>
+
+                  {selectedSensorLoading && (
+                    <div className="text-sm text-gray-500 dark:text-gray-400">Loading sensor readings…</div>
+                  )}
+
+                  {!selectedSensorLoading && (!snapshot || (snapshot.sensors?.length ?? 0) === 0) && (
+                    <div className="text-sm text-gray-500 dark:text-gray-400">No sensor readings available.</div>
+                  )}
+
+                  {!!snapshot?.sensors?.length && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {snapshot.sensors.map((sensor) => (
+                        <div key={sensor.key} className="rounded border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/40 p-3">
+                          <div className="text-xs uppercase text-gray-500 dark:text-gray-400">{sensor.label}</div>
+                          <div className="text-lg font-semibold text-gray-800 dark:text-gray-100">
+                            {formatSensorValue(sensor)}
+                          </div>
+                          <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                            {sensor.timestamp ? formatLastSeen(sensor.timestamp) : '—'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -334,131 +315,9 @@ export const DeviceManagement: React.FC<DeviceManagementProps> = ({ onDeviceSele
           <p className="text-sm">Register a device or power on an existing unit to see it here.</p>
         </div>
       )}
-
-      {showAddDevice && (
-        <AddDeviceModal
-          onClose={() => setShowAddDevice(false)}
-          onAdded={async () => {
-            await loadDevices({ initial: true });
-          }}
-        />
-      )}
     </div>
   );
 };
 
-interface AddDeviceModalProps {
-  onClose: () => void;
-  onAdded: () => Promise<void> | void;
-}
+export default DeviceManagement;
 
-const AddDeviceModal: React.FC<AddDeviceModalProps> = ({ onClose, onAdded }) => {
-  const [deviceId, setDeviceId] = useState('');
-  const [name, setName] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!deviceId.trim()) return;
-
-    setSubmitting(true);
-    setError(null);
-
-    try {
-      const response = await fetch('/api/devices/heartbeat', {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          deviceId: deviceId.trim(),
-          timestamp: new Date().toISOString(),
-          metadata: {
-            label: name.trim() || undefined,
-            registeredVia: 'admin-dashboard'
-          }
-        })
-      });
-
-      if (!response.ok) {
-        const payload = await response.json().catch(() => ({}));
-        throw new Error(payload?.message || `Request failed with status ${response.status}`);
-      }
-
-      await onAdded();
-      setSubmitting(false);
-      setDeviceId('');
-      setName('');
-      onClose();
-      return;
-    } catch (err) {
-      console.error('Failed to register device:', err);
-      setError(err instanceof Error ? err.message : 'Unable to register device.');
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
-      <div className="relative z-70 bg-white dark:bg-gray-900 rounded-xl shadow-lg border p-6 max-w-md w-full">
-        <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
-          Add Device
-        </h3>
-
-        {error && (
-          <div className="p-3 rounded-md border border-red-200 bg-red-50 text-red-700 text-sm">
-            {error}
-          </div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Device ID *
-            </label>
-            <input
-              type="text"
-              value={deviceId}
-              onChange={(e) => setDeviceId(e.target.value)}
-              placeholder="esp32-001"
-              className="w-full px-3 py-2 rounded-md border bg-white dark:bg-gray-700 text-sm"
-              required
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-              Device Name (Optional)
-            </label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Greenhouse Main"
-              className="w-full px-3 py-2 rounded-md border bg-white dark:bg-gray-700 text-sm"
-            />
-          </div>
-
-          <div className="flex justify-end gap-3 pt-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-md border"
-              disabled={submitting}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60"
-              disabled={submitting}
-            >
-              {submitting ? 'Registering…' : 'Add Device'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
-  );
-};
