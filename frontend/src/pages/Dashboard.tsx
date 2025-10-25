@@ -220,8 +220,8 @@ const Dashboard: React.FC = () => {
         {!isConnected && safeLatestSensorData.length === 0 ? (
           <div className="bg-white dark:bg-gray-800 border border-dashed border-coffee-300 dark:border-gray-700 rounded-xl p-12 text-center shadow-sm">
             <Thermometer className="w-12 h-12 mx-auto mb-4 text-coffee-300 dark:text-gray-500" />
-            <h2 className="text-xl font-semibold text-coffee-800 dark:text-gray-200">Awaiting Sensor Connection</h2>
-            <p className="mt-2 text-sm text-coffee-600 dark:text-gray-400">No live sensor streams detected yet. Connect a device to begin monitoring.</p>
+            <h2 className="text-xl font-semibold text-coffee-800 dark:text-gray-200">No Sensor Detected</h2>
+            <p className="mt-2 text-sm text-coffee-600 dark:text-gray-400">The system will populate measurements automatically once a sensor is connected and reporting.</p>
             <div className="mt-4 text-xs text-coffee-400 dark:text-gray-500">
               Last refresh: {lastRefreshLabel}
             </div>

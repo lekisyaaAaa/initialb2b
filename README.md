@@ -108,9 +108,7 @@ DATABASE_URL=postgres://...
 The system uses PostgreSQL with SQLite fallback for development.
 
 ### 4. Admin Credentials
-Default admin login:
-- Username: `beantobin`
-- Password: `Bean2bin`
+Admin authentication is being upgraded. Configure administrator accounts using the forthcoming email-based flow (Phase 2). Until then, seed credentials explicitly via environment variables when running local scripts.
 
 ## 📊 Monitoring
 
@@ -256,16 +254,13 @@ When a simulator is connected the actuator endpoints will return `forwarded: tru
 
 ## Seeding admin user
 
-There are multiple ways to ensure a dev admin exists:
-
-- The server attempts to seed a dev admin at startup in development mode (LOCAL_ADMIN_USER/PASS defaults to `admin`/`admin`).
-- Run the seed script manually:
+To provision an admin account in development, supply credentials via environment variables and run the seed script manually:
 
 ```powershell
-node backend\scripts\seed-admin.js
+INIT_ADMIN_EMAIL=admin@example.com INIT_ADMIN_PASSWORD=ChangeMe node backend\scripts\seed-admin.js
 ```
 
-If you prefer, set `LOCAL_ADMIN_USER` and `LOCAL_ADMIN_PASS` in `backend/.env` before starting the server.
+> The seeder requires `INIT_ADMIN_EMAIL` and `INIT_ADMIN_PASSWORD` (or corresponding values in `backend/.env`). The old LOCAL_ADMIN_USER/PASS fallback has been removed.
 
 ---
 

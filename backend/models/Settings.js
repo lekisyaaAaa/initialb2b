@@ -43,6 +43,15 @@ const DEFAULT_VERMITEA = {
   tankAreaLitersPerUnit: 0.5,
 };
 
+const DEFAULT_ALERT_RULES = {
+  temperature: true,
+  humidity: true,
+  moisture: true,
+  ph: true,
+  system: true,
+  emailNotifications: false,
+};
+
 function mergeThresholdMetric(defaultMetric, currentMetric) {
   if (!defaultMetric) {
     return { ...(currentMetric || {}) };
@@ -108,11 +117,22 @@ Settings.getSettings = async () => {
       };
     }
 
+    if (!settingsObj.alerts) {
+      settingsObj.alerts = { ...DEFAULT_ALERT_RULES };
+    } else {
+      settingsObj.alerts = {
+        ...DEFAULT_ALERT_RULES,
+        ...(settingsObj.alerts || {}),
+      };
+    }
+
     return settingsObj;
   } catch (error) {
     console.error('Error getting settings:', error);
     throw error;
   }
 };
+
+Settings.DEFAULT_ALERT_RULES = DEFAULT_ALERT_RULES;
 
 module.exports = Settings;

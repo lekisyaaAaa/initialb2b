@@ -12,8 +12,8 @@ const child_process = require('child_process');
 const jwt = require('jsonwebtoken');
 
 const API_BASE = process.env.API_BASE || 'http://127.0.0.1:5000';
-const ADMIN_USER = process.env.LOCAL_ADMIN_USER || 'beantobin';
-const ADMIN_PASS = process.env.LOCAL_ADMIN_PASS || 'Bean2bin';
+const ADMIN_USER = process.env.LOCAL_ADMIN_USER;
+const ADMIN_PASS = process.env.LOCAL_ADMIN_PASS;
 const JWT_SECRET = process.env.JWT_SECRET || 'devsecret';
 const DEVICE_ID = process.env.SMOKE_DEVICE_ID || 'smoke-sim-01';
 
@@ -43,27 +43,29 @@ async function safeFetch(url, opts) {
 }
 
 async function loginOrMakeToken() {
-  try {
-    const resp = await safeFetch(`${API_BASE}/api/admin/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: ADMIN_USER, password: ADMIN_PASS })
-    });
-    if (resp && resp.status === 200) {
-      const body = await resp.json();
-      if (body && body.success && body.token) {
-        console.log('Logged in via /api/admin/login');
-        return body.token;
+  if (ADMIN_USER && ADMIN_PASS) {
+    try {
+      const resp = await safeFetch(`${API_BASE}/api/admin/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: ADMIN_USER, password: ADMIN_PASS })
+      });
+      if (resp && resp.status === 200) {
+        const body = await resp.json();
+        if (body && body.success && body.token) {
+          console.log('Logged in via /api/admin/login');
+          return body.token;
+        }
       }
+      console.warn('/api/admin/login did not return a usable token; falling back to synthesized JWT');
+    } catch (e) {
+      console.warn('Admin login failed:', e && e.message ? e.message : e);
     }
-    console.warn('/api/admin/login did not return a usable token; falling back to synthesized JWT');
-  } catch (e) {
-    console.warn('Admin login failed:', e && e.message ? e.message : e);
   }
 
   // Synthesize token matching server admin route fallback
   try {
-    const payload = { id: 'admin-local', username: ADMIN_USER, role: 'admin' };
+  const payload = { id: 'admin-local', username: ADMIN_USER || 'admin', role: 'admin' };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: '24h' });
     console.log('Synthesized admin JWT using local secret fallback');
     return token;

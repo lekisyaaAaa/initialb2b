@@ -9,7 +9,10 @@ const { Server: SocketIOServer } = require('socket.io');
 const http = require('http');
 const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
-const sequelize = require('./services/database_pg');
+const { validateEnv } = require('./utils/validateEnv');
+validateEnv();
+const database = require('./services/database_pg');
+const sequelize = database;
 const connectDB = typeof sequelize.connectDB === 'function' ? sequelize.connectDB : async () => {
   try {
     await sequelize.authenticate();
@@ -19,6 +22,8 @@ const connectDB = typeof sequelize.connectDB === 'function' ? sequelize.connectD
     throw error;
   }
 };
+const { ensureDatabaseSetup } = database;
+const schemaReady = ensureDatabaseSetup({ force: (process.env.NODE_ENV || 'development') === 'test' });
 const {
   ensureDefaultActuators,
   listActuators,
@@ -40,6 +45,20 @@ const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
 const server = http.createServer(app);
+
+const rateLimitWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS || process.env.API_RATE_LIMIT_WINDOW_MS || '900000', 10);
+const rateLimitMax = parseInt(process.env.RATE_LIMIT_MAX || process.env.API_RATE_LIMIT_MAX_REQUESTS || '5', 10);
+
+const adminAuthLimiter = rateLimit({
+  windowMs: Number.isFinite(rateLimitWindowMs) && rateLimitWindowMs > 0 ? rateLimitWindowMs : 15 * 60 * 1000,
+  max: Number.isFinite(rateLimitMax) && rateLimitMax > 0 ? rateLimitMax : 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many attempts. Please try again later.',
+  },
+});
 
 const isProductionEnv = (process.env.NODE_ENV || 'development') === 'production';
 const socketCorsOrigins = (process.env.SOCKETIO_CORS_ORIGINS || '')
@@ -126,128 +145,14 @@ wss.on('connection', (ws) => {
 app.use(helmet());
 app.use(compression());
 
-// Development Content Security Policy helper: allow local API origins for SPA served from the backend
-if ((process.env.NODE_ENV || 'development') !== 'production') {
-  app.use((req, res, next) => {
-    // Allow connections to localhost and 127.0.0.1 for API and WebSocket during local dev
-    const csp = "default-src 'self' 'unsafe-inline' 'unsafe-eval' http: https:; connect-src 'self' http://localhost:5000 http://127.0.0.1:5000 ws://localhost:5000 ws://127.0.0.1:5000;";
-    res.setHeader('Content-Security-Policy', csp);
-    next();
-  });
-}
-
-// Rate limiting - disabled for development
-// const limiter = rateLimit({
-//   windowMs: parseInt(process.env.API_RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000, // 15 minutes
-//   max: parseInt(process.env.API_RATE_LIMIT_MAX_REQUESTS) || 1000, // limit each IP to 1000 requests per windowMs (increased for dev)
-//   message: 'Too many requests from this IP, please try again later.',
-//   standardHeaders: true,
-//   legacyHeaders: false,
-// });
-
-// app.use('/api/', limiter); // Disabled for development
-
-// CORS configuration - allow common local dev origins dynamically to avoid brittle lists
-const corsOptions = {
-  origin: function(origin, callback) {
-    if (!origin) return callback(null, true);
-
-    const allowLocalHosts = (allowedHost) => {
-      const localHosts = ['localhost', '127.0.0.1', '::1'];
-      return localHosts.includes(allowedHost);
-    };
-
-    try {
-      const url = new URL(origin);
-      const hostname = url.hostname;
-
-      if (process.env.CORS_ORIGINS) {
-        const allowed = process.env.CORS_ORIGINS.split(',').map((s) => s.trim());
-        if (allowed.includes(origin) || allowed.includes(hostname)) {
-          return callback(null, true);
-        }
-      }
-
-      if (allowLocalHosts(hostname)) {
-        return callback(null, true);
-      }
-    } catch (e) {
-      // ignore parse errors and fall through to default deny
-    }
-
-    if ((process.env.NODE_ENV || 'development') !== 'production') {
-      return callback(null, true);
-    }
-
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-  optionsSuccessStatus: 200
-};
-
-  
-    // Initialize Postgres and seed a development admin user if possible.
-    // Temporarily disabled for testing
-    /*
-    (async () => {
-      const sequelize = require('./services/database_pg');
-      try {
-        await sequelize.authenticate();
-        console.log('\u2705 Connected to Postgres (Sequelize)');
-        // In development, attempt to update the SQLite schema to reflect model changes.
-        // Use `alter: true` so we don't drop data but apply column changes.
-        if ((process.env.NODE_ENV || 'development') !== 'production') {
-          try {
-            await sequelize.sync({ alter: true });
-            console.log('\u2705 Sequelize models synced (alter: true)');
-          } catch (e) {
-            console.warn('Model sync warning (alter):', e && e.message ? e.message : e);
-          }
-        }
-
-        // Seed admin user in development if it doesn't exist
-        try {
-          if ((process.env.NODE_ENV || 'development') !== 'production') {
-            const bcrypt = require('bcryptjs');
-            const User = require('./models/User');
-            const adminUser = process.env.LOCAL_ADMIN_USER || 'beantobin';
-            const adminPass = process.env.LOCAL_ADMIN_PASS || 'Bean2bin';
-            // Ensure admin user exists and has the expected dev password (helpful for local testing)
-            let user = await User.findOne({ where: { username: adminUser } });
-            if (!user) {
-              user = await User.create({ username: adminUser, password: bcrypt.hashSync(adminPass, 10), role: 'admin' });
-              console.log(`\u2705 Created dev admin user '${adminUser}'`);
-            } else {
-              // Update password/role to match expected dev credentials to avoid mismatch across docs
-              try {
-                user.password = bcrypt.hashSync(adminPass, 10);
-                user.role = 'admin';
-                await user.save();
-                console.log(`\u2705 Ensured dev admin user '${adminUser}' password/role are up-to-date`);
-              } catch (e) {
-                console.warn('Could not update dev admin credentials:', e && e.message ? e.message : e);
-              }
-            }
-          }
-        } catch (seedErr) {
-          console.warn('Could not seed admin user:', seedErr && seedErr.message ? seedErr.message : seedErr);
-        }
-      } catch (err) {
-        console.warn('\u26A0\uFE0F Postgres initialization failed - running without DB:', err && err.message ? err.message : err);
-      }
-    })();
-    */
-// In development, prefer a permissive CORS policy to avoid brittle origin checks
-if ((process.env.NODE_ENV || 'development') !== 'production') {
-  console.log('Development mode: enabling permissive CORS for all origins');
-  app.use(cors());
-} else {
-  app.use(cors(corsOptions));
-}
+app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }));
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+app.use('/api/admin/login', adminAuthLimiter);
+app.use('/api/admin/forgot-password', adminAuthLimiter);
 
 // Friendly JSON parse error handler: body-parser throws a SyntaxError which would
 // surface to the generic error handler. Catch it early and return a clear 400
@@ -260,41 +165,27 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
+if (schemaReady && typeof schemaReady.then === 'function') {
+  app.use(async (req, res, next) => {
+    try {
+      await schemaReady;
+      next();
+    } catch (err) {
+      next(err);
+    }
+  });
+}
+
 
 // Sequelize/Postgres: No MongoDB connection needed
 // Database is initialized via Sequelize models and scripts
 
-// Health check endpoint with database status
-app.get('/api/health', async (req, res) => {
-  try {
-    // Check database connection
-    await sequelize.authenticate();
-
-    res.status(200).json({
-      success: true,
-      status: 'OK',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      environment: process.env.NODE_ENV || 'development',
-      database: {
-        status: 'connected',
-        dialect: 'postgresql'
-      }
-    });
-  } catch (dbError) {
-    console.error('Health check - Database error:', dbError.message);
-    res.status(503).json({
-      success: false,
-      status: 'Database unavailable',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      environment: process.env.NODE_ENV || 'development',
-      database: {
-        status: 'disconnected',
-        error: dbError.message
-      }
-    });
-  }
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    uptime: process.uptime(),
+    timestamp: Date.now(),
+  });
 });
 
 // Lightweight internal ping for debugging connectivity (temporary)
@@ -307,7 +198,9 @@ app.use('/api/sensors', sensorRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/actuators', actuatorRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
-// Mount admin route for simple admin login (keeps compatibility with existing auth flows)
+// Admin authentication + management routes
+const adminAuthRoutes = require('./routes/adminAuth');
+app.use('/api/admin', adminAuthRoutes);
 const adminRoutes = require('./routes/admin');
 app.use('/api/admin', adminRoutes);
 

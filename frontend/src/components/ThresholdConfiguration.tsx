@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Save, RefreshCw, AlertTriangle, CheckCircle } from 'lucide-react';
+import api from '../services/api';
 
 type MetricKey = 'temperature' | 'humidity' | 'moisture' | 'ec';
 
@@ -91,9 +92,9 @@ export const ThresholdConfiguration: React.FC<ThresholdConfigurationProps> = ({ 
   const loadThresholds = async () => {
     setLoading(true);
     try {
-      const response = await fetch('/api/settings');
-      if (response.ok) {
-        const data = await response.json();
+      const response = await api.get('/settings');
+      if (response?.data?.success) {
+        const data = response.data;
         const rawThresholds = data?.data?.thresholds || data?.thresholds || {};
         const next: Thresholds = {
           temperature: normalizeMetric(rawThresholds.temperature, DEFAULT_THRESHOLDS.temperature),
@@ -106,6 +107,8 @@ export const ThresholdConfiguration: React.FC<ThresholdConfigurationProps> = ({ 
         setLastSaved(new Date());
         setHasChanges(false);
         setErrors([]);
+      } else {
+        setErrors(['Unable to load thresholds. Please try again.']);
       }
     } catch (error) {
       console.error('Failed to load thresholds:', error);
@@ -213,27 +216,23 @@ export const ThresholdConfiguration: React.FC<ThresholdConfigurationProps> = ({ 
     setSaving(true);
     setErrors([]);
     try {
-      const response = await fetch('/api/settings/thresholds', {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
+      const response = await api.put('/settings/thresholds', {
+        thresholds: {
           temperature: thresholds.temperature,
           humidity: thresholds.humidity,
           moisture: thresholds.moisture,
           ph: thresholds.ph,
           ec: thresholds.ec,
-        }),
+        },
       });
 
-      if (response.ok) {
+      if (response?.data?.success) {
         setLastSaved(new Date());
         setHasChanges(false);
         onThresholdsChange?.(thresholds);
         setErrors([]);
       } else {
-        const body = await response.json().catch(() => null);
+        const body = response?.data;
         const serverErrors: string[] = Array.isArray(body?.errors) ? body.errors.map((err: any) => (typeof err === 'string' ? err : err?.msg || JSON.stringify(err))) : [];
         const message = body?.message ? [body.message] : [];
         const combined = [...message, ...serverErrors];
@@ -241,7 +240,12 @@ export const ThresholdConfiguration: React.FC<ThresholdConfigurationProps> = ({ 
       }
     } catch (error) {
       console.error('Failed to save thresholds:', error);
-      setErrors(['Failed to save thresholds. Please try again.']);
+      const message = (error as any)?.response?.data?.message || 'Failed to save thresholds. Please try again.';
+      const serverErrors: string[] = Array.isArray((error as any)?.response?.data?.errors)
+        ? (error as any).response.data.errors.map((err: any) => (typeof err === 'string' ? err : err?.msg || JSON.stringify(err)))
+        : [];
+      const combined = [message, ...serverErrors].filter(Boolean);
+      setErrors(combined.length > 0 ? combined : ['Failed to save thresholds. Please try again.']);
     } finally {
       setSaving(false);
     }

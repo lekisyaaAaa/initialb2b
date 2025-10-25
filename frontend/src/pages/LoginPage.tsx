@@ -10,7 +10,7 @@ const LoginPage: React.FC = () => {
   const { login, isAuthenticated, isLoading, setAuth } = useAuth();
   const location = useLocation();
   const [formData, setFormData] = useState({
-    username: '',
+    email: '',
     password: '',
   });
   const [error, setError] = useState('');
@@ -95,11 +95,11 @@ const LoginPage: React.FC = () => {
       }
 
   // Attempt admin login
-  const result = await adminAuthService.loginAdmin(formData.username.trim(), formData.password);
+  const result = await adminAuthService.loginAdmin(formData.email.trim(), formData.password);
       if (!result.success) {
-        setError(result.message || 'Invalid username or password');
+        setError(result.message || 'Invalid email or password');
         setFormData(prev => ({ ...prev, password: '' }));
-        const el = document.getElementById('username') as HTMLInputElement | null;
+        const el = document.getElementById('email') as HTMLInputElement | null;
         if (el) { el.focus(); el.select(); }
         return;
       }
@@ -146,7 +146,7 @@ const LoginPage: React.FC = () => {
     }
   };
 
-  const isFormValid = formData.username.trim() && formData.password.trim();
+  const isFormValid = formData.email.trim() && formData.password.trim();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-coffee-100 to-primary-100 dark:from-gray-900 dark:to-gray-800 flex items-center justify-center p-4">
@@ -189,25 +189,25 @@ const LoginPage: React.FC = () => {
               </div>
             )}
 
-            {/* Username Field */}
+            {/* Email Field */}
             <div>
-              <label htmlFor="username" className="block text-sm font-medium text-espresso-700 dark:text-gray-300">
-                Username
+              <label htmlFor="email" className="block text-sm font-medium text-espresso-700 dark:text-gray-300">
+                Email
               </label>
               <div className="mt-1 relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <User className="h-5 w-5 text-coffee-400 dark:text-gray-400" />
                 </div>
                 <input
-                  id="username"
-                  name="username"
-                  type="text"
-                  autoComplete="username"
+                  id="email"
+                  name="email"
+                  type="email"
+                  autoComplete="email"
                   required
-                  value={formData.username}
+                  value={formData.email}
                   onChange={handleChange}
                   className="block w-full pl-10 pr-3 py-2 border border-coffee-300 dark:border-gray-600 rounded-md leading-5 bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-espresso-400 dark:placeholder-gray-400 focus:outline-none focus:placeholder-espresso-300 dark:focus:placeholder-gray-300 focus:ring-1 focus:ring-primary-500 focus:border-primary-500"
-                  placeholder="Enter your username"
+                  placeholder="admin@example.com"
                 />
               </div>
             </div>

@@ -99,10 +99,10 @@ router.get('/:deviceId/sensors', optionalAuth, async (req, res) => {
       }
     }
 
-    const latest = samples.length > 0 ? samples[0] : null;
-    const sanitizedLatest = latest ? sanitizeSensorPayload(latest, []) : null;
-    const summary = sanitizedLatest ? buildSensorSummary(sanitizedLatest) : [];
-    const history = samples.slice(0, Math.min(samples.length, limit)).map((item) => sanitizeSensorPayload(item, []));
+  const latest = samples.length > 0 ? samples[0] : null;
+  const sanitizedLatest = latest ? sanitizeSensorPayload(latest, []) : null;
+  const summary = sanitizedLatest ? buildSensorSummary(sanitizedLatest) : [];
+  const history = samples.slice(0, Math.min(samples.length, limit)).map((item) => sanitizeSensorPayload(item, []));
 
     const timestampMs = sanitizedLatest && sanitizedLatest.timestamp ? new Date(sanitizedLatest.timestamp).getTime() : NaN;
     const sampleAgeMs = Number.isFinite(timestampMs) ? Date.now() - timestampMs : null;
@@ -123,20 +123,22 @@ router.get('/:deviceId/sensors', optionalAuth, async (req, res) => {
       deviceOnline = true;
     }
 
+    const payload = {
+      deviceId,
+      deviceStatus,
+      deviceOnline,
+      lastHeartbeat,
+      latest: deviceOnline && !isStale ? sanitizedLatest : null,
+      latestTimestamp: deviceOnline && !isStale && sanitizedLatest ? sanitizedLatest.timestamp : null,
+      sampleAgeMs: deviceOnline && !isStale ? sampleAgeMs : null,
+      isStale: deviceOnline ? isStale : true,
+      sensors: deviceOnline && !isStale ? summary : [],
+      history: deviceOnline && !isStale ? history : [],
+    };
+
     res.json({
       success: true,
-      data: {
-        deviceId,
-        deviceStatus,
-        deviceOnline,
-        lastHeartbeat,
-        latest: sanitizedLatest,
-        latestTimestamp: sanitizedLatest ? sanitizedLatest.timestamp : null,
-        sampleAgeMs,
-        isStale,
-        sensors: summary,
-        history,
-      },
+      data: payload,
     });
   } catch (error) {
     console.error('devices: sensors summary failed', error);

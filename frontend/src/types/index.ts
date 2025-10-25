@@ -90,7 +90,17 @@ export interface NotificationItem {
   deleted?: boolean;
 }
 
+export interface AlertRules {
+  temperature: boolean;
+  humidity: boolean;
+  moisture: boolean;
+  ph: boolean;
+  system: boolean;
+  emailNotifications: boolean;
+}
+
 export interface Settings {
+  alerts?: AlertRules;
   thresholds: {
     temperature: {
       warning: number;

@@ -16,7 +16,8 @@ import { AlertsManagement } from '../components/AlertsManagement';
 import { SystemDiagnostics } from '../components/SystemDiagnostics';
 import { useAuth } from '../contexts/AuthContext';
 import weatherService from '../services/weatherService';
-import api, { alertService, sensorService } from '../services/api';
+import api, { alertService, sensorService, settingsService } from '../services/api';
+import { AlertRules } from '../types';
 
 type Sensor = {
   id: string;
@@ -31,6 +32,8 @@ type Sensor = {
   waterLevel?: number | null;
   batteryLevel?: number | null;
   lastSeen?: string | null;
+  deviceOnline?: boolean;
+  deviceStatus?: string | null;
 };
 
 type Alert = { id: string; _id?: string; type?: string; title: string; severity: 'info' | 'warning' | 'critical'; message?: string; createdAt: string; acknowledged?: boolean };
@@ -43,6 +46,35 @@ type DeviceSummary = {
 };
 
 type StatusPillProps = { label: string; status: string };
+
+const SENSOR_STALE_THRESHOLD_MS = 60_000;
+
+const DEFAULT_ALERT_RULES: AlertRules = {
+  temperature: true,
+  humidity: true,
+  moisture: true,
+  ph: true,
+  system: true,
+  emailNotifications: false,
+};
+
+const alertRulesEqual = (a: AlertRules, b: AlertRules): boolean => (
+  a.temperature === b.temperature &&
+  a.humidity === b.humidity &&
+  a.moisture === b.moisture &&
+  a.ph === b.ph &&
+  a.system === b.system &&
+  a.emailNotifications === b.emailNotifications
+);
+
+const ALERT_RULE_OPTIONS: Array<{ key: keyof AlertRules; label: string }> = [
+  { key: 'temperature', label: 'Enable Temperature Alerts' },
+  { key: 'humidity', label: 'Enable Humidity Alerts' },
+  { key: 'moisture', label: 'Enable Moisture Alerts' },
+  { key: 'ph', label: 'Enable pH Alerts' },
+  { key: 'system', label: 'Enable System Alerts' },
+  { key: 'emailNotifications', label: 'Email Notifications' },
+];
 
 const StatusPill: React.FC<StatusPillProps> = ({ label, status }) => {
   const normalized = (status ?? '').toString().toLowerCase();
@@ -86,6 +118,14 @@ export default function AdminDashboard(): React.ReactElement {
   const [actuatorLogs, setActuatorLogs] = useState<any[]>([]);
   const [latestAlerts, setLatestAlerts] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [alertRules, setAlertRules] = useState<AlertRules>({ ...DEFAULT_ALERT_RULES });
+  const [initialAlertRules, setInitialAlertRules] = useState<AlertRules>({ ...DEFAULT_ALERT_RULES });
+  const [alertRulesLoading, setAlertRulesLoading] = useState(false);
+  const [alertRulesSaving, setAlertRulesSaving] = useState(false);
+  const [alertRulesError, setAlertRulesError] = useState<string | null>(null);
+  const [alertRulesSuccess, setAlertRulesSuccess] = useState<string | null>(null);
+  const alertRulesDirty = useMemo(() => !alertRulesEqual(alertRules, initialAlertRules), [alertRules, initialAlertRules]);
+  const alertConfigDisabled = alertRulesLoading || alertRulesSaving;
 
   async function loadReminders() {
     setRemindersLoading(true);
@@ -233,22 +273,26 @@ export default function AdminDashboard(): React.ReactElement {
 
         const latency = Date.now() - start;
         const payload = latestResp?.data?.data;
-        let latestReading: Sensor | null = null;
+        let candidateReading: Sensor | null = null;
 
         if (Array.isArray(payload)) {
-          latestReading = payload.length > 0 ? (payload[0] as Sensor) : null;
+          candidateReading = payload.length > 0 ? (payload[0] as Sensor) : null;
         } else if (payload && typeof payload === 'object' && Object.keys(payload).length > 0) {
-          latestReading = payload as Sensor;
+          candidateReading = payload as Sensor;
         }
 
-        if (latestReading) {
-          setLatestSensor(latestReading);
+  const responseStatus = (((latestResp?.data as any) || {}).status || '').toString().toLowerCase();
+        const deviceOnline = Boolean(candidateReading?.deviceOnline) || responseStatus === 'online';
+
+        if (candidateReading && deviceOnline) {
+          setLatestSensor(candidateReading);
           setSensorHistory((prev) => {
-            const next = [...prev.slice(-199), latestReading as Sensor];
+            const next = [...prev.slice(-199), candidateReading as Sensor];
             return next;
           });
         } else {
           setLatestSensor(null);
+          setSensorHistory([]);
         }
 
         const statusPayload: any = latestResp?.data || {};
@@ -336,8 +380,26 @@ export default function AdminDashboard(): React.ReactElement {
         if (h.ok) {
           const body = await h.json().catch(() => ({}));
           const items = Array.isArray(body.data?.sensorData) ? body.data.sensorData : (Array.isArray(body) ? body : []);
-          if (items && items.length) {
-            setSensorHistory(items.slice(0,200).reverse());
+          if (Array.isArray(items) && items.length) {
+            const now = Date.now();
+            const sanitizedHistory = items.filter((entry: any) => {
+              if (entry?.deviceOnline === true) return true;
+              const status = (entry?.deviceStatus || '').toString().toLowerCase();
+              if (status === 'online') return true;
+              const timestamp = entry?.timestamp || entry?.createdAt || entry?.updatedAt;
+              if (!timestamp) return false;
+              const ts = new Date(timestamp).getTime();
+              if (!Number.isFinite(ts)) return false;
+              return (now - ts) <= SENSOR_STALE_THRESHOLD_MS;
+            }).slice(0, 200).reverse();
+
+            if (sanitizedHistory.length > 0) {
+              setSensorHistory(sanitizedHistory as Sensor[]);
+            } else {
+              setSensorHistory([]);
+            }
+          } else {
+            setSensorHistory([]);
           }
         }
       } catch (e) {
@@ -362,6 +424,47 @@ export default function AdminDashboard(): React.ReactElement {
       setSensorStatus('No sensors connected');
     }
   }, [devicesOnline, latestSensor]);
+
+  useEffect(() => {
+    if (devicesOnline === 0) {
+      setLatestSensor(null);
+      setSensorHistory([]);
+    }
+  }, [devicesOnline]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function fetchAlertRules() {
+      setAlertRulesLoading(true);
+      setAlertRulesError(null);
+      setAlertRulesSuccess(null);
+      try {
+        const response = await settingsService.getAlertRules();
+        if (!mounted) return;
+        const payload = response?.data?.data;
+        const normalized = payload && typeof payload === 'object'
+          ? { ...DEFAULT_ALERT_RULES, ...payload }
+          : { ...DEFAULT_ALERT_RULES };
+        setAlertRules(normalized);
+        setInitialAlertRules(normalized);
+      } catch (err) {
+        if (!mounted) return;
+        console.warn('AdminDashboard::fetchAlertRules error', err);
+        setAlertRules({ ...DEFAULT_ALERT_RULES });
+        setAlertRulesError('Unable to load alert configuration. Defaults are in use.');
+      } finally {
+        if (mounted) {
+          setAlertRulesLoading(false);
+        }
+      }
+    }
+
+    fetchAlertRules();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   // (User management removed) 
 
@@ -414,6 +517,40 @@ export default function AdminDashboard(): React.ReactElement {
     }
   }
 
+  const handleAlertRuleToggle = (key: keyof AlertRules) => (event: React.ChangeEvent<HTMLInputElement>) => {
+    const { checked } = event.target;
+    setAlertRules((prev) => ({ ...prev, [key]: checked }));
+    setAlertRulesSuccess(null);
+    setAlertRulesError(null);
+  };
+
+  const handleRestoreDefaultAlertRules = () => {
+    setAlertRules({ ...DEFAULT_ALERT_RULES });
+    setAlertRulesError(null);
+    setAlertRulesSuccess('Defaults restored locally. Save to apply.');
+  };
+
+  const handleSaveAlertRules = async () => {
+    setAlertRulesSaving(true);
+    setAlertRulesError(null);
+    setAlertRulesSuccess(null);
+    try {
+      const response = await settingsService.updateAlertRules(alertRules);
+      const payload = response?.data?.data;
+      const normalized = payload && typeof payload === 'object'
+        ? { ...DEFAULT_ALERT_RULES, ...payload }
+        : { ...alertRules };
+      setAlertRules(normalized);
+      setInitialAlertRules(normalized);
+      setAlertRulesSuccess('Alert configuration saved.');
+    } catch (err) {
+      console.error('AdminDashboard::handleSaveAlertRules error', err);
+      setAlertRulesError('Failed to save alert configuration. Please try again.');
+    } finally {
+      setAlertRulesSaving(false);
+    }
+  };
+
   // Compute vermitea production counter from waterLevel deltas in history
   const vermiteaLiters = useMemo(() => {
     // assume waterLevel is integer representing mm of water or sensor level; convert delta to liters using tank cross-section
@@ -430,6 +567,27 @@ export default function AdminDashboard(): React.ReactElement {
     }
     return Math.round(liters * 10) / 10;
   }, [sensorHistory]);
+
+  const hasConnectedSensors = useMemo(() => {
+    if (deviceInventory.some((device) => (device.status || '').toLowerCase() === 'online')) {
+      return true;
+    }
+    if (latestSensor) {
+      return true;
+    }
+    return sensorHistory.some((entry) => {
+      if (entry.deviceOnline) return true;
+      const status = (entry.deviceStatus || '').toString().toLowerCase();
+      return status === 'online';
+    });
+  }, [deviceInventory, latestSensor, sensorHistory]);
+
+  const reportsAvailable = useMemo(() => {
+    if (!hasConnectedSensors) {
+      return false;
+    }
+    return sensorHistory.length > 0 || filteredAlerts.length > 0 || latestAlerts.length > 0;
+  }, [filteredAlerts, hasConnectedSensors, latestAlerts, sensorHistory]);
 
   // Portal header to document.body so it is never affected by parent transforms/scroll containers
   const AdminHeader: React.FC = () => {
@@ -452,26 +610,19 @@ export default function AdminDashboard(): React.ReactElement {
           </div>
         )}
         rightSlot={(
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:gap-3">
-            <div className="hidden lg:flex items-center gap-3 text-sm text-coffee-500 dark:text-slate-200">
-              <StatusPill label="Server" status={systemStatus.server} />
-              <StatusPill label="DB" status={systemStatus.database} />
-              <div className="flex items-center gap-1">
-                <span className="font-medium">Latency:</span>
-                <span>{systemStatus.apiLatency}ms</span>
-              </div>
+          <div className="flex w-full items-center justify-end gap-3 sm:gap-4">
+            <div className="hidden md:flex items-center gap-2 rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-700 shadow-sm dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
+              <span className="font-medium">Latency:</span>
+              <span>{systemStatus.apiLatency}ms</span>
             </div>
-
-            <div className="flex items-center gap-3">
-              <button
-                title="Logout"
-                onClick={() => setShowLogoutConfirm(true)}
-                className="rounded-lg border border-coffee-200 bg-white px-3 py-2 text-sm font-medium text-coffee-700 transition-colors hover:border-coffee-300 hover:text-coffee-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
-              >
-                Logout
-              </button>
-              <DarkModeToggle />
-            </div>
+            <button
+              type="button"
+              onClick={() => setShowLogoutConfirm(true)}
+              className="rounded-lg border border-coffee-200 bg-white px-3 py-2 text-sm font-medium text-coffee-700 transition-colors hover:border-coffee-300 hover:text-coffee-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            >
+              Logout
+            </button>
+            <DarkModeToggle />
           </div>
         )}
       />,
@@ -504,7 +655,7 @@ export default function AdminDashboard(): React.ReactElement {
 
   // Maintenance reminders handled in top-of-file declarations
 
-  const chartData = sensorHistory.map((s, i) => ({ time: `${i * 5}s`, temperature: s.temperature ?? 0, humidity: s.humidity ?? 0, moisture: s.moisture ?? 0, ph: s.ph ?? 0, ec: s.ec ?? 0, waterLevel: s.waterLevel ?? 0 }));
+  const chartData = devicesOnline > 0 ? sensorHistory.map((s, i) => ({ time: `${i * 5}s`, temperature: s.temperature ?? 0, humidity: s.humidity ?? 0, moisture: s.moisture ?? 0, ph: s.ph ?? 0, ec: s.ec ?? 0, waterLevel: s.waterLevel ?? 0 })) : [];
 
   return (
     <div className="min-h-screen pt-24 p-6 bg-gray-50 dark:bg-gray-900">
@@ -716,7 +867,7 @@ export default function AdminDashboard(): React.ReactElement {
                     </div>
                   ) : (
                     <div className="mt-4 text-center py-8">
-                      <p className="text-gray-500 dark:text-gray-400">No sensors connected — no data available.</p>
+                      <p className="text-gray-500 dark:text-gray-400">No sensor detected. Connect a device to begin streaming live measurements.</p>
                     </div>
                   )}
                 </div>
@@ -859,41 +1010,72 @@ export default function AdminDashboard(): React.ReactElement {
                         {/* Alert Configuration */}
                         <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                           <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">Alert Configuration</h4>
+                          <div className="mb-4 space-y-2">
+                            {alertRulesError ? (
+                              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300">
+                                {alertRulesError}
+                              </div>
+                            ) : null}
+                            {alertRulesSuccess ? (
+                              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">
+                                {alertRulesSuccess}
+                              </div>
+                            ) : null}
+                            {alertRulesLoading ? (
+                              <div className="text-sm text-gray-500 dark:text-gray-300">Loading alert configuration...</div>
+                            ) : null}
+                          </div>
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div className="space-y-3">
-                              <label className="flex items-center space-x-2">
-                                <input type="checkbox" defaultChecked className="rounded" />
-                                <span className="text-sm">Enable Temperature Alerts</span>
-                              </label>
-                              <label className="flex items-center space-x-2">
-                                <input type="checkbox" defaultChecked className="rounded" />
-                                <span className="text-sm">Enable Humidity Alerts</span>
-                              </label>
-                              <label className="flex items-center space-x-2">
-                                <input type="checkbox" defaultChecked className="rounded" />
-                                <span className="text-sm">Enable Moisture Alerts</span>
-                              </label>
+                              {ALERT_RULE_OPTIONS.slice(0, 3).map((option) => (
+                                <label
+                                  key={option.key}
+                                  className={`flex items-center space-x-2 ${alertConfigDisabled ? 'opacity-70' : ''}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="rounded"
+                                    checked={Boolean(alertRules[option.key])}
+                                    onChange={handleAlertRuleToggle(option.key)}
+                                    disabled={alertConfigDisabled}
+                                  />
+                                  <span className="text-sm">{option.label}</span>
+                                </label>
+                              ))}
                             </div>
                             <div className="space-y-3">
-                              <label className="flex items-center space-x-2">
-                                <input type="checkbox" defaultChecked className="rounded" />
-                                <span className="text-sm">Enable pH Alerts</span>
-                              </label>
-                              <label className="flex items-center space-x-2">
-                                <input type="checkbox" defaultChecked className="rounded" />
-                                <span className="text-sm">Enable System Alerts</span>
-                              </label>
-                              <label className="flex items-center space-x-2">
-                                <input type="checkbox" className="rounded" />
-                                <span className="text-sm">Email Notifications</span>
-                              </label>
+                              {ALERT_RULE_OPTIONS.slice(3).map((option) => (
+                                <label
+                                  key={option.key}
+                                  className={`flex items-center space-x-2 ${alertConfigDisabled ? 'opacity-70' : ''}`}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    className="rounded"
+                                    checked={Boolean(alertRules[option.key])}
+                                    onChange={handleAlertRuleToggle(option.key)}
+                                    disabled={alertConfigDisabled}
+                                  />
+                                  <span className="text-sm">{option.label}</span>
+                                </label>
+                              ))}
                             </div>
                           </div>
-                          <div className="mt-4 flex gap-3">
-                            <button className="px-4 py-2 bg-blue-600 text-white rounded-md text-sm hover:bg-blue-700">
-                              Save Configuration
+                          <div className="mt-4 flex flex-wrap gap-3">
+                            <button
+                              type="button"
+                              onClick={handleSaveAlertRules}
+                              disabled={!alertRulesDirty || alertRulesSaving}
+                              className={`px-4 py-2 rounded-md text-sm font-medium text-white transition-colors ${alertRulesSaving || !alertRulesDirty ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
+                            >
+                              {alertRulesSaving ? 'Saving...' : alertRulesDirty ? 'Save Configuration' : 'Saved'}
                             </button>
-                            <button className="px-4 py-2 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-md text-sm hover:bg-gray-300 dark:hover:bg-gray-500">
+                            <button
+                              type="button"
+                              onClick={handleRestoreDefaultAlertRules}
+                              disabled={alertConfigDisabled}
+                              className={`px-4 py-2 rounded-md text-sm transition-colors ${alertConfigDisabled ? 'bg-gray-200 text-gray-500 cursor-not-allowed dark:bg-gray-700 dark:text-gray-400' : 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500'}`}
+                            >
                               Reset to Default
                             </button>
                           </div>
@@ -1116,183 +1298,229 @@ export default function AdminDashboard(): React.ReactElement {
                   <p className="text-gray-600 dark:text-gray-400">View reports, analytics, and system maintenance information</p>
                 </div>
 
-                {/* Reports & Analytics */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  <div className="p-4 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow flex flex-col justify-between min-h-[200px]">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">Reports & Analytics</h3>
-                      <div className="grid grid-cols-2 gap-4 mb-3">
-                        <div className="text-center p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                          <div className="text-2xl font-bold text-blue-600">{vermiteaLiters.toFixed(1)}L</div>
-                          <div className="text-sm text-gray-600 dark:text-gray-400">Vermitea Produced</div>
-                        </div>
-                        <div className="text-center p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                          <div className="text-2xl font-bold text-green-600">{filteredAlerts.length}</div>
-                          <div className="text-sm text-gray-600 dark:text-gray-400">Active Alerts</div>
-                        </div>
-                      </div>
-                      <p className="text-sm text-gray-600">Compost production, vermitea output, irrigation history and sensor calibration logs.</p>
-                    </div>
-                    <div className="mt-4 flex gap-3 items-end">
-                      <button title="Export as PDF" onClick={() => window.print()} className="px-4 py-2 text-sm rounded-md bg-primary-600 text-white">Export PDF</button>
-                      <button title="Export as CSV" onClick={async () => { await loadActuatorLogs(); const rows = sensorHistory.map(s => ({ timestamp: (s as any).timestamp || new Date().toISOString(), deviceId: s.deviceId || '', temperature: s.temperature ?? '', humidity: s.humidity ?? '', moisture: s.moisture ?? '', ph: s.ph ?? '', ec: s.ec ?? '', waterLevel: s.waterLevel ?? '' })); const csv = [['timestamp','deviceId','temperature','humidity','moisture','ph','ec','waterLevel'], ...rows.map(r => [r.timestamp, r.deviceId, r.temperature, r.humidity, r.moisture, r.ph, r.ec, r.waterLevel])].map(r => r.join(',')).join('\n'); const blob = new Blob([csv], { type: 'text/csv' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'sensor-history.csv'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url); }} className="px-4 py-2 text-sm rounded-md bg-gray-200 dark:bg-gray-700">Export CSV</button>
-                    </div>
+                {!reportsAvailable ? (
+                  <div className="rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-white/70 dark:bg-gray-900/60 p-8 text-center text-sm text-gray-600 dark:text-gray-300">
+                    <p className="font-medium text-gray-800 dark:text-gray-100">Reports are unavailable.</p>
+                    <p className="mt-2">Connect a sensor or wait for live telemetry to generate analytics and alert summaries.</p>
                   </div>
-
-                  {/* System Health Monitor */}
-                  <div className="p-4 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow">
-                    <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3">System Health Monitor</h3>
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">Server Status</span>
-                          <span className={`px-2 py-1 rounded text-xs ${systemStatus.server === 'online' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                            {systemStatus.server}
-                          </span>
+                ) : (
+                  <>
+                    {/* Reports & Analytics */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      <div className="p-4 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow flex flex-col justify-between min-h-[200px]">
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">Reports & Analytics</h3>
+                          <div className="grid grid-cols-2 gap-4 mb-3">
+                            <div className="text-center p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                              <div className="text-2xl font-bold text-blue-600">{vermiteaLiters.toFixed(1)}L</div>
+                              <div className="text-sm text-gray-600 dark:text-gray-400">Vermitea Produced</div>
+                            </div>
+                            <div className="text-center p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                              <div className="text-2xl font-bold text-green-600">{filteredAlerts.length}</div>
+                              <div className="text-sm text-gray-600 dark:text-gray-400">Active Alerts</div>
+                            </div>
+                          </div>
+                          <p className="text-sm text-gray-600">Compost production, vermitea output, irrigation history and sensor calibration logs.</p>
                         </div>
-                        <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">Database</span>
-                          <span className={`px-2 py-1 rounded text-xs ${systemStatus.database === 'online' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                            {systemStatus.database}
-                          </span>
-                        </div>
-                        <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">API Latency</span>
-                          <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{systemStatus.apiLatency}ms</span>
-                        </div>
-                        <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">Sensors</span>
-                          <span className={`px-2 py-1 rounded text-xs ${latestSensor ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
-                            {latestSensor ? 'Connected' : 'Offline'}
-                          </span>
+                        <div className="mt-4 flex gap-3 items-end">
+                          <button
+                            title="Export as PDF"
+                            onClick={() => window.print()}
+                            className="px-4 py-2 text-sm rounded-md bg-primary-600 text-white"
+                          >
+                            Export PDF
+                          </button>
+                          <button
+                            title="Export as CSV"
+                            onClick={async () => {
+                              await loadActuatorLogs();
+                              const rows = sensorHistory.map(s => ({
+                                timestamp: (s as any).timestamp || new Date().toISOString(),
+                                deviceId: s.deviceId || '',
+                                temperature: s.temperature ?? '',
+                                humidity: s.humidity ?? '',
+                                moisture: s.moisture ?? '',
+                                ph: s.ph ?? '',
+                                ec: s.ec ?? '',
+                                waterLevel: s.waterLevel ?? '',
+                              }));
+                              const csv = [
+                                ['timestamp','deviceId','temperature','humidity','moisture','ph','ec','waterLevel'],
+                                ...rows.map(r => [r.timestamp, r.deviceId, r.temperature, r.humidity, r.moisture, r.ph, r.ec, r.waterLevel])
+                              ].map(r => r.join(',')).join('\n');
+                              const blob = new Blob([csv], { type: 'text/csv' });
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = 'sensor-history.csv';
+                              document.body.appendChild(a);
+                              a.click();
+                              a.remove();
+                              URL.revokeObjectURL(url);
+                            }}
+                            className="px-4 py-2 text-sm rounded-md bg-gray-200 dark:bg-gray-700"
+                          >
+                            Export CSV
+                          </button>
                         </div>
                       </div>
-                      <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-gray-600 dark:text-gray-400">Weather API</span>
-                          <span className={`px-2 py-1 rounded text-xs ${weatherSummary ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-                            {weatherSummary ? 'Available' : 'Limited'}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* Sensor Management */}
-                  <div className="p-4 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow flex flex-col justify-between min-h-[200px]">
-                    <div>
-                      <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">Sensor Management</h3>
-                      <p className="text-sm text-gray-600">Overview of sensors currently reporting data.</p>
-                      <p className="text-sm text-gray-500 mt-1">{sensorStatus}</p>
-                      <div className="mt-3 space-y-2">
-                        {deviceInventory.length === 0 ? (
-                          <p className="text-xs text-gray-500 dark:text-gray-400">No sensors connected.</p>
-                        ) : (
-                          deviceInventory.slice(0, 3).map((device) => (
-                            <div key={device.deviceId} className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1">
-                              <span className="font-medium text-gray-700 dark:text-gray-200">{device.deviceId}</span>
-                              <span className={device.status === 'online' ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}>
-                                {device.status === 'online' ? 'Online' : 'Offline'}
+                      {/* System Health Monitor */}
+                      <div className="p-4 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow">
+                        <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3">System Health Monitor</h3>
+                        <div className="space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                              <span className="text-sm text-gray-600 dark:text-gray-400">Server Status</span>
+                              <span className={`px-2 py-1 rounded text-xs ${systemStatus.server === 'online' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                {systemStatus.server}
                               </span>
                             </div>
-                          ))
-                        )}
-                        {deviceInventory.length > 3 && (
-                          <p className="text-xs text-gray-500 dark:text-gray-400">+{deviceInventory.length - 3} more sensor(s)</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Events & Activity Row */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* System Events & Maintenance */}
-                  <div className="p-4 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow">
-                    <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">System Events & Maintenance</h3>
-                        <p className="text-sm text-gray-600">Latest system events and upcoming maintenance reminders.</p>
-                      </div>
-                      <button onClick={fetchEvents} title="Refresh events" className="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-800 text-sm">Refresh</button>
-                    </div>
-
-                    <div className="grid grid-cols-1 gap-3">
-                      <div className="border rounded-md p-3 bg-white dark:bg-gray-900 max-h-40 overflow-auto">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="text-sm font-medium">Latest Events</div>
-                          <div className="text-xs text-gray-500">Showing up to 5</div>
-                        </div>
-                        {alerts.length === 0 && <div className="text-sm text-gray-500">No recent events</div>}
-                        {alerts.slice(0,5).map(a => (
-                          <div key={a.id} className="py-2 border-b last:border-b-0 flex items-start gap-3">
-                            <div className={`w-3 h-3 mt-1 rounded-full ${a.severity === 'critical' ? 'bg-red-600' : a.severity === 'warning' ? 'bg-yellow-500' : 'bg-blue-400'}`} />
-                            <div>
-                              <div className="text-sm font-medium text-gray-800 dark:text-gray-100">{a.title}</div>
-                              <div className="text-xs text-gray-500">{new Date(a.createdAt).toLocaleString()}</div>
+                            <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                              <span className="text-sm text-gray-600 dark:text-gray-400">Database</span>
+                              <span className={`px-2 py-1 rounded text-xs ${systemStatus.database === 'online' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                {systemStatus.database}
+                              </span>
+                            </div>
+                            <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                              <span className="text-sm text-gray-600 dark:text-gray-400">API Latency</span>
+                              <span className="text-sm font-medium text-gray-800 dark:text-gray-200">{systemStatus.apiLatency}ms</span>
+                            </div>
+                            <div className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                              <span className="text-sm text-gray-600 dark:text-gray-400">Sensors</span>
+                              <span className={`px-2 py-1 rounded text-xs ${latestSensor ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                                {latestSensor ? 'Connected' : 'Offline'}
+                              </span>
                             </div>
                           </div>
-                        ))}
-                      </div>
-
-                      <div className="border rounded-md p-3 bg-white dark:bg-gray-900">
-                        <div className="flex items-center justify-between mb-2">
-                          <div className="text-sm font-medium">Maintenance Reminders</div>
-                          <div className="flex items-center gap-2 text-xs text-gray-500">
-                            <span title="Quick actions">⚡ 🛠️</span>
-                            <button onClick={loadReminders} className="px-2 py-1 rounded-md border text-xs">Refresh</button>
+                          <div className="pt-2 border-t border-gray-200 dark:border-gray-600">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm text-gray-600 dark:text-gray-400">Weather API</span>
+                              <span className={`px-2 py-1 rounded text-xs ${weatherSummary ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                                {weatherSummary ? 'Available' : 'Limited'}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                        {remindersLoading && <div className="text-sm text-gray-500">Loading reminders...</div>}
-                        {!remindersLoading && reminders.length === 0 && (
-                          <div className="text-sm text-gray-500">No maintenance reminders configured.</div>
-                        )}
+                      </div>
 
-                        <ul className="text-sm text-gray-600 space-y-2 max-h-32 overflow-auto">
-                          {reminders.map(r => (
-                            <li key={r.id} className="flex items-start justify-between">
+                      {/* Sensor Management */}
+                      <div className="p-4 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow flex flex-col justify-between min-h-[200px]">
+                        <div>
+                          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">Sensor Management</h3>
+                          <p className="text-sm text-gray-600">Overview of sensors currently reporting data.</p>
+                          <p className="text-sm text-gray-500 mt-1">{sensorStatus}</p>
+                          <div className="mt-3 space-y-2">
+                            {deviceInventory.length === 0 ? (
+                              <p className="text-xs text-gray-500 dark:text-gray-400">No sensors connected.</p>
+                            ) : (
+                              deviceInventory.slice(0, 3).map((device) => (
+                                <div key={device.deviceId} className="flex items-center justify-between text-xs text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-600 rounded-md px-2 py-1">
+                                  <span className="font-medium text-gray-700 dark:text-gray-200">{device.deviceId}</span>
+                                  <span className={device.status === 'online' ? 'text-emerald-600 dark:text-emerald-300' : 'text-rose-600 dark:text-rose-300'}>
+                                    {device.status === 'online' ? 'Online' : 'Offline'}
+                                  </span>
+                                </div>
+                              ))
+                            )}
+                            {deviceInventory.length > 3 && (
+                              <p className="text-xs text-gray-500 dark:text-gray-400">+{deviceInventory.length - 3} more sensor(s)</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Events & Activity Row */}
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                      {/* System Events & Maintenance */}
+                      <div className="p-4 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow">
+                        <div className="flex items-start justify-between mb-4">
+                          <div>
+                            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">System Events & Maintenance</h3>
+                            <p className="text-sm text-gray-600">Latest system events and upcoming maintenance reminders.</p>
+                          </div>
+                          <button onClick={fetchEvents} title="Refresh events" className="px-3 py-2 rounded-md border bg-gray-50 dark:bg-gray-800 text-sm">Refresh</button>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-3">
+                          <div className="border rounded-md p-3 bg-white dark:bg-gray-900 max-h-40 overflow-auto">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="text-sm font-medium">Latest Events</div>
+                              <div className="text-xs text-gray-500">Showing up to 5</div>
+                            </div>
+                            {alerts.length === 0 && <div className="text-sm text-gray-500">No recent events</div>}
+                            {alerts.slice(0,5).map(a => (
+                              <div key={a.id} className="py-2 border-b last:border-b-0 flex items-start gap-3">
+                                <div className={`w-3 h-3 mt-1 rounded-full ${a.severity === 'critical' ? 'bg-red-600' : a.severity === 'warning' ? 'bg-yellow-500' : 'bg-blue-400'}`} />
+                                <div>
+                                  <div className="text-sm font-medium text-gray-800 dark:text-gray-100">{a.title}</div>
+                                  <div className="text-xs text-gray-500">{new Date(a.createdAt).toLocaleString()}</div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+
+                          <div className="border rounded-md p-3 bg-white dark:bg-gray-900">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="text-sm font-medium">Maintenance Reminders</div>
+                              <div className="flex items-center gap-2 text-xs text-gray-500">
+                                <span title="Quick actions">⚡ 🛠️</span>
+                                <button onClick={loadReminders} className="px-2 py-1 rounded-md border text-xs">Refresh</button>
+                              </div>
+                            </div>
+                            {remindersLoading && <div className="text-sm text-gray-500">Loading reminders...</div>}
+                            {!remindersLoading && reminders.length === 0 && (
+                              <div className="text-sm text-gray-500">No maintenance reminders configured.</div>
+                            )}
+
+                            <ul className="text-sm text-gray-600 space-y-2 max-h-32 overflow-auto">
+                              {reminders.map(r => (
+                                <li key={r.id} className="flex items-start justify-between">
+                                  <div className="flex-1">
+                                    <div className="text-sm font-medium text-gray-800 dark:text-gray-100">{r.title}</div>
+                                    <div className="text-xs text-gray-500">Due in: <span className="font-medium">{r.dueInDays ?? '-'} days</span></div>
+                                    {r.note && <div className="text-xs text-gray-500">{r.note}</div>}
+                                  </div>
+                                  <div className="flex flex-col items-end gap-2 ml-2">
+                                    {!r.acknowledged ? (
+                                      <button onClick={() => acknowledgeReminder(r.id)} className="px-2 py-1 rounded-md bg-green-600 text-white text-xs">Acknowledge</button>
+                                    ) : (
+                                      <div className="text-xs text-green-600">Acknowledged</div>
+                                    )}
+                                    <button onClick={() => scheduleReminder(r.id)} className="px-2 py-1 rounded-md border text-xs">Schedule</button>
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Recent Activity */}
+                      <div className="p-4 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow">
+                        <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">Recent Activity</h3>
+                        <div className="space-y-3 max-h-80 overflow-y-auto">
+                          {alerts.slice(0,8).map(a => (
+                            <div key={a.id} className="flex items-start gap-3 py-2 border-b last:border-b-0">
+                              <div className={`w-3 h-3 mt-1 rounded-full ${a.severity === 'critical' ? 'bg-red-600' : a.severity === 'warning' ? 'bg-yellow-500' : 'bg-blue-400'}`} />
                               <div className="flex-1">
-                                <div className="text-sm font-medium text-gray-800 dark:text-gray-100">{r.title}</div>
-                                <div className="text-xs text-gray-500">Due in: <span className="font-medium">{r.dueInDays ?? '-'} days</span></div>
-                                {r.note && <div className="text-xs text-gray-500">{r.note}</div>}
+                                <div className="text-sm font-medium text-gray-800 dark:text-gray-100">{a.title}</div>
+                                <div className="text-xs text-gray-500">{new Date(a.createdAt).toLocaleString()}</div>
                               </div>
-                              <div className="flex flex-col items-end gap-2 ml-2">
-                                {!r.acknowledged ? (
-                                  <button onClick={() => acknowledgeReminder(r.id)} className="px-2 py-1 rounded-md bg-green-600 text-white text-xs">Acknowledge</button>
-                                ) : (
-                                  <div className="text-xs text-green-600">Acknowledged</div>
-                                )}
-                                <button onClick={() => scheduleReminder(r.id)} className="px-2 py-1 rounded-md border text-xs">Schedule</button>
-                              </div>
-                            </li>
+                            </div>
                           ))}
-                        </ul>
+                          {alerts.length === 0 && (
+                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                              <Activity className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                              <p>No recent activity</p>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-
-                  {/* Recent Activity */}
-                  <div className="p-4 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 shadow">
-                    <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">Recent Activity</h3>
-                    <div className="space-y-3 max-h-80 overflow-y-auto">
-                      {alerts.slice(0,8).map(a => (
-                        <div key={a.id} className="flex items-start gap-3 py-2 border-b last:border-b-0">
-                          <div className={`w-3 h-3 mt-1 rounded-full ${a.severity === 'critical' ? 'bg-red-600' : a.severity === 'warning' ? 'bg-yellow-500' : 'bg-blue-400'}`} />
-                          <div className="flex-1">
-                            <div className="text-sm font-medium text-gray-800 dark:text-gray-100">{a.title}</div>
-                            <div className="text-xs text-gray-500">{new Date(a.createdAt).toLocaleString()}</div>
-                          </div>
-                        </div>
-                      ))}
-                      {alerts.length === 0 && (
-                        <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                          <Activity className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                          <p>No recent activity</p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
+                  </>
+                )}
               </div>
             )}
           </div>

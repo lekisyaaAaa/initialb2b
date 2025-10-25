@@ -13,6 +13,10 @@ import DevicePortsPage from './pages/DevicePortsPage';
 import LogsPage from './pages/LogsPage';
 import ThresholdsPage from './pages/ThresholdsPage';
 import HomeAssistant from './pages/HomeAssistant';
+import AdminLoginPage from './pages/admin/AdminLoginPage';
+import AdminOTPVerifyPage from './pages/admin/AdminOTPVerifyPage';
+import AdminForgotPasswordPage from './pages/admin/AdminForgotPasswordPage';
+import AdminResetPasswordPage from './pages/admin/AdminResetPasswordPage';
 
 // Import context providers
 import { AuthProvider } from './contexts/AuthContext';
@@ -37,8 +41,11 @@ function App() {
                 <Route path="/contact" element={<ContactPage />} />
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/login" element={<LoginPage />} />
-                {/* Public admin login route used by landing page */}
-                <Route path="/admin/login" element={<LoginPage />} />
+                {/* Public admin authentication routes */}
+                <Route path="/admin/login" element={<AdminLoginPage />} />
+                <Route path="/admin/verify-otp" element={<AdminOTPVerifyPage />} />
+                <Route path="/admin/forgot-password" element={<AdminForgotPasswordPage />} />
+                <Route path="/admin/reset-password" element={<AdminResetPasswordPage />} />
                 <Route path="/admin" element={<ProtectedRoute><Navigate to="/admin/dashboard" replace /></ProtectedRoute>} />
                 {/* Explicit dashboard path kept for compatibility */}
                 <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />

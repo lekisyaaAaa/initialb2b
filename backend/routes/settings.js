@@ -5,6 +5,25 @@ const { auth, adminOnly } = require('../middleware/auth');
 
 const router = express.Router();
 
+const DEFAULT_ALERT_RULES = Settings.DEFAULT_ALERT_RULES || {
+  temperature: true,
+  humidity: true,
+  moisture: true,
+  ph: true,
+  system: true,
+  emailNotifications: false,
+};
+
+const truthyValues = new Set(['true', '1', 'yes', 'on', 'enabled']);
+
+const parseBoolean = (value, fallback) => {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value !== 0;
+  if (typeof value === 'string') return truthyValues.has(value.trim().toLowerCase());
+  return fallback;
+};
+
 // @route   GET /api/settings
 // @desc    Get current settings
 // @access  Private
@@ -22,7 +41,8 @@ router.get('/', auth, async (req, res) => {
         },
         system: {
           timezone: settings.system.timezone
-        }
+        },
+        alerts: settings.alerts || { ...DEFAULT_ALERT_RULES },
       };
       
       return res.json({
@@ -42,6 +62,20 @@ router.get('/', auth, async (req, res) => {
       success: false,
       message: 'Error fetching settings'
     });
+  }
+});
+
+router.get('/alerts', auth, async (req, res) => {
+  try {
+    const settings = await Settings.getSettings();
+    const config = settings.alerts || { ...DEFAULT_ALERT_RULES };
+    res.json({
+      success: true,
+      data: config,
+    });
+  } catch (error) {
+    console.error('Error fetching alert configuration:', error);
+    res.status(500).json({ success: false, message: 'Failed to load alert configuration' });
   }
 });
 
@@ -195,6 +229,36 @@ router.put('/thresholds', [auth, adminOnly], async (req, res) => {
       success: false,
       message: 'Error updating thresholds',
     });
+  }
+});
+
+router.put('/alerts', [auth, adminOnly], async (req, res) => {
+  try {
+    const payloadRoot = req.body && typeof req.body === 'object' ? req.body : {};
+    const raw = payloadRoot.alerts && typeof payloadRoot.alerts === 'object' ? payloadRoot.alerts : payloadRoot;
+
+    const nextConfig = { ...DEFAULT_ALERT_RULES };
+    Object.keys(DEFAULT_ALERT_RULES).forEach((key) => {
+      nextConfig[key] = parseBoolean(raw[key], DEFAULT_ALERT_RULES[key]);
+    });
+
+    const serialized = JSON.stringify(nextConfig);
+    const existing = await Settings.findOne({ where: { key: 'alerts' } });
+    if (existing) {
+      existing.value = serialized;
+      await existing.save();
+    } else {
+      await Settings.create({ key: 'alerts', value: serialized });
+    }
+
+    res.json({
+      success: true,
+      message: 'Alert configuration updated successfully',
+      data: nextConfig,
+    });
+  } catch (error) {
+    console.error('Error updating alert configuration:', error);
+    res.status(500).json({ success: false, message: 'Failed to update alert configuration' });
   }
 });
 

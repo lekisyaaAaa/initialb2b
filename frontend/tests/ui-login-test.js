@@ -40,9 +40,14 @@ const path = require('path');
     await page.screenshot({ path: path.join(screenshotDir, 'after-click.png'), fullPage: true });
 
     // Fill form
+    const loginUser = process.env.TEST_ADMIN_USER;
+    const loginPass = process.env.TEST_ADMIN_PASS;
+    if (!loginUser || !loginPass) {
+      throw new Error('TEST_ADMIN_USER and TEST_ADMIN_PASS must be set for the UI login test.');
+    }
     await page.waitForSelector('input[name="username"], #username', { timeout: 5000 });
-    await page.type('input[name="username"], #username', process.env.TEST_ADMIN_USER || 'beantobin');
-    await page.type('input[name="password"], #password', process.env.TEST_ADMIN_PASS || 'Bean2bin');
+    await page.type('input[name="username"], #username', loginUser);
+    await page.type('input[name="password"], #password', loginPass);
 
     // Submit
     await Promise.all([

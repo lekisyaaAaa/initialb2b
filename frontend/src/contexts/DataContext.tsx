@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
-import { SensorData, Alert } from '../types';
+import { SensorData, Alert, ApiResponse } from '../types';
 import api, { alertService, sensorService, discoverApi } from '../services/api';
 import weatherService, { type WeatherData } from '../services/weatherService';
 
@@ -61,19 +61,39 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     return '';
   }, []);
 
-  const fetchSensorDataFromBackend = useCallback(async (): Promise<{ readings: SensorData[] }> => {
-    const response = await sensorService.getLatestData();
-    const payload = response?.data?.data;
+  const fetchSensorDataFromBackend = useCallback(async (): Promise<{ readings: SensorData[]; connected: boolean }> => {
+  const response = await sensorService.getLatestData();
+  const root = (response?.data ?? {}) as (ApiResponse<SensorData | SensorData[] | null> & { status?: string });
+    const payload = root?.data;
+    const status = (root?.status || '').toString().toLowerCase();
 
+    let readings: SensorData[] = [];
     if (Array.isArray(payload)) {
-      return { readings: payload as SensorData[] };
+      readings = payload as SensorData[];
+    } else if (payload && typeof payload === 'object') {
+      readings = [payload as SensorData];
     }
 
-    if (payload && typeof payload === 'object') {
-      return { readings: [payload as SensorData] };
+    const anyConnected = readings.some((reading) => {
+      const deviceOnline = (reading as any)?.deviceOnline;
+      const deviceStatus = (reading as any)?.deviceStatus;
+      const isStale = (reading as any)?.isStale;
+      if (typeof deviceOnline === 'boolean') {
+        return deviceOnline;
+      }
+      if (typeof deviceStatus === 'string') {
+        return deviceStatus.toLowerCase() === 'online';
+      }
+      return isStale === false;
+    });
+
+    const connected = status === 'online' || anyConnected;
+
+    if (!connected) {
+      return { readings: [], connected: false };
     }
 
-    return { readings: [] };
+    return { readings, connected };
   }, []);
 
   const fetchAlertsFromBackend = useCallback(async (): Promise<Alert[]> => {
@@ -95,12 +115,12 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     try {
       await ensureBackendBase();
 
-      const { readings: backendSensorData } = await fetchSensorDataFromBackend();
+      const { readings: backendSensorData, connected } = await fetchSensorDataFromBackend();
 
-      setIsConnected(true);
+      setIsConnected(connected);
       setLastFetchAt(new Date().toISOString());
 
-      if (backendSensorData.length > 0) {
+      if (connected && backendSensorData.length > 0) {
         setLatestSensorData(backendSensorData);
         setLastFetchCount(backendSensorData.length);
       } else {
@@ -150,10 +170,10 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
           setLastFetchError(fallbackError?.message || error?.message || 'Unable to reach backend');
         }
       } else {
-        setLatestSensorData([]);
-        setRecentAlerts([]);
-        setLastFetchCount(0);
-        setLastFetchError(error?.message || 'Unable to reach backend');
+    setLatestSensorData([]);
+    setRecentAlerts([]);
+    setLastFetchCount(0);
+    setLastFetchError(error?.message || 'Unable to reach backend');
       }
     } finally {
       isCurrentlyLoading.current = false;

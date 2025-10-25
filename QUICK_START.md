@@ -98,9 +98,7 @@ This script will:
    - Open http://localhost:3002 in your browser
    - Should load the dashboard
 
-5. **Login credentials:**
-   - Username: `beantobin`
-   - Password: `Bean2bin`
+5. **Admin access:** Configure administrator accounts manually using the new Admin model (see Phase 1 notes) until the email-based authentication flow is finalized.
 
 ## 🔧 Manual Troubleshooting
 

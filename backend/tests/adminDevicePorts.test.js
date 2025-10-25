@@ -2,6 +2,7 @@ const request = require('supertest');
 const app = require('./testServerHelper');
 const sequelize = require('../services/database_pg');
 const Device = require('../models/Device');
+const jwt = require('jsonwebtoken');
 require('../models/DevicePort');
 require('../models/DeviceCommand');
 
@@ -16,10 +17,11 @@ describe('Admin device port management', () => {
       status: 'online',
       lastHeartbeat: new Date(),
     });
-    const loginResponse = await request(app)
-      .post('/api/admin/login')
-      .send({ username: 'beantobin', password: 'Bean2bin' });
-    token = loginResponse.body && loginResponse.body.token;
+    token = jwt.sign(
+      { id: 'admin-test', username: 'admin-test', role: 'admin' },
+      process.env.JWT_SECRET || 'devsecret',
+      { expiresIn: '1h' }
+    );
   });
 
   afterAll(async () => {

@@ -5,6 +5,7 @@ import {
   SensorData,
   Alert,
   Settings,
+  AlertRules,
   SensorStats,
   AlertStats,
   Actuator,
@@ -120,7 +121,7 @@ export const authService = {
 // Admin-specific login helper that talks to /api/admin/login and returns a simple shape
 // Use the configured `api` instance whose baseURL already contains the '/api' prefix.
 export const adminAuthService = {
-  loginAdmin: async (username: string, password: string) => {
+  loginAdmin: async (email: string, password: string) => {
     const normalizeRoot = (value?: string | null) => {
       if (!value) return '';
       return value.replace(/\s+/g, '').replace(/\/?api$/i, '').replace(/\/$/, '');
@@ -163,11 +164,12 @@ export const adminAuthService = {
           // backend reported unhealthy; attempt login regardless to surface proper error
         }
 
-        const resp = await api.post('/admin/login', { username, password }, { timeout: 8000 });
+        const payload = { email: email.trim().toLowerCase(), password };
+        const resp = await api.post('/admin/login', payload, { timeout: 8000 });
         if (resp?.data?.success && resp.data.token) {
           const fallbackUser = resp.data.user || {
             id: 'admin-local',
-            username,
+            username: email,
             role: 'admin',
             source: 'admin-login',
           };
@@ -322,6 +324,12 @@ export const settingsService = {
   
   updateSettings: (settings: Partial<Settings>) =>
     api.put<ApiResponse<Settings>>('/settings', settings),
+
+  getAlertRules: () =>
+    api.get<ApiResponse<AlertRules>>('/settings/alerts'),
+
+  updateAlertRules: (alerts: AlertRules) =>
+    api.put<ApiResponse<AlertRules>>('/settings/alerts', { alerts }),
   
   addPhoneNumber: (phoneData: { name: string; number: string }) =>
     api.post<ApiResponse<Settings>>('/settings/phone-numbers', phoneData),

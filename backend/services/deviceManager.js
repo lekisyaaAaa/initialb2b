@@ -1,6 +1,15 @@
 // deviceManager: tracks device heartbeats and exposes helpers to mark online/offline
 const Device = require('../models/Device');
 const Alert = require('../models/Alert');
+const { ensureDatabaseSetup } = require('../services/database_pg');
+
+const schemaReady = ensureDatabaseSetup({ force: (process.env.NODE_ENV || 'development') === 'test' });
+
+async function ensureReady() {
+  if (schemaReady && typeof schemaReady.then === 'function') {
+    await schemaReady;
+  }
+}
 
 // In-memory map of timers used to detect offline devices
 const offlineTimers = new Map();
@@ -9,6 +18,7 @@ const OFFLINE_TIMEOUT_MS = parseInt(process.env.DEVICE_OFFLINE_TIMEOUT_MS || pro
 
 async function markDeviceOnline(deviceId, metadata = {}) {
   if (!deviceId) return null;
+  await ensureReady();
   const now = new Date();
   const [device] = await Device.findOrCreate({ where: { deviceId }, defaults: { deviceId, status: 'online', lastHeartbeat: now, metadata } });
   if (device.lastHeartbeat == null || new Date(device.lastHeartbeat) < now) {
@@ -50,6 +60,7 @@ function resetOfflineTimer(deviceId) {
 
 async function markDeviceOffline(deviceId) {
   if (!deviceId) return null;
+  await ensureReady();
   const device = await Device.findOne({ where: { deviceId } });
   if (!device) return null;
   device.status = 'offline';

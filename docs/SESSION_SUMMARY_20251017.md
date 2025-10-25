@@ -9,7 +9,7 @@
 ## Validation
 - Backend launched from `backend` with `node server.js`; logs confirm successful Postgres connection (`postgres://127.0.0.1:5075`), health check, and WebSocket binding on port 5000.
 - Manual admin login exercised via PowerShell:
-  - `Invoke-RestMethod http://localhost:5000/api/auth/login` with body `{ username: 'beantobin', password: 'Bean2bin' }` → `success: true` and valid JWT payload returned.
+  - Admin login is transitioning to a new flow; legacy username/password checks have been removed.
 
 ## Follow-up Suggestions
 - Run the React frontend against the updated backend to confirm dashboard data renders correctly (chart loads, sensor lists populate).

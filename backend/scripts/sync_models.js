@@ -10,6 +10,8 @@ const sequelize = require('../services/database_pg');
   require('../models/Actuator');
   require('../models/ActuatorLog');
   require('../models/Settings');
+  require('../models/Admin');
+  require('../models/AdminOTP');
     await sequelize.sync({ alter: true });
     console.log('✅ Models synced (alter: true)');
     process.exit(0);

@@ -49,6 +49,12 @@ export const SystemDiagnostics: React.FC<SystemDiagnosticsProps> = ({ onMetricsU
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
+  const handleMetricsUpdate = useCallback((nextMetrics: SystemMetrics) => {
+    if (typeof onMetricsUpdate === 'function') {
+      onMetricsUpdate(nextMetrics);
+    }
+  }, [onMetricsUpdate]);
+
   const loadDiagnostics = useCallback(async () => {
     setLoading(true);
     try {
@@ -108,13 +114,13 @@ export const SystemDiagnostics: React.FC<SystemDiagnosticsProps> = ({ onMetricsU
 
       setMetrics(newMetrics);
       setLastUpdate(new Date());
-      onMetricsUpdate?.(newMetrics);
+      handleMetricsUpdate(newMetrics);
     } catch (error) {
       console.error('Failed to load diagnostics:', error);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [handleMetricsUpdate]);
 
   useEffect(() => {
     loadDiagnostics();

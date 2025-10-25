@@ -1,12 +1,8 @@
 const { Sequelize } = require('sequelize');
-const fs = require('fs');
 const path = require('path');
 const dotenv = require('dotenv');
 
-// Ensure we load the backend-specific .env file.
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
-
-const isProduction = (process.env.NODE_ENV || 'development') === 'production';
 
 const baseOptions = {
 	logging: false,
@@ -18,79 +14,67 @@ const baseOptions = {
 	}
 };
 
-const preferSqlite = (() => {
-	const flag = (process.env.USE_SQLITE || process.env.DB_DIALECT || '').toString().toLowerCase();
-	return flag === 'true' || flag === '1' || flag === 'sqlite';
-})();
+if (!process.env.DATABASE_URL) {
+	console.error('❌ DATABASE_URL is required but missing. Set a PostgreSQL connection string in your environment.');
+	process.exit(1);
+}
 
-const useConnectionUrl = !preferSqlite && Boolean(process.env.DATABASE_URL && !process.env.DB_NAME);
-
-const ensureSqliteStorage = () => {
-	const storageDir = path.join(__dirname, '..', 'data');
-	if (!fs.existsSync(storageDir)) {
-		fs.mkdirSync(storageDir, { recursive: true });
+let sequelize = new Sequelize(process.env.DATABASE_URL, {
+	...baseOptions,
+	dialect: 'postgres',
+	dialectOptions: {
+		ssl: process.env.PGSSLMODE === 'require' ? { rejectUnauthorized: false } : false
 	}
-	return process.env.DB_STORAGE || path.join(storageDir, process.env.DB_SQLITE_FILENAME || 'dev.sqlite');
-};
+});
+let currentDialect = 'postgres';
 
-const createSqliteInstance = () => {
-	const storage = ensureSqliteStorage();
-	console.log(`Using SQLite dev DB at ${storage}`);
-	return new Sequelize({
-		...baseOptions,
-		dialect: 'sqlite',
-		storage
+function loadModels() {
+	require('../models/User');
+	require('../models/Device');
+	require('../models/SensorData');
+	require('../models/Alert');
+	require('../models/Settings');
+	require('../models/Actuator');
+	require('../models/ActuatorLog');
+	require('../models/DevicePort');
+	require('../models/DeviceCommand');
+	require('../models/Admin');
+	require('../models/AdminOTP');
+	require('../models/PasswordResetToken');
+}
+
+let setupPromise = null;
+
+const isTestEnv = (process.env.NODE_ENV || '').toLowerCase() === 'test' || Boolean(process.env.JEST_WORKER_ID);
+
+async function ensureDatabaseSetup(options = {}) {
+	if (setupPromise) {
+		return setupPromise;
+	}
+
+	loadModels();
+
+	const syncOptions = {};
+	if (options.force || isTestEnv) {
+		syncOptions.force = true;
+	}
+
+	setupPromise = sequelize.sync(syncOptions).catch((err) => {
+		setupPromise = null;
+		throw err;
 	});
-};
 
-const createPostgresInstance = () => {
-	if (useConnectionUrl) {
-		return new Sequelize(process.env.DATABASE_URL, {
-			...baseOptions,
-			dialect: 'postgres',
-			dialectOptions: {
-				ssl: process.env.PGSSLMODE === 'require' ? { rejectUnauthorized: false } : false
-			}
-		});
-	}
-
-	const dialect = (process.env.DB_DIALECT || 'postgres').toLowerCase();
-	const connectionOptions = {
-		...baseOptions,
-		host: process.env.DB_HOST || '127.0.0.1',
-		port: process.env.DB_PORT ? Number(process.env.DB_PORT) : undefined,
-		dialect,
-		dialectOptions: {}
-	};
-
-	if (dialect === 'postgres' && process.env.PGSSLMODE === 'require') {
-		connectionOptions.dialectOptions.ssl = { rejectUnauthorized: false };
-	}
-
-	return new Sequelize(
-		process.env.DB_NAME,
-		process.env.DB_USER,
-		process.env.DB_PASS,
-		connectionOptions
-	);
-};
-
-let sequelize = preferSqlite ? createSqliteInstance() : createPostgresInstance();
-let currentDialect = preferSqlite ? 'sqlite' : 'postgres';
+	return setupPromise;
+}
 
 const connectDB = async () => {
 	try {
 		await sequelize.authenticate();
 		currentDialect = sequelize.getDialect();
-		const connectionLabel = currentDialect === 'sqlite'
-			? `sqlite://${ensureSqliteStorage()}`
-			: (useConnectionUrl ? 'connection URL' : `${currentDialect}://${process.env.DB_HOST}:${process.env.DB_PORT || '(default port)'}`);
-		console.log(`✅ Database connected successfully via ${connectionLabel}`);
+		console.log('✅ Database connected successfully via PostgreSQL');
 	} catch (error) {
 		console.error('❌ Unable to connect to the database:', error.message);
-		if (!isProduction) {
-			console.error('ℹ️  Check your backend/.env credentials or ensure the database service is running.');
-		}
+		console.error('ℹ️  Verify DATABASE_URL and ensure the PostgreSQL service is reachable.');
 		throw error;
 	}
 };
@@ -98,3 +82,4 @@ const connectDB = async () => {
 module.exports = sequelize;
 module.exports.connectDB = connectDB;
 module.exports.getActiveDialect = () => currentDialect;
+module.exports.ensureDatabaseSetup = ensureDatabaseSetup;

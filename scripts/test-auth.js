@@ -6,10 +6,17 @@ async function testAuth() {
     const healthResponse = await axios.get('http://localhost:5000/api/health');
     console.log('✅ Health check passed:', healthResponse.data);
 
-    console.log('🔐 Testing login with beantobin/Bean2bin...');
+  console.log('🔐 Testing login with supplied admin credentials...');
+    const username = process.env.TEST_ADMIN_USER;
+    const password = process.env.TEST_ADMIN_PASS;
+
+    if (!username || !password) {
+      throw new Error('TEST_ADMIN_USER and TEST_ADMIN_PASS must be set before running this script.');
+    }
+
     const loginResponse = await axios.post('http://localhost:5000/api/auth/login', {
-      username: 'admin',
-      password: 'admin'
+      username,
+      password
     });
 
     console.log('✅ Login response:', {

@@ -21,6 +21,9 @@ void sendSensorData(const SensorData& data);
 void storeOfflineData(const SensorData& data);
 void connectToWiFi();
 void sendHeartbeat();
+void setupCommandServer();
+void handleCommandRequest();
+void applyActuatorCommand(const String& actuatorName, const String& commandValue);
 
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -29,14 +32,17 @@ void sendHeartbeat();
 #include <ModbusMaster.h>
 #include <Wire.h>
 #include <SPIFFS.h>
+#include <WebServer.h>
 
-// WiFi credentials
-const char* ssid = "Hulaan Mo";
-const char* password = "Talingting12345";
+#include "config.h"
 
-// Backend API endpoint
-const char* serverUrl = "http://192.168.254.164:5000/api/sensors";
-const char* heartbeatUrl = "http://192.168.254.164:5000/api/devices/heartbeat";
+// WiFi credentials provided via config.h
+const char* ssid = WIFI_SSID;
+const char* password = WIFI_PASS;
+
+// Backend API endpoints provided via config.h
+const char* serverUrl = SERVER_URL;
+const char* heartbeatUrl = HEARTBEAT_URL;
 
 // RS485/MODBUS configuration for soil sensor
 #define RS485_RX 16  // GPIO16
@@ -60,9 +66,13 @@ unsigned long lastSendTime = 0;
 const unsigned long sendInterval = 30000; // 30 seconds
 unsigned long lastHeartbeatTime = 0;
 const unsigned long heartbeatInterval = 10000; // Keep device registered with backend
+unsigned long lastReconnectAttempt = 0;
+const unsigned long reconnectInterval = 15000;
 
 // Device ID
-const char* deviceId = "ESP32_001";
+const char* deviceId = DEVICE_ID;
+
+WebServer commandServer(80);
 
 void preTransmission();
 void postTransmission();
@@ -100,6 +110,8 @@ void setup() {
   // Connect to WiFi
   connectToWiFi();
 
+  setupCommandServer();
+
   if (WiFi.status() == WL_CONNECTED) {
     sendHeartbeat();
     lastHeartbeatTime = millis();
@@ -117,6 +129,12 @@ void postTransmission() {
 }
 
 void loop() {
+  if (WiFi.status() != WL_CONNECTED && millis() - lastReconnectAttempt > reconnectInterval) {
+    Serial.println("WiFi disconnected. Attempting reconnect...");
+    connectToWiFi();
+    lastReconnectAttempt = millis();
+  }
+
   // Read sensors
   SensorData data = readSensors();
 
@@ -133,6 +151,8 @@ void loop() {
     sendHeartbeat();
     lastHeartbeatTime = millis();
   }
+
+  commandServer.handleClient();
 
   delay(1000);
 }
@@ -255,16 +275,84 @@ void controlActuators(const SensorData& data) {
   }
 }
 
+void setupCommandServer() {
+  commandServer.on("/command", HTTP_POST, handleCommandRequest);
+  commandServer.onNotFound([]() {
+    commandServer.send(404, "application/json", "{\"status\":\"not_found\"}");
+  });
+  commandServer.begin();
+  Serial.println("Command server listening on /command");
+}
+
+void handleCommandRequest() {
+  if (!commandServer.hasArg("plain")) {
+    commandServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing body\"}");
+    return;
+  }
+
+  String body = commandServer.arg("plain");
+  DynamicJsonDocument doc(256);
+  auto err = deserializeJson(doc, body);
+  if (err) {
+    commandServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
+    return;
+  }
+
+  String actuator = doc["actuator"] | "";
+  String command = doc["command"] | "";
+  actuator.trim();
+  command.trim();
+
+  if (actuator.length() == 0 || command.length() == 0) {
+    commandServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing actuator or command\"}");
+    return;
+  }
+
+  if (!command.equalsIgnoreCase("ON") && !command.equalsIgnoreCase("OFF")) {
+    commandServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Command must be ON or OFF\"}");
+    return;
+  }
+
+  String actuatorLower = actuator;
+  actuatorLower.toLowerCase();
+
+  if (actuatorLower == "water pump" || actuatorLower == "water_pump" || actuatorLower == "pump") {
+    applyActuatorCommand("Water Pump", command);
+  } else if (actuatorLower == "solenoid valve" || actuatorLower == "solenoid_valve" || actuatorLower == "valve") {
+    applyActuatorCommand("Solenoid Valve", command);
+  } else {
+    commandServer.send(404, "application/json", "{\"status\":\"error\",\"message\":\"Unknown actuator\"}");
+    return;
+  }
+
+  StaticJsonDocument<200> response;
+  response["status"] = "ok";
+  response["actuator"] = actuator;
+  response["command"] = command;
+
+  String responseBody;
+  serializeJson(response, responseBody);
+  commandServer.send(200, "application/json", responseBody);
+}
+
+void applyActuatorCommand(const String& actuatorName, const String& commandValue) {
+  bool turnOn = commandValue.equalsIgnoreCase("ON");
+
+  if (actuatorName.equalsIgnoreCase("Water Pump")) {
+    digitalWrite(PUMP_RELAY_PIN, turnOn ? LOW : HIGH);
+    Serial.printf("Pump %s via remote command\n", turnOn ? "ON" : "OFF");
+  } else if (actuatorName.equalsIgnoreCase("Solenoid Valve")) {
+    digitalWrite(SOLENOID_RELAY_PIN, turnOn ? LOW : HIGH);
+    Serial.printf("Solenoid %s via remote command\n", turnOn ? "ON" : "OFF");
+  }
+}
+
 void sendSensorData(const SensorData& data) {
   if (WiFi.status() != WL_CONNECTED) {
     // Store offline data
     storeOfflineData(data);
     return;
   }
-
-  HTTPClient http;
-  http.begin(serverUrl);
-  http.addHeader("Content-Type", "application/json");
 
   // Create JSON payload
   DynamicJsonDocument doc(1024);
@@ -285,20 +373,36 @@ void sendSensorData(const SensorData& data) {
   serializeJson(doc, jsonString);
 
   Serial.println("Sending data: " + jsonString);
+  bool delivered = false;
 
-  int httpResponseCode = http.POST(jsonString);
+  for (int attempt = 1; attempt <= COMMAND_MAX_RETRIES; attempt++) {
+    HTTPClient http;
+    http.begin(serverUrl);
+    http.addHeader("Content-Type", "application/json");
 
-  if (httpResponseCode > 0) {
-    String response = http.getString();
-    Serial.println("HTTP Response code: " + String(httpResponseCode));
-    Serial.println("Response: " + response);
-  } else {
-    Serial.println("Error in HTTP request");
-    // Store offline data
-    storeOfflineData(data);
+    int httpResponseCode = http.POST(jsonString);
+
+    if (httpResponseCode > 0 && httpResponseCode < 500) {
+      Serial.println("HTTP Response code: " + String(httpResponseCode));
+      delivered = true;
+      String response = http.getString();
+      Serial.println("Response: " + response);
+      http.end();
+      break;
+    }
+
+    Serial.printf("Sensor POST failed (attempt %d): %d\n", attempt, httpResponseCode);
+    http.end();
+
+    if (attempt < COMMAND_MAX_RETRIES) {
+      delay(COMMAND_RETRY_DELAY_MS);
+    }
   }
 
-  http.end();
+  if (!delivered) {
+    Serial.println("Failed to send sensor data after retries. Storing offline.");
+    storeOfflineData(data);
+  }
 }
 
 void storeOfflineData(const SensorData& data) {
@@ -334,9 +438,10 @@ void storeOfflineData(const SensorData& data) {
 
 void connectToWiFi() {
   Serial.print("Connecting to WiFi");
+  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+  uint8_t attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
     delay(500);
     Serial.print(".");
     attempts++;
@@ -345,7 +450,7 @@ void connectToWiFi() {
     Serial.println("\nWiFi connected");
     Serial.println("IP address: " + WiFi.localIP().toString());
   } else {
-    Serial.println("\nWiFi connection failed");
+    Serial.println("\nWiFi connection failed. Will retry.");
   }
 }
 
@@ -353,10 +458,6 @@ void sendHeartbeat() {
   if (WiFi.status() != WL_CONNECTED) {
     return;
   }
-
-  HTTPClient http;
-  http.begin(heartbeatUrl);
-  http.addHeader("Content-Type", "application/json");
 
   DynamicJsonDocument doc(256);
   doc["deviceId"] = deviceId;
@@ -367,13 +468,24 @@ void sendHeartbeat() {
   String payload;
   serializeJson(doc, payload);
 
-  int status = http.POST(payload);
-  if (status > 0) {
-    Serial.println("Heartbeat status: " + String(status));
-  } else {
-    Serial.println("Heartbeat send failed");
+  for (int attempt = 1; attempt <= COMMAND_MAX_RETRIES; attempt++) {
+    HTTPClient http;
+    http.begin(heartbeatUrl);
+    http.addHeader("Content-Type", "application/json");
+
+    int status = http.POST(payload);
+    http.end();
+
+    if (status > 0) {
+      Serial.println("Heartbeat status: " + String(status));
+      return;
+    }
+
+    Serial.printf("Heartbeat failed (attempt %d)\n", attempt);
+    if (attempt < COMMAND_MAX_RETRIES) {
+      delay(COMMAND_RETRY_DELAY_MS);
+    }
   }
 
-  http.end();
-}
+  Serial.println("Heartbeat send failed after retries");
 }

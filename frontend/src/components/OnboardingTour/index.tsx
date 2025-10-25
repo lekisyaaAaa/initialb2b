@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import introJs from 'intro.js';
-import 'intro.js/introjs.css';
+import introJs from 'intro.js/minified/intro.min.js';
+import 'intro.js/minified/introjs.min.css';
 // import './tour.css'; // Temporarily disabled for testing
 
 type Step = {

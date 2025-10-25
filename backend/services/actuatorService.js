@@ -178,30 +178,23 @@ async function sendToEsp32(actuator, desired) {
     return { ok: true, message: null };
   }
 
-  try {
-    if (typeof sendCommand !== 'function') {
-      return { ok: true, message: null };
-    }
-
-    if ((process.env.NODE_ENV || 'development') === 'test') {
-      return { ok: true, message: null };
-    }
-
-    const success = await sendCommand(command);
-    if (success) {
-      return { ok: true, message: null };
-    }
-  } catch (error) {
-    return {
-      ok: false,
-      message: error && error.message ? error.message : `ESP32 command failed (${command})`,
-    };
+  if (typeof sendCommand !== 'function') {
+    console.warn('[ACTUATOR → ESP32] sendCommand not available, skipping dispatch');
+    return { ok: false, message: 'Controller unavailable' };
   }
 
-  return {
-    ok: false,
-    message: `ESP32 did not acknowledge ${command}`,
-  };
+  if ((process.env.NODE_ENV || 'development') === 'test') {
+    return { ok: true, message: null };
+  }
+
+  const actionLabel = desired ? 'ON' : 'OFF';
+  try {
+    await sendCommand(actuator.name, actionLabel, { command });
+    return { ok: true, message: null };
+  } catch (error) {
+    const message = error && error.message ? error.message : `ESP32 command failed (${command})`;
+    return { ok: false, message };
+  }
 }
 
 async function updateActuatorStatus(actuator, status, options = {}) {
@@ -211,27 +204,39 @@ async function updateActuatorStatus(actuator, status, options = {}) {
     return { changed: false, actuator };
   }
 
-  const dispatch = await sendToEsp32(actuator, desired);
-  if (!dispatch.ok) {
-    console.warn('actuatorService: ESP32 dispatch failed:', dispatch.message);
-    actuator.setDataValue('deviceAck', false);
-    actuator.setDataValue('deviceAckMessage', dispatch.message);
-    await broadcastActuator(actuator);
-    return { changed: false, actuator, error: dispatch.message };
-  }
-
   actuator.status = desired;
   actuator.lastUpdated = new Date();
   actuator.setDataValue('deviceAck', true);
   actuator.setDataValue('deviceAckMessage', null);
   await actuator.save();
 
+  let dispatchResult = { ok: true, message: null };
+  try {
+    dispatchResult = await sendToEsp32(actuator, desired);
+  } catch (err) {
+    dispatchResult = { ok: false, message: err && err.message ? err.message : 'Unknown ESP32 error' };
+  }
+
+  if (!dispatchResult.ok) {
+    console.warn(`[ACTUATOR → ESP32] ${new Date().toISOString()} Dispatch failed: ${dispatchResult.message}`);
+    actuator.setDataValue('deviceAck', false);
+    actuator.setDataValue('deviceAckMessage', dispatchResult.message);
+    await actuator.save();
+  }
+
   if (!options.skipLog) {
     const logOptions = { ...options };
     delete logOptions.skipLog;
-    await logActuatorAction(actuator, desired ? 'on' : 'off', logOptions);
+    await logActuatorAction(actuator, desired ? 'on' : 'off', {
+      ...logOptions,
+      reason: dispatchResult.ok ? logOptions.reason : dispatchResult.message,
+    });
   }
   await broadcastActuator(actuator);
+
+  if (!dispatchResult.ok) {
+    return { changed: true, actuator, error: dispatchResult.message };
+  }
 
   return { changed: true, actuator };
 }

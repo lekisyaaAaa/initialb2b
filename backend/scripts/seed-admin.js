@@ -4,27 +4,32 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const bcrypt = require('bcryptjs');
 const { Sequelize, DataTypes } = require('sequelize');
 
-const adminUser = process.env.LOCAL_ADMIN_USER || 'beantobin';
-const adminPass = process.env.LOCAL_ADMIN_PASS || 'Bean2bin';
+const adminEmail = process.env.INIT_ADMIN_EMAIL || process.env.ADMIN_EMAIL;
+const adminPassword = process.env.INIT_ADMIN_PASSWORD;
 
-async function seedWithSequelize(sequelize, UserModel) {
+if (!adminEmail || !adminPassword) {
+  console.error('INIT_ADMIN_EMAIL and INIT_ADMIN_PASSWORD environment variables are required to seed an admin account.');
+  process.exit(1);
+}
+
+async function seedWithSequelize(sequelize, AdminModel) {
   await sequelize.sync();
-  const hash = bcrypt.hashSync(adminPass, 10);
-  const [user, created] = await UserModel.findOrCreate({
-    where: { username: adminUser },
-    defaults: { password: hash, role: 'admin' }
+  const hash = bcrypt.hashSync(adminPassword, 12);
+  const [admin, created] = await AdminModel.findOrCreate({
+    where: { email: adminEmail },
+    defaults: { passwordHash: hash }
   });
 
   if (!created) {
-    if (user.password !== hash) {
-      user.password = hash;
-      await user.save();
-      console.log(`Updated password for existing user '${adminUser}'`);
+    if (admin.passwordHash !== hash) {
+      admin.passwordHash = hash;
+      await admin.save();
+      console.log(`Updated password for existing admin '${adminEmail}'`);
     } else {
-      console.log(`Admin user '${adminUser}' already exists`);
+      console.log(`Admin '${adminEmail}' already exists`);
     }
   } else {
-    console.log(`Created admin user '${adminUser}'`);
+    console.log(`Created admin '${adminEmail}'`);
   }
 }
 
@@ -32,11 +37,11 @@ async function main() {
   // First try Postgres (existing configured service)
   try {
     const pg = require('../services/database_pg');
-    const User = require('../models/User');
+    const Admin = require('../models/Admin');
     console.log('Attempting to seed Postgres...');
     await pg.authenticate();
     console.log('Connected to Postgres');
-    await seedWithSequelize(pg, User);
+    await seedWithSequelize(pg, Admin);
     console.log('Done seeding Postgres.');
     process.exit(0);
   } catch (pgErr) {
@@ -45,14 +50,13 @@ async function main() {
     try {
       const storagePath = path.join(__dirname, '..', 'data', 'dev.sqlite');
       const sqlite = new Sequelize({ dialect: 'sqlite', storage: storagePath, logging: false });
-      const UserSql = sqlite.define('User', {
-        id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
-        username: { type: DataTypes.STRING, allowNull: false, unique: true },
-        password: { type: DataTypes.STRING, allowNull: false },
-        role: { type: DataTypes.STRING, allowNull: false, defaultValue: 'user' }
-      }, { tableName: 'users', timestamps: false });
+      const AdminSql = sqlite.define('Admin', {
+        id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+        email: { type: DataTypes.STRING, allowNull: false, unique: true },
+        passwordHash: { type: DataTypes.STRING, allowNull: false },
+      }, { tableName: 'admins', timestamps: true, underscored: true });
 
-      await seedWithSequelize(sqlite, UserSql);
+      await seedWithSequelize(sqlite, AdminSql);
       console.log('Done seeding local SQLite dev DB.');
       process.exit(0);
     } catch (sqliteErr) {

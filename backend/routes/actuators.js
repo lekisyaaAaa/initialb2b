@@ -3,6 +3,7 @@ const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const { auth, adminOnly } = require('../middleware/auth');
 const ActuatorLog = require('../models/ActuatorLog');
+const { ensureDatabaseSetup } = require('../services/database_pg');
 const {
   ensureDefaultActuators,
   listActuators,
@@ -13,9 +14,21 @@ const {
   sanitizeActuator,
 } = require('../services/actuatorService');
 
-ensureDefaultActuators().catch((error) => {
-  console.warn('actuators: failed to ensure default records', error && error.message ? error.message : error);
-});
+const actuatorSchemaReady = ensureDatabaseSetup({ force: (process.env.NODE_ENV || 'development') === 'test' })
+  .then(() => ensureDefaultActuators())
+  .catch((error) => {
+    console.warn('actuators: failed to ensure default records', error && error.message ? error.message : error);
+  });
+
+async function ensureActuatorReady() {
+  if (actuatorSchemaReady && typeof actuatorSchemaReady.then === 'function') {
+    try {
+      await actuatorSchemaReady;
+    } catch (error) {
+      // ignore; downstream handlers will surface errors when accessing the database
+    }
+  }
+}
 
 const ALLOWED_ACTUATOR_TYPES = ['pump', 'solenoid'];
 const ALLOWED_ACTIONS = ['on', 'off'];
@@ -34,6 +47,7 @@ function respondValidationErrors(req, res) {
 
 router.get('/', [auth, adminOnly], async (req, res) => {
   try {
+    await ensureActuatorReady();
     const actuators = await listActuators();
     res.json({ success: true, data: actuators });
   } catch (error) {
@@ -54,6 +68,7 @@ router.post(
   ],
   async (req, res) => {
     try {
+      await ensureActuatorReady();
       if (respondValidationErrors(req, res)) {
         return;
       }
@@ -123,6 +138,7 @@ router.post(
 
 router.post('/:id/toggle', [auth, adminOnly], async (req, res) => {
   try {
+    await ensureActuatorReady();
     const actuator = await findActuatorById(req.params.id);
     if (!actuator) {
       return res.status(404).json({ success: false, message: 'Actuator not found' });
@@ -163,6 +179,7 @@ router.post(
   [auth, adminOnly, body('mode').isIn(['manual', 'auto']).withMessage('Mode must be manual or auto')],
   async (req, res) => {
     try {
+      await ensureActuatorReady();
       if (respondValidationErrors(req, res)) {
         return;
       }
@@ -209,6 +226,7 @@ router.post(
 
 router.post('/auto-control', [auth, adminOnly], async (req, res) => {
   try {
+    await ensureActuatorReady();
     const result = await runAutomaticControl({ source: 'api' });
     res.json({ success: true, data: result });
   } catch (error) {
@@ -219,6 +237,7 @@ router.post('/auto-control', [auth, adminOnly], async (req, res) => {
 
 router.get('/logs', [auth, adminOnly], async (req, res) => {
   try {
+    await ensureActuatorReady();
     const { page = 1, limit = 50, deviceId, actuatorType } = req.query;
     const paginationLimit = Number(limit) || 50;
     const offset = (Number(page) - 1) * paginationLimit;
