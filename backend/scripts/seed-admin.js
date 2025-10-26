@@ -4,11 +4,11 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
 const bcrypt = require('bcryptjs');
 const { Sequelize, DataTypes } = require('sequelize');
 
-const adminEmail = process.env.INIT_ADMIN_EMAIL || process.env.ADMIN_EMAIL;
-const adminPassword = process.env.INIT_ADMIN_PASSWORD;
+const adminEmail = (process.env.INIT_ADMIN_EMAIL || process.env.ADMIN_EMAIL || process.env.ADMIN_LOGIN_USERNAME || process.env.EMAIL_USER || '').trim();
+const adminPassword = process.env.INIT_ADMIN_PASSWORD || process.env.ADMIN_LOGIN_PASSWORD || process.env.EMAIL_PASS;
 
 if (!adminEmail || !adminPassword) {
-  console.error('INIT_ADMIN_EMAIL and INIT_ADMIN_PASSWORD environment variables are required to seed an admin account.');
+  console.error('Admin credentials are not configured. Provide INIT_ADMIN_EMAIL/INIT_ADMIN_PASSWORD or ADMIN_LOGIN_USERNAME/ADMIN_LOGIN_PASSWORD (EMAIL_USER/EMAIL_PASS as fallback).');
   process.exit(1);
 }
 

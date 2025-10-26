@@ -166,16 +166,16 @@ export const adminAuthService = {
 
         const payload = { email: email.trim().toLowerCase(), password };
         const resp = await api.post('/admin/login', payload, { timeout: 8000 });
-        if (resp?.data?.success && resp.data.token) {
-          const fallbackUser = resp.data.user || {
-            id: 'admin-local',
-            username: email,
-            role: 'admin',
-            source: 'admin-login',
-          };
-          return { success: true, token: resp.data.token, user: fallbackUser };
+
+        if (resp?.data) {
+          if (resp.data.success) {
+            return resp.data;
+          }
+          // Backend may include success=false with a message (e.g., validation errors)
+          return resp.data;
         }
-        return { success: false, message: resp?.data?.message || 'Invalid username or password.' };
+
+        return { success: false, message: 'Invalid username or password.' };
       } catch (err: any) {
         if (err?.response) {
           if (err.response.status === 401) {

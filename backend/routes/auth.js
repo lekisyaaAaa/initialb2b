@@ -121,7 +121,10 @@ router.post('/login', [
     } catch (dbErr) {
       // If DB lookup fails for any reason, allow a development fallback when enabled.
       // This makes local testing robust to different error shapes from Sequelize/pg.
-      const allowFallback = (process.env.ENABLE_LOCAL_ADMIN === 'true' || process.env.NODE_ENV !== 'production');
+      const localUser = (process.env.LOCAL_ADMIN_USER || '').trim();
+      const localPass = process.env.LOCAL_ADMIN_PASS || '';
+      const hasLocalCredentials = Boolean(localUser && localPass);
+      const allowFallback = (process.env.ENABLE_LOCAL_ADMIN === 'true' || process.env.NODE_ENV !== 'production') && hasLocalCredentials;
       // Debugging: log DB error and fallback decision so we can see why a request may return 503
       try {
         console.warn('Auth login DB lookup error:', dbErr && (dbErr.message || dbErr.toString() || dbErr));
@@ -130,8 +133,6 @@ router.post('/login', [
         // ignore logging errors
       }
       if (allowFallback) {
-        const localUser = process.env.LOCAL_ADMIN_USER || 'admin';
-        const localPass = process.env.LOCAL_ADMIN_PASS || 'admin';
         if (username === localUser && password === localPass) {
           const payload = { id: 'local-admin', username: localUser, role: 'admin' };
           const token = jwt.sign(payload, process.env.JWT_SECRET || 'devsecret', { expiresIn: '24h' });

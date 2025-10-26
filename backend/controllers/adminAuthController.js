@@ -40,15 +40,23 @@ exports.login = async (req, res) => {
   }
 
   const { email, password } = req.body;
+  const normalizedEmail = normalizeEmail(email);
+  try {
+    console.log('Admin login attempt for', normalizedEmail ? `'${normalizedEmail}'` : '<missing email>');
+  } catch (logErr) {
+    // ignore logging issues
+  }
 
   try {
-    const admin = await findAdminByEmail(email);
+    const admin = await findAdminByEmail(normalizedEmail);
     if (!admin) {
+      console.warn('Admin login failed: account not found for', normalizedEmail);
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
     const passwordMatches = await bcrypt.compare(password, admin.passwordHash);
     if (!passwordMatches) {
+      console.warn('Admin login failed: password mismatch for', normalizedEmail);
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 

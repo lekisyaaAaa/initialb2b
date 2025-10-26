@@ -15,14 +15,20 @@ async function createUsers() {
     await User.destroy({ where: {} });
     console.log('🗑️ Cleared existing users');
 
-    // Create admin user
-    const hashedPassword = await bcrypt.hash('admin123', 12);
+    const adminUsername = (process.env.ADMIN_LOGIN_USERNAME || process.env.EMAIL_USER || '').trim();
+    const adminPassword = process.env.ADMIN_LOGIN_PASSWORD || process.env.EMAIL_PASS || '';
+
+    if (!adminUsername || !adminPassword) {
+      throw new Error('Admin credentials are not configured. Set ADMIN_LOGIN_USERNAME and ADMIN_LOGIN_PASSWORD (or EMAIL_USER/EMAIL_PASS).');
+    }
+
+    const hashedPassword = await bcrypt.hash(adminPassword, 12);
     await User.create({
-      username: 'admin',
+      username: adminUsername,
       password: hashedPassword,
       role: 'admin',
     });
-    console.log('✅ Admin user created: admin/admin123');
+    console.log(`✅ Admin user created for ${adminUsername}`);
 
     console.log('🎉 Admin user created successfully!');
   } catch (error) {
