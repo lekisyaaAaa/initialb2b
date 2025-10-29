@@ -42,8 +42,14 @@ test('WebSocket receives device_offline when device marked offline', () => {
         const parsed = JSON.parse(msg.toString());
         if (parsed && parsed.type === 'device_offline' && parsed.deviceId === deviceId) {
           clearTimeout(timeout);
-          try { ws.close(); } catch (e) {}
-          return resolve();
+          try {
+            // resolve only after the socket fully closes so logger flushes before Jest ends
+            ws.once('close', () => resolve());
+            ws.close();
+            return;
+          } catch (e) {
+            return reject(e);
+          }
         }
       } catch (e) {}
     });

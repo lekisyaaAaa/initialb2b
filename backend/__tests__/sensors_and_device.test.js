@@ -1,21 +1,20 @@
 const request = require('supertest');
 const app = require('../test-utils/testServerHelper');
-const sequelize = require('../services/database_pg');
+const database = require('../services/database_pg');
+const sequelize = database;
+const { ensureDatabaseSetup } = database;
 const Alert = require('../models/Alert');
 const Device = require('../models/Device');
 
 beforeAll(async () => {
-  // ensure DB schema is applied for tests
-  await sequelize.sync({ alter: true });
+  await ensureDatabaseSetup({ force: true });
 });
 
 afterAll(async () => {
-  try { 
-    // close http server if available to avoid jest open handle
+  try {
     if (app && app.server && typeof app.server.close === 'function') {
       app.server.close();
     }
-    await sequelize.close(); 
   } catch (e) {}
 });
 

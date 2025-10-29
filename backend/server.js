@@ -11,14 +11,15 @@ const path = require('path');
 require('dotenv').config({ path: path.join(__dirname, '.env') });
 const { validateEnv } = require('./utils/validateEnv');
 validateEnv();
+const logger = require('./utils/logger');
 const database = require('./services/database_pg');
 const sequelize = database;
 const connectDB = typeof sequelize.connectDB === 'function' ? sequelize.connectDB : async () => {
   try {
     await sequelize.authenticate();
-    console.log('✅ Database connected (fallback connectDB)');
+    logger.info('Database connected (fallback connectDB)');
   } catch (error) {
-    console.error('❌ Database connection failed during fallback connectDB:', error.message);
+    logger.error('Database connection failed during fallback connectDB', error);
     throw error;
   }
 };
@@ -61,19 +62,72 @@ const adminAuthLimiter = rateLimit({
 });
 
 const isProductionEnv = (process.env.NODE_ENV || 'development') === 'production';
-const socketCorsOrigins = (process.env.SOCKETIO_CORS_ORIGINS || '')
+const normalizeOrigin = (origin) => {
+  if (!origin) {
+    return '';
+  }
+  try {
+    return new URL(origin).origin;
+  } catch (error) {
+    return origin.replace(/\/$/, '');
+  }
+};
+
+const rawCorsOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '')
   .split(',')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
+const allowedCorsOrigins = rawCorsOrigins.map(normalizeOrigin).filter(Boolean);
+const allowAllHttpOrigins = !isProductionEnv || allowedCorsOrigins.length === 0;
+
+const rawSocketOrigins = (process.env.SOCKETIO_CORS_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const allowedSocketOrigins = (rawSocketOrigins.length > 0 ? rawSocketOrigins : rawCorsOrigins)
+  .map(normalizeOrigin)
+  .filter(Boolean);
+const allowAllSocketOrigins = !isProductionEnv || allowedSocketOrigins.length === 0;
+
+const isOriginPermitted = (origin, list, allowAll) => {
+  if (!origin) {
+    return true;
+  }
+  if (allowAll) {
+    return true;
+  }
+  const normalized = normalizeOrigin(origin);
+  return list.includes(normalized);
+};
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    if (isOriginPermitted(origin, allowedCorsOrigins, allowAllHttpOrigins)) {
+      return callback(null, true);
+    }
+    logger.warn('CORS origin rejected', { origin });
+    return callback(new Error('Not allowed by CORS'));
+  },
+  credentials: true,
+};
+
+if (isProductionEnv && allowedCorsOrigins.length === 0) {
+  logger.warn('CORS_ORIGINS not set; allowing all origins in production');
+}
+
+if (isProductionEnv && allowedSocketOrigins.length === 0) {
+  logger.warn('SOCKETIO_CORS_ORIGINS not set; allowing all socket origins in production');
+}
+
 const io = new SocketIOServer(server, {
   cors: {
     origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (!isProductionEnv) return callback(null, true);
-      if (socketCorsOrigins.includes(origin)) {
+      if (isOriginPermitted(origin, allowedSocketOrigins, allowAllSocketOrigins)) {
         return callback(null, true);
       }
+      logger.warn('Socket origin rejected', { origin });
       return callback(new Error('Socket origin not allowed'));
     },
     credentials: true,
@@ -85,7 +139,7 @@ const io = new SocketIOServer(server, {
 global.io = io;
 
 io.on('connection', async (socket) => {
-  console.log('Socket.IO client connected', socket.id);
+  logger.info('Socket.IO client connected', { socketId: socket.id });
   try {
     const actuators = await listActuators();
     socket.emit('actuator_snapshot', actuators);
@@ -97,7 +151,7 @@ io.on('connection', async (socket) => {
   }
 
   socket.on('disconnect', () => {
-    console.log('Socket.IO client disconnected', socket.id);
+    logger.info('Socket.IO client disconnected', { socketId: socket.id });
   });
 });
 
@@ -110,7 +164,7 @@ global.wsConnections = new Set();
 global.deviceSockets = new Map();
 
 wss.on('connection', (ws) => {
-  console.log('New WebSocket connection established');
+  logger.info('New WebSocket connection established');
   global.wsConnections.add(ws);
   // allow ws clients (ESP32) to register with a deviceId by sending a JSON message:
   // { type: 'register', deviceId: 'esp32-1' }
@@ -120,7 +174,7 @@ wss.on('connection', (ws) => {
       if (msg && msg.type === 'register' && msg.deviceId) {
         ws.deviceId = msg.deviceId;
         global.deviceSockets.set(msg.deviceId, ws);
-        console.log(`WebSocket client registered as deviceId=${msg.deviceId}`);
+  logger.debug('WebSocket client registered', { deviceId: msg.deviceId });
       }
     } catch (e) {
       // ignore non-JSON or unexpected messages
@@ -128,7 +182,9 @@ wss.on('connection', (ws) => {
   });
   
   ws.on('close', () => {
-    console.log('WebSocket connection closed');
+    if (process.env.NODE_ENV !== 'test') {
+      logger.info('WebSocket connection closed');
+    }
     global.wsConnections.delete(ws);
     if (ws && ws.deviceId && global.deviceSockets.get(ws.deviceId) === ws) {
       global.deviceSockets.delete(ws.deviceId);
@@ -136,7 +192,7 @@ wss.on('connection', (ws) => {
   });
   
   ws.on('error', (error) => {
-    console.error('WebSocket error:', error);
+    logger.warn('WebSocket error', error);
     global.wsConnections.delete(ws);
   });
 });
@@ -145,7 +201,7 @@ wss.on('connection', (ws) => {
 app.use(helmet());
 app.use(compression());
 
-app.use(cors({ origin: process.env.CORS_ORIGIN, credentials: true }));
+app.use(cors(corsOptions));
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -159,7 +215,7 @@ app.use('/api/admin/forgot-password', adminAuthLimiter);
 // without crashing or producing confusing stack traces in logs.
 app.use((err, req, res, next) => {
   if (err && err.type === 'entity.parse.failed') {
-    console.warn('JSON parse failed for request', req.method, req.originalUrl, 'raw body begins with:', (req && req.body && typeof req.body === 'string') ? req.body.slice(0,80) : typeof req.body);
+    logger.warn('JSON parse failed for request', req.method, req.originalUrl, 'raw body begins with:', (req && req.body && typeof req.body === 'string') ? req.body.slice(0,80) : typeof req.body);
     return res.status(400).json({ success: false, message: 'Invalid JSON in request body' });
   }
   next(err);
@@ -180,12 +236,18 @@ if (schemaReady && typeof schemaReady.then === 'function') {
 // Sequelize/Postgres: No MongoDB connection needed
 // Database is initialized via Sequelize models and scripts
 
+const buildHealthPayload = () => ({
+  status: 'ok',
+  uptime: process.uptime(),
+  timestamp: Date.now(),
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).json(buildHealthPayload());
+});
+
 app.get('/api/health', (req, res) => {
-  res.status(200).json({
-    status: 'ok',
-    uptime: process.uptime(),
-    timestamp: Date.now(),
-  });
+  res.status(200).json(buildHealthPayload());
 });
 
 // Lightweight internal ping for debugging connectivity (temporary)
@@ -222,7 +284,7 @@ try {
   const fs = require('fs');
   const frontendBuild = path.join(__dirname, '..', 'frontend', 'build');
   if (fs.existsSync(frontendBuild)) {
-    console.log('Found frontend build, serving static files from', frontendBuild);
+    logger.info('Found frontend build, serving static files from', frontendBuild);
     app.use(express.static(frontendBuild));
     // Serve index.html for SPA routes (admin/dashboard, login, etc.)
     app.get(['/','/login','/admin','/admin/*','/dashboard','/admin/dashboard'], (req, res) => {
@@ -230,7 +292,7 @@ try {
     });
   }
 } catch (e) {
-  console.warn('Could not enable static frontend serving:', e && e.message ? e.message : e);
+  logger.warn('Could not enable static frontend serving:', e && e.message ? e.message : e);
 }
 
 // 404 handler for unknown routes
@@ -257,15 +319,14 @@ let attempts = 0;
 
 function onBound(boundPort) {
   if ((process.env.NODE_ENV || 'development') !== 'test') {
-    console.log(`🚀 Server running on port ${boundPort}`);
-    console.log(`📊 Health check: http://localhost:${boundPort}/api/health`);
-    console.log(`🔌 WebSocket server running on ws://localhost:${boundPort}`);
+    logger.info('Server running', { port: boundPort });
+    logger.info('Health check endpoint ready', { url: `http://localhost:${boundPort}/api/health` });
+    logger.info('WebSocket server running', { url: `ws://localhost:${boundPort}` });
     try {
-      console.log('Process PID:', process.pid);
       const addr = server.address();
-      console.log('Server bound address:', addr);
+      logger.debug('Server process info', { pid: process.pid, address: addr });
     } catch (e) {
-      console.warn('Could not determine server address/pid:', e && e.message ? e.message : e);
+      logger.warn('Could not determine server address/pid:', e && e.message ? e.message : e);
     }
 
     // Self-check the internal ping endpoint using the actual bound port
@@ -282,19 +343,19 @@ function onBound(boundPort) {
         let body = '';
         res.on('data', (c) => body += c.toString());
         res.on('end', () => {
-          console.log('Self-check: response', res.statusCode, body && body.toString().slice(0,200));
+          logger.debug('Self-check response', { statusCode: res.statusCode, body: body && body.toString().slice(0, 200) });
         });
       });
       req.on('error', (err) => {
-        console.warn('Self-check: error connecting to local HTTP endpoint (this is normal during startup):', err && err.message ? err.message : err);
+        logger.warn('Self-check error connecting to local HTTP endpoint (this can be normal during startup):', err && err.message ? err.message : err);
       });
       req.on('timeout', () => {
-        console.warn('Self-check: timed out connecting to local HTTP endpoint (this is normal during startup)');
+        logger.warn('Self-check timed out connecting to local HTTP endpoint (this can be normal during startup)');
         req.destroy();
       });
       req.end();
     } catch (e) {
-      console.error('Self-check setup failed:', e && e.message ? e.message : e);
+      logger.error('Self-check setup failed:', e && e.message ? e.message : e);
     }
   }
 }
@@ -304,21 +365,21 @@ function tryListen(port) {
   server.listen(port, BIND_HOST, () => onBound(port));
   server.once('error', (err) => {
     if (err && err.code === 'EADDRINUSE') {
-      console.warn(`Port ${port} in use (EADDRINUSE)`);
+      logger.warn(`Port ${port} in use (EADDRINUSE)`);
       server.removeAllListeners('error');
       if (attempts < MAX_TRIES) {
         const next = port + 1;
-        console.log(`Attempting to bind to port ${next} (try ${attempts + 1}/${MAX_TRIES})`);
+        logger.info(`Attempting to bind to port ${next} (try ${attempts + 1}/${MAX_TRIES})`);
         tryListen(next);
       } else {
-        console.error('Exhausted port retry attempts. Continuing in development mode.');
+        logger.error('Exhausted port retry attempts. Continuing in development mode.');
         if ((process.env.NODE_ENV || 'development') === 'production') {
           process.exit(1);
         }
       }
     } else {
-      console.error('Server listen error:', err);
-      console.warn('Continuing to run despite server error (development mode)');
+      logger.error('Server listen error', err);
+      logger.warn('Continuing to run despite server error (development mode)');
       // Don't exit in development - just log the error
       if ((process.env.NODE_ENV || 'development') === 'production') {
         process.exit(1);
@@ -329,16 +390,16 @@ function tryListen(port) {
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('SIGTERM received, shutting down gracefully');
+  logger.info('SIGTERM received, shutting down gracefully');
   server.close(() => {
-    console.log('Server closed');
+    logger.info('Server closed');
     process.exit(0);
   });
 });
 
 // Catch unhandled promise rejections
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  logger.error('Unhandled Rejection captured', { reason, promise });
   // Don't exit in development
   if ((process.env.NODE_ENV || 'development') === 'production') {
     process.exit(1);
@@ -347,7 +408,7 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Catch uncaught exceptions
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
+  logger.error('Uncaught Exception', error);
   // Don't exit in development
   if ((process.env.NODE_ENV || 'development') === 'production') {
     process.exit(1);
@@ -362,9 +423,9 @@ if ((process.env.NODE_ENV || 'development') !== 'production') {
     // const seedPath = path.join(__dirname, 'scripts', 'seed-admin.js');
     // const seedProc = spawn(process.execPath, [seedPath], { stdio: 'ignore', detached: true });
     // seedProc.unref();
-    console.log('Dev seeding process disabled (temporary fix)');
+    logger.info('Dev seeding process disabled (temporary fix)');
   } catch (e) {
-    console.warn('Could not launch dev seeding process:', e && e.message ? e.message : e);
+    logger.warn('Could not launch dev seeding process:', e && e.message ? e.message : e);
   }
 }
 
@@ -377,18 +438,18 @@ if (process.env.RUN_POLLER === 'true' || process.env.RUN_POLLER === '1') {
     // start the internal HTTP server for poller metrics
     try {
       poller.startServer(internalPort);
-      console.log(`Started sensor poller internal server on port ${internalPort}`);
+      logger.info(`Started sensor poller internal server on port ${internalPort}`);
     } catch (e) {
-      console.warn('Sensor poller internal server failed to start:', e && e.message ? e.message : e);
+      logger.warn('Sensor poller internal server failed to start:', e && e.message ? e.message : e);
     }
 
     // start the polling loop (non-blocking)
     poller.runLoop().catch((err) => {
-      console.error('Sensor poller loop exited with error:', err && err.message ? err.message : err);
+      logger.error('Sensor poller loop exited with error:', err && err.message ? err.message : err);
     });
-    console.log('Sensor poller started (runLoop)');
+    logger.info('Sensor poller started (runLoop)');
   } catch (e) {
-    console.warn('Could not start sensor poller inline:', e && e.message ? e.message : e);
+    logger.warn('Could not start sensor poller inline:', e && e.message ? e.message : e);
   }
 }
 
@@ -405,7 +466,7 @@ if ((process.env.NODE_ENV || 'development') !== 'test') {
       try {
         await ensureDefaultActuators();
       } catch (error) {
-        console.warn('Server startup: unable to ensure actuators exist:', error && error.message ? error.message : error);
+        logger.warn('Server startup: unable to ensure actuators exist:', error && error.message ? error.message : error);
       }
 
       if (shouldSchedule) {
@@ -413,11 +474,11 @@ if ((process.env.NODE_ENV || 'development') !== 'test') {
       }
     })
     .catch((error) => {
-      console.error('❌ Database connection failed at startup:', error && error.message ? error.message : error);
+      logger.error('Database connection failed at startup:', error && error.message ? error.message : error);
       if ((process.env.NODE_ENV || 'development') === 'production') {
         process.exit(1);
       } else {
-        console.warn('Continuing to start server without database connectivity; routes that require the database may fail until it reconnects.');
+        logger.warn('Continuing to start server without database connectivity; routes that require the database may fail until it reconnects.');
       }
     })
     .finally(() => {

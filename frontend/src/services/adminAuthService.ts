@@ -11,6 +11,22 @@ export interface AdminLoginResponse {
   };
 }
 
+export interface AdminVerifyOtpResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    token?: string;
+    user?: Record<string, unknown>;
+    attemptsRemaining?: number;
+    delivery?: string;
+  };
+}
+
+export interface AdminForgotPasswordResponse {
+  success: boolean;
+  message?: string;
+}
+
 export interface AdminResendOtpResponse {
   success: boolean;
   message?: string;
@@ -19,20 +35,6 @@ export interface AdminResendOtpResponse {
     debugCode?: string;
     delivery?: string;
   };
-}
-
-export interface AdminVerifyOtpResponse {
-  success: boolean;
-  message?: string;
-  data?: {
-    token?: string;
-    user?: Record<string, unknown>;
-  };
-}
-
-export interface AdminForgotPasswordResponse {
-  success: boolean;
-  message?: string;
 }
 
 export interface AdminResetPasswordResponse {
@@ -87,18 +89,6 @@ export async function verifyOtp(email: string, otp: string): Promise<AdminVerify
   }
 }
 
-export async function resendOtp(email: string): Promise<AdminResendOtpResponse> {
-  await ensureApiBase();
-  try {
-    const response = await api.post<AdminResendOtpResponse>('/admin/resend-otp', {
-      email: email.trim(),
-    });
-    return response.data;
-  } catch (error: any) {
-    extractMessage(error, 'Unable to resend the verification code. Please try again.');
-  }
-}
-
 export async function forgotPassword(email: string): Promise<AdminForgotPasswordResponse> {
   await ensureApiBase();
   try {
@@ -108,6 +98,18 @@ export async function forgotPassword(email: string): Promise<AdminForgotPassword
     return response.data;
   } catch (error: any) {
     extractMessage(error, 'Unable to send the reset link. Please try again.');
+  }
+}
+
+export async function resendOtp(email: string): Promise<AdminResendOtpResponse> {
+  await ensureApiBase();
+  try {
+    const response = await api.post<AdminResendOtpResponse>('/admin/resend-otp', {
+      email: email.trim(),
+    });
+    return response.data;
+  } catch (error: any) {
+    extractMessage(error, 'Unable to resend the verification code. Please try again.');
   }
 }
 

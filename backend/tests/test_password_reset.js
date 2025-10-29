@@ -11,7 +11,7 @@ jest.mock('../services/emailService', () => ({
   getTransporter: jest.fn(),
 }));
 
-const app = require('./testServerHelper');
+const app = require('../test-utils/testServerHelper');
 const sequelize = require('../services/database_pg');
 const Admin = require('../models/Admin');
 const PasswordResetToken = require('../models/PasswordResetToken');

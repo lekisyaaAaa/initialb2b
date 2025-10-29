@@ -1,4 +1,5 @@
 const axios = require('axios');
+const logger = require('../utils/logger');
 
 const DEFAULT_TIMEOUT = parseInt(process.env.ESP32_COMMAND_TIMEOUT_MS || '5000', 10);
 
@@ -10,7 +11,7 @@ async function sendCommand(actuatorName, action, metadata = {}) {
   const baseUrl = (process.env.ESP32_URL || '').trim();
   if (!baseUrl) {
     const error = new Error('ESP32_URL environment variable is not configured');
-    console.error('❌ [ESP32] Configuration error:', error.message);
+    logger.error('[ESP32] Configuration error:', error.message);
     throw error;
   }
 
@@ -26,13 +27,25 @@ async function sendCommand(actuatorName, action, metadata = {}) {
   for (let attempt = 1; attempt <= 2; attempt += 1) {
     try {
       const response = await postCommandOnce(endpoint, payload, timeout);
-  console.log(`[ACTUATOR → ESP32] ${new Date().toISOString()} ✅ ${actuatorName} ${action} (status ${response.status})`);
+      logger.info('[ACTUATOR → ESP32]', {
+        actuator: actuatorName,
+        action,
+        status: response.status,
+        timestamp: new Date().toISOString(),
+      });
       return response.data;
     } catch (err) {
       const attemptLabel = `attempt ${attempt}`;
       const message = err && err.message ? err.message : String(err);
       const status = err && err.response ? err.response.status : 'N/A';
-  console.error(`[ACTUATOR → ESP32] ${new Date().toISOString()} ❌ ${actuatorName} ${action} (${attemptLabel}, status ${status}): ${message}`);
+      logger.warn('[ACTUATOR → ESP32] command failed', {
+        actuator: actuatorName,
+        action,
+        attempt: attemptLabel,
+        status,
+        message,
+        timestamp: new Date().toISOString(),
+      });
       if (attempt === 2) {
         throw err;
       }

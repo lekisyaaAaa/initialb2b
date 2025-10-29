@@ -1,18 +1,38 @@
+const logger = require('./logger');
+
 const requiredKeys = [
   'DATABASE_URL',
   'JWT_SECRET',
   'SMTP_HOST',
   'SMTP_PORT',
   'EMAIL_FROM',
-  'CORS_ORIGIN',
+  'CORS_ORIGINS',
   'ESP32_URL',
 ];
 
+const alternateKeys = {
+  CORS_ORIGINS: ['CORS_ORIGIN'],
+};
+
+function hasValue(key) {
+  const raw = process.env[key];
+  if (raw !== undefined && String(raw).trim().length > 0) {
+    return true;
+  }
+  if (alternateKeys[key]) {
+    return alternateKeys[key].some((alias) => {
+      const value = process.env[alias];
+      return value !== undefined && String(value).trim().length > 0;
+    });
+  }
+  return false;
+}
+
 function validateEnv() {
-  const missing = requiredKeys.filter((key) => !process.env[key] || String(process.env[key]).trim().length === 0);
+  const missing = requiredKeys.filter((key) => !hasValue(key));
   if (missing.length > 0) {
-    console.error('❌ Missing required environment variables:', missing.join(', '));
-    console.error('   Please update your environment configuration before starting the server.');
+    logger.fatal('Missing required environment variables', { missing });
+    logger.fatal('Please update your environment configuration before starting the server.');
     process.exit(1);
   }
 }

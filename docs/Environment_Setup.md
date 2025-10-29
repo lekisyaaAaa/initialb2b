@@ -11,12 +11,14 @@ BeanToBin requires a fully configured environment before starting the backend se
 | `RESET_TOKEN_EXPIRY_MINUTES` | `15` | Minutes before password reset tokens expire. |
 | `RATE_LIMIT_WINDOW_MS` | `900000` | Rate limiting window (ms) for admin auth endpoints. |
 | `RATE_LIMIT_MAX` | `5` | Maximum requests per IP per window for admin auth endpoints. |
+| `LOG_LEVEL` | `info` | Controls backend logger verbosity (`fatal` → `trace`). |
 | `SMTP_HOST` | `smtp.gmail.com` | SMTP server hostname for Nodemailer. |
 | `SMTP_PORT` | `587` | SMTP port (use 465 for SSL). |
 | `EMAIL_USER` | `alerts@beantobin.com` | Auth username for SMTP server. |
 | `EMAIL_PASS` | `app-password-or-token` | Auth password or app-specific token. |
 | `EMAIL_FROM` | `"BeanToBin <noreply@beantobin.com>"` | Display sender for outbound mail. |
-| `CORS_ORIGIN` | `https://beantobin.onrender.com` | Allowed frontend origin for API requests. |
+| `CORS_ORIGINS` | `https://beantobin.onrender.com,https://dashboard.beantobin.com` | Comma-separated list of allowed frontend origins for API requests. |
+| `SOCKETIO_CORS_ORIGINS` | *(optional)* | Override allowed origins for Socket.IO (defaults to `CORS_ORIGINS`). |
 | `ESP32_URL` | `http://192.168.0.50` | Base URL for issuing actuator commands to the ESP32 bridge. |
 | `ESP32_COMMAND_TIMEOUT_MS` | `5000` | Timeout (ms) applied to actuator HTTP requests sent to the ESP32. |
 
@@ -34,7 +36,7 @@ BeanToBin requires a fully configured environment before starting the backend se
 | Environment | Set `NODE_ENV=production`. |
 | Build Command | `cd backend && npm ci` |
 | Start Command | `cd backend && npm run start` |
-| Health Check | `GET /api/health` |
+| Health Check | `GET /health` (also `GET /api/health`) |
 | Environment Variables | Add every key from the table above with production values. |
 | Postgres Add-on | Provision a managed Postgres instance and copy its connection string into `DATABASE_URL`. |
 | WebSockets | Enable in Render (works automatically when using the Node runtime). |

@@ -1,6 +1,8 @@
 const request = require('supertest');
-const app = require('./testServerHelper');
-const sequelize = require('../services/database_pg');
+const app = require('../test-utils/testServerHelper');
+const database = require('../services/database_pg');
+const sequelize = database;
+const { ensureDatabaseSetup } = database;
 const Device = require('../models/Device');
 const jwt = require('jsonwebtoken');
 require('../models/DevicePort');
@@ -11,7 +13,7 @@ describe('Admin device port management', () => {
   let device;
 
   beforeAll(async () => {
-    await sequelize.sync({ force: true });
+    await ensureDatabaseSetup({ force: true });
     device = await Device.create({
       deviceId: 'esp-test-001',
       status: 'online',
@@ -25,7 +27,11 @@ describe('Admin device port management', () => {
   });
 
   afterAll(async () => {
-    await sequelize.close();
+    try {
+      if (app && app.server && typeof app.server.close === 'function') {
+        app.server.close();
+      }
+    } catch (e) {}
   });
 
   it('blocks enumerate without auth', async () => {

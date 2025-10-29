@@ -1,6 +1,7 @@
 const { Sequelize } = require('sequelize');
 const path = require('path');
 const dotenv = require('dotenv');
+const logger = require('../utils/logger');
 
 dotenv.config({ path: path.join(__dirname, '..', '.env') });
 
@@ -15,7 +16,7 @@ const baseOptions = {
 };
 
 if (!process.env.DATABASE_URL) {
-	console.error('❌ DATABASE_URL is required but missing. Set a PostgreSQL connection string in your environment.');
+	logger.fatal('DATABASE_URL is required but missing. Set a PostgreSQL connection string in your environment.');
 	process.exit(1);
 }
 
@@ -71,10 +72,10 @@ const connectDB = async () => {
 	try {
 		await sequelize.authenticate();
 		currentDialect = sequelize.getDialect();
-		console.log('✅ Database connected successfully via PostgreSQL');
+		logger.info('Database connected successfully via PostgreSQL');
 	} catch (error) {
-		console.error('❌ Unable to connect to the database:', error.message);
-		console.error('ℹ️  Verify DATABASE_URL and ensure the PostgreSQL service is reachable.');
+		logger.error('Unable to connect to the database:', error.message);
+		logger.error('Verify DATABASE_URL and ensure the PostgreSQL service is reachable.');
 		throw error;
 	}
 };
