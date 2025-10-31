@@ -44,6 +44,17 @@ services:
         value: 'true'
       # Provide the same DATABASE_URL / JWT_SECRET / SMTP / TWILIO vars via the dashboard.
 
+  - type: static
+    name: beantobin-frontend
+    env: static
+    branch: main
+    buildCommand: cd frontend && npm ci && npm run build
+    staticPublishPath: frontend/build
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Configure REACT_APP_* variables in the dashboard if frontend runtime config is needed.
+
 databases:
   - name: beantobin-db
     plan: starter
