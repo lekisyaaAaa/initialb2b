@@ -1,16 +1,12 @@
-schemaVersion: "1"
-# Render manifest for BeanToBin environmental monitoring system
-#
-# This manifest provisions:
-#   - A Node web service for the backend API
-#   - An optional Node worker for the high-availability sensor poller
-#   - A static site service for the React frontend build
-#   - A managed PostgreSQL database
-#
-# After importing into Render, set all secrets (DATABASE_URL, JWT_SECRET, SMTP, TWILIO, etc.)
-# in the Render dashboard. Never commit real secrets to this repository.
+# Render Blueprint for BeanToBin environmental monitoring system
+# Provisions:
+# - Node.js backend API
+# - Node.js worker for sensor polling
+# - React frontend static site
+# - Managed PostgreSQL database
 
 services:
+  # Backend API
   - type: web
     name: beantobin-backend
     env: node
@@ -24,12 +20,13 @@ services:
         value: production
       - key: PORT
         value: '5000'
-      # Configure the following in the Render dashboard after the service is created:
-      # - DATABASE_URL (from the managed Postgres instance)
-      # - JWT_SECRET (long random value)
+      # Configure the following in the Render Dashboard:
+      # - DATABASE_URL
+      # - JWT_SECRET
       # - SMTP_* / TWILIO_* credentials (if used)
       # - CORS_ORIGINS / SOCKETIO_CORS_ORIGINS
 
+  # High-availability sensor poller worker
   - type: worker
     name: beantobin-poller
     env: node
@@ -42,13 +39,16 @@ services:
         value: production
       - key: RUN_POLLER
         value: 'true'
-      # Provide the same DATABASE_URL / JWT_SECRET / SMTP / TWILIO vars via the dashboard.
+      # Provide the same DATABASE_URL / JWT_SECRET / SMTP / TWILIO vars in the dashboard.
 
-  - type: static
+  # React Frontend (Static Site hosted as web)
+  - type: web
     name: beantobin-frontend
+    env: node
+    plan: starter
     branch: main
     buildCommand: cd frontend && npm ci && npm run build
-    staticPublishPath: frontend/build
+    startCommand: npx serve -s frontend/build
     envVars:
       - key: NODE_ENV
         value: production
@@ -62,4 +62,3 @@ databases:
     user: beantobin_admin
     version: '14'
     # Render will expose DATABASE_URL once the database is provisioned.
-# Render deployment manifest for BeanToBin environmental monitoring system
