@@ -60,5 +60,4 @@ databases:
     region: oregon
     databaseName: beantobin
     user: beantobin_admin
-    version: '14'
-    # Render will expose DATABASE_URL once the database is provisioned.
+    # Render provisions the latest supported PostgreSQL version and exposes DATABASE_URL once ready.
