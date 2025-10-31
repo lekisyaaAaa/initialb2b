@@ -44,9 +44,12 @@ services:
         value: 'true'
       # Provide the same DATABASE_URL / JWT_SECRET / SMTP / TWILIO vars via the dashboard.
 
-  - type: postgres
-    name: beantobin-db
+databases:
+  - name: beantobin-db
     plan: starter
+    region: oregon
+    databaseName: beantobin
+    user: beantobin_admin
     version: '14'
     # Render will expose DATABASE_URL once the database is provisioned.
 # Render deployment manifest for BeanToBin environmental monitoring system
