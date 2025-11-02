@@ -194,7 +194,7 @@ const EnhancedDashboard: React.FC = () => {
                 </div>
               ) : (
                 <Link
-                  to="/login"
+                  to="/admin/login"
                   className="flex items-center text-coffee-600 hover:text-coffee-800 transition-colors dark:text-gray-300 dark:hover:text-white"
                 >
                   <LogIn className="h-5 w-5 mr-2" />

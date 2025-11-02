@@ -7,7 +7,6 @@ import './App.css';
 import HomePage from './pages/HomePage';
 import ContactPage from './pages/ContactPage';
 import Dashboard from './pages/Dashboard';
-import LoginPage from './pages/LoginPage';
 import AdminDashboard from './pages/AdminDashboard';
 import DevicePortsPage from './pages/DevicePortsPage';
 import LogsPage from './pages/LogsPage';
@@ -40,7 +39,7 @@ function App() {
                 <Route path="/" element={<HomePage />} />
                 <Route path="/contact" element={<ContactPage />} />
                 <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/login" element={<LoginPage />} />
+                <Route path="/login" element={<Navigate to="/admin/login" replace />} />
                 {/* Public admin authentication routes */}
                 <Route path="/admin/login" element={<AdminLoginPage />} />
                 <Route path="/admin/verify-otp" element={<AdminOTPVerifyPage />} />

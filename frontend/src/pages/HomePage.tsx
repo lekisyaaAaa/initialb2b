@@ -20,6 +20,9 @@ import { useAuth } from '../contexts/AuthContext';
 
 const HomePage: React.FC = () => {
   const { isAuthenticated } = useAuth();
+  const adminDestination = isAuthenticated ? '/admin' : '/admin/login';
+  const adminNavLabel = isAuthenticated ? 'Admin Dashboard' : 'Admin Login';
+  const adminHeroLabel = isAuthenticated ? 'Go to Admin Dashboard' : 'Admin Access';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-coffee-100 to-primary-100 dark:from-gray-900 dark:to-gray-800">
@@ -44,11 +47,11 @@ const HomePage: React.FC = () => {
               {/* Dark Mode Toggle */}
               <DarkModeToggle />
               <Link
-                to={isAuthenticated ? '/admin' : '/admin/login'}
+                to={adminDestination}
                 className="bg-[#c81e36] hover:bg-[#b2182e] text-white font-semibold px-4 py-2 rounded-full shadow-lg flex items-center gap-2 transition-colors duration-200"
               >
                 <ArrowRight className="h-4 w-4" />
-                <span>Admin Login</span>
+                <span>{adminNavLabel}</span>
               </Link>
             </div>
           </div>
@@ -132,11 +135,11 @@ const HomePage: React.FC = () => {
               
               <Link
                 id="admin-access-btn"
-                to={isAuthenticated ? '/admin' : '/admin/login'}
+                to={adminDestination}
                 className="font-sans bg-[#c81e36] hover:bg-[#b2182e] text-white font-semibold px-8 py-3 rounded-full shadow-lg flex items-center gap-3 transition-all duration-200 tracking-wide"
               >
                 <ArrowRight className="h-5 w-5" />
-                <span>Admin Access</span>
+                <span>{adminHeroLabel}</span>
               </Link>
             </div>
             
@@ -310,8 +313,8 @@ const HomePage: React.FC = () => {
           <div className="flex justify-center space-x-8 mb-8">
             <div className="flex items-center">
               <Mail className="h-5 w-5 text-green-600 dark:text-green-400 mr-2" />
-              <a href="mailto:info@beantobin.com" className="text-gray-700 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400">
-                info@beantobin.com
+              <a href="mailto:beantobin2025@gmail.com" className="text-gray-700 dark:text-gray-300 hover:text-green-600 dark:hover:text-green-400">
+                beantobin2025@gmail.com
               </a>
             </div>
             <div className="flex items-center">

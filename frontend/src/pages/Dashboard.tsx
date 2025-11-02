@@ -19,7 +19,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { format } from 'date-fns';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import ChartContainer from '../components/charts/ChartContainer';
 import AlertSummaryChart from '../components/charts/AlertSummaryChart';
 import DarkModeToggle from '../components/DarkModeToggle';
@@ -38,6 +38,8 @@ const Dashboard: React.FC = () => {
   const { latestSensorData, recentAlerts, isConnected, isLoading, refreshData, lastFetchAt } = useData();
   const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'alerts' | 'sensors'>('overview');
   const [lastManualRefresh, setLastManualRefresh] = useState<Date | null>(null);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const navigate = useNavigate();
 
   // Check if current user is admin
   const isAdmin = isAuthenticated && user?.role === 'admin';
@@ -157,7 +159,7 @@ const Dashboard: React.FC = () => {
               </span>
             ) : null}
             <button
-              onClick={logout}
+              onClick={() => setShowLogoutConfirm(true)}
               className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-transparent text-coffee-500 transition-colors hover:border-coffee-300 hover:text-red-500 dark:text-slate-300 dark:hover:text-red-400"
               title="Logout"
             >
@@ -166,7 +168,7 @@ const Dashboard: React.FC = () => {
           </div>
         ) : (
           <Link
-            to="/login"
+            to="/admin/login"
             className="inline-flex items-center gap-2 rounded-full border border-coffee-200 bg-white px-3 py-1.5 text-sm font-medium text-coffee-700 transition-colors hover:border-coffee-300 hover:text-coffee-900 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
           >
             <LogIn className="h-4 w-4" />
@@ -179,6 +181,35 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-coffee-50 dark:bg-gray-900">
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <div className="w-full max-w-sm rounded-lg border border-gray-200 bg-white p-6 shadow-2xl dark:border-gray-700 dark:bg-gray-900">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Confirm Logout</h2>
+            <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">Are you sure you want to sign out of your session?</p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                className="rounded-md border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-800"
+                onClick={() => setShowLogoutConfirm(false)}
+              >
+                Stay signed in
+              </button>
+              <button
+                type="button"
+                className="rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white shadow hover:bg-red-500 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1"
+                onClick={() => {
+                  setShowLogoutConfirm(false);
+                  logout();
+                  navigate('/login', { replace: true });
+                }}
+              >
+                Yes, logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <HeaderFrame
         titleSuffix="Dashboard"
         subtitle="Live environmental monitoring"
