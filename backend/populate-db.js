@@ -1,5 +1,5 @@
 const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '.env') });
+require('dotenv').config({ path: path.join(__dirname, '.env'), override: true });
 
 const sequelize = require('./services/database_pg');
 const SensorData = require('./models/SensorData');

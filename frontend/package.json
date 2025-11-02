@@ -15,14 +15,15 @@
     "react-router-dom": "^6.26.2",
     "react-scripts": "5.0.1",
     "recharts": "^3.2.1",
+    "serve": "^14.2.5",
     "socket.io-client": "^4.7.5",
     "web-vitals": "^2.1.4"
   },
   "scripts": {
     "ui-test:login": "node tests/ui-login-test.js",
     "start": "cross-env PORT=3002 node ./scripts/wrapped-start.js",
-    "dev": "cross-env CI=false PORT=3002 react-scripts start",
-    "start:dev": "cross-env CI=false PORT=3002 react-scripts start",
+    "dev": "cross-env CI=false GENERATE_SOURCEMAP=false PORT=3002 react-scripts start",
+    "start:dev": "cross-env CI=false GENERATE_SOURCEMAP=false PORT=3002 react-scripts start",
     "start:supervised": "react-scripts start",
     "build": "react-scripts build",
     "preview": "node ./scripts/serve-build.js",
@@ -81,7 +82,6 @@
     "http-server": "^14.1.1",
     "postcss": "^8.5.6",
     "puppeteer": "^24.21.0",
-    "serve": "^14.2.5",
     "serve-handler": "^6.1.6",
     "tailwindcss": "^3.4.17",
     "typescript": "^4.9.5"

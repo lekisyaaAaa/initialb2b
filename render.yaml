@@ -14,7 +14,7 @@ services:
     branch: main
     buildCommand: cd backend && npm ci
     startCommand: cd backend && npm run start
-    healthCheckPath: /health
+    healthCheckPath: /api/health
     envVars:
       - key: NODE_ENV
         value: production

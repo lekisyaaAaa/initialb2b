@@ -3,7 +3,7 @@ const path = require('path');
 const dotenv = require('dotenv');
 const logger = require('../utils/logger');
 
-dotenv.config({ path: path.join(__dirname, '..', '.env') });
+dotenv.config({ path: path.join(__dirname, '..', '.env'), override: true });
 
 const baseOptions = {
 	logging: false,
