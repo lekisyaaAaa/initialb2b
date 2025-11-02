@@ -6,11 +6,10 @@
 # - Managed PostgreSQL database
 
 services:
-  # Backend API
   - type: web
     name: beantobin-backend
-    env: node
-    plan: starter
+    runtime: node
+    plan: standard
     branch: master
     buildCommand: cd backend && npm ci
     startCommand: cd backend && npm run start
@@ -26,11 +25,10 @@ services:
       # - SMTP_* / TWILIO_* credentials (if used)
       # - CORS_ORIGINS / SOCKETIO_CORS_ORIGINS
 
-  # High-availability sensor poller worker
   - type: worker
     name: beantobin-poller
-    env: node
-    plan: starter
+    runtime: node
+    plan: standard
     branch: master
     buildCommand: cd backend && npm ci
     startCommand: cd backend && node services/sensor-poller-ha.js
@@ -41,10 +39,9 @@ services:
         value: 'true'
       # Provide the same DATABASE_URL / JWT_SECRET / SMTP / TWILIO vars in the dashboard.
 
-  # React Frontend (Static Site hosted as web)
   - type: web
     name: beantobin-frontend
-    env: node
+    runtime: node
     plan: starter
     branch: master
     buildCommand: cd frontend && npm ci && npm run build
