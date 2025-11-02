@@ -6,12 +6,11 @@
 # - Managed PostgreSQL database
 
 services:
-  # Backend API
   - type: web
     name: beantobin-backend
-    env: node
-  plan: starter
-  branch: master
+    runtime: node
+    plan: standard
+    branch: master
     buildCommand: cd backend && npm ci
     startCommand: cd backend && npm run start
     healthCheckPath: /api/health
@@ -26,12 +25,11 @@ services:
       # - SMTP_* / TWILIO_* credentials (if used)
       # - CORS_ORIGINS / SOCKETIO_CORS_ORIGINS
 
-  # High-availability sensor poller worker
   - type: worker
     name: beantobin-poller
-    env: node
-  plan: starter
-  branch: master
+    runtime: node
+    plan: standard
+    branch: master
     buildCommand: cd backend && npm ci
     startCommand: cd backend && node services/sensor-poller-ha.js
     envVars:
@@ -41,12 +39,11 @@ services:
         value: 'true'
       # Provide the same DATABASE_URL / JWT_SECRET / SMTP / TWILIO vars in the dashboard.
 
-  # React Frontend (Static Site hosted as web)
   - type: web
     name: beantobin-frontend
-    env: node
-  plan: starter
-  branch: master
+    runtime: node
+    plan: starter
+    branch: master
     buildCommand: cd frontend && npm ci && npm run build
     startCommand: npx serve -s frontend/build
     envVars:
@@ -56,48 +53,8 @@ services:
 
 databases:
   - name: beantobin-db
-    services:
-      - type: web
-        name: beantobin-backend
-        runtime: node
-        plan: standard
-        branch: master
-        buildCommand: cd backend && npm ci
-        startCommand: cd backend && npm run start
-        healthCheckPath: /api/health
-        envVars:
-          - key: NODE_ENV
-            value: production
-          - key: PORT
-            value: '5000'
-          # Configure the following in the Render Dashboard:
-          # - DATABASE_URL
-          # - JWT_SECRET
-          # - SMTP_* / TWILIO_* credentials (if used)
-          # - CORS_ORIGINS / SOCKETIO_CORS_ORIGINS
-
-      - type: worker
-        name: beantobin-poller
-        runtime: node
-        plan: standard
-        branch: master
-        buildCommand: cd backend && npm ci
-        startCommand: cd backend && node services/sensor-poller-ha.js
-        envVars:
-          - key: NODE_ENV
-            value: production
-          - key: RUN_POLLER
-            value: 'true'
-          # Provide the same DATABASE_URL / JWT_SECRET / SMTP / TWILIO vars in the dashboard.
-
-      - type: web
-        name: beantobin-frontend
-        runtime: node
-        plan: starter
-        branch: master
-        buildCommand: cd frontend && npm ci && npm run build
-        startCommand: npx serve -s frontend/build
-        envVars:
-          - key: NODE_ENV
-            value: production
-          # Configure REACT_APP_* variables in the dashboard if frontend runtime config is needed.
+    plan: basic-256mb
+    region: oregon
+    databaseName: beantobin
+    user: beantobin_admin
+    # Render provisions the latest supported PostgreSQL version and exposes DATABASE_URL once ready.
