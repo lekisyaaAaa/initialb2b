@@ -149,21 +149,7 @@ Once running, access your system at:
 
 ---
 
-## 🔧 Home Assistant + ESPHome Setup (Optional)
-
-If you want to use HA + ESPHome instead of direct ESP32:
-
-### 1. Run HA Setup Script
-```cmd
-.\setup-ha-integration.bat
-```
-
-### 2. Follow the Complete Guide
-See [`HOME_ASSISTANT_SETUP.md`](HOME_ASSISTANT_SETUP.md) for detailed instructions.
-
----
-
-## 📊 System Features Included
+##  System Features Included
 
 ✅ **Complete Environmental Monitoring System**
 - Real-time sensor data collection
@@ -173,11 +159,6 @@ See [`HOME_ASSISTANT_SETUP.md`](HOME_ASSISTANT_SETUP.md) for detailed instructio
 - Charts and analytics
 - Dark mode support
 - Responsive design
-
-✅ **Home Assistant Integration Ready**
-- ESPHome device support
-- HA REST API polling
-- Automatic device discovery
 
 ✅ **Production Ready**
 - PM2 process management

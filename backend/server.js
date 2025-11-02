@@ -307,13 +307,13 @@ app.use(errorHandler);
 
 // Start the server
 // Default to 8000 as requested for new deployments; keep override via PORT env var
-const PORT = process.env.PORT || 8000;
+const PORT = process.env.PORT || 10000;
 
 // Bind to 0.0.0.0 in development so localhost resolves (IPv4/IPv6) from browsers reliably
 const BIND_HOST = (process.env.BIND_HOST || '0.0.0.0');
 
 // Resilient binding: try PORT and fall back across a small range if the port is in use
-const configuredPort = Number(process.env.PORT || PORT || 8000);
+const configuredPort = Number(process.env.PORT || PORT || 10000);
 const MAX_TRIES = 10;
 let attempts = 0;
 

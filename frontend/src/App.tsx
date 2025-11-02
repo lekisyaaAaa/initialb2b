@@ -11,7 +11,6 @@ import AdminDashboard from './pages/AdminDashboard';
 import DevicePortsPage from './pages/DevicePortsPage';
 import LogsPage from './pages/LogsPage';
 import ThresholdsPage from './pages/ThresholdsPage';
-import HomeAssistant from './pages/HomeAssistant';
 import AdminLoginPage from './pages/admin/AdminLoginPage';
 import AdminOTPVerifyPage from './pages/admin/AdminOTPVerifyPage';
 import AdminForgotPasswordPage from './pages/admin/AdminForgotPasswordPage';
@@ -52,7 +51,6 @@ function App() {
                 {/* dev-only debug route removed */}
                 <Route path="/logs" element={<ProtectedRoute><LogsPage /></ProtectedRoute>} />
                 <Route path="/thresholds" element={<ProtectedRoute><ThresholdsPage /></ProtectedRoute>} />
-                <Route path="/home-assistant" element={<ProtectedRoute><HomeAssistant /></ProtectedRoute>} />
                 <Route path="*" element={<Navigate to="/" />} />
               </Routes>
             </div>

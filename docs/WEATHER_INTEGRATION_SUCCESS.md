@@ -127,7 +127,6 @@ EnhancedDashboard: Retrieved 504 weather data points
 ### **✅ Scalability:**
 - **Easy API Integration**: Add real API keys when ready
 - **Multiple Data Sources**: Primary, backup, and fallback systems
-- **Home Assistant Ready**: REST API format compatible
 - **Production Ready**: Caching, error handling, rate limiting
 
 ---

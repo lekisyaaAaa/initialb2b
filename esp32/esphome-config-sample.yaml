@@ -14,7 +14,7 @@ wifi:
 logger:
   level: INFO
 
-# Enable Home Assistant API
+# Enable native API
 api:
   password: !secret api_password
 

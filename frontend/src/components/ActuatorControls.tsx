@@ -24,10 +24,13 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
     if (socketUrl) {
       candidates.add(socketUrl.replace(/\/+$/, ''));
     }
-    if (typeof process !== 'undefined' && process.env.REACT_APP_SOCKET_URL) {
-      const envUrl = process.env.REACT_APP_SOCKET_URL.toString().trim();
-      if (envUrl) {
-        candidates.add(envUrl.replace(/\/+$/, ''));
+    if (typeof process !== 'undefined') {
+      const envSocket = process.env.REACT_APP_SOCKET_URL || process.env.REACT_APP_WS_URL;
+      if (envSocket) {
+        const envUrl = envSocket.toString().trim();
+        if (envUrl) {
+          candidates.add(envUrl.replace(/\/+$/, ''));
+        }
       }
     }
     if (typeof window !== 'undefined' && window.location && window.location.origin) {

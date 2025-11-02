@@ -1,27 +1,6 @@
 c# BeanToBin Environmental Monitoring System
 
-## 🏠 Home Assistant + ESPHome Integration (Recommended)
-
-For the best IoT experience, this system now supports **Home Assistant + ESPHome** integration:
-
-### Why Home Assistant + ESPHome?
-- ✅ **Easier Setup**: Web-based device configuration
-- ✅ **Better Reliability**: Robust device management and monitoring
-- ✅ **Rich Features**: OTA updates, automation, device tracking
-- ✅ **Community Support**: Large user communities
-- ✅ **Future-Proof**: Easy to add new sensors and devices
-
-### Quick Setup:
-1. **Install Home Assistant**: `docker run homeassistant/home-assistant`
-2. **Setup ESPHome**: Install ESPHome add-on in HA
-3. **Configure Devices**: Use ESPHome dashboard for sensor setup
-4. **Connect Backend**: Run `setup-ha-integration.bat` to configure
-
-📖 **Complete Guide**: See [`HOME_ASSISTANT_SETUP.md`](HOME_ASSISTANT_SETUP.md)
-
----
-
-## 🚀 Quick Start (Direct ESP32)
+## 🚀 Quick Start
 
 ### Recommended: Use the Startup Script (Handles Everything Automatically)
 
@@ -290,9 +269,44 @@ Notes:
 
 ## Docker / Production
 
-- `backend/Dockerfile` and `frontend/Dockerfile` exist for containerized builds.
-- `docker-compose.prod.yml` provides a production-style compose file for Postgres, backend and frontend.
-- `render.yaml` can be used to deploy the repo to Render (managed Postgres + services).
+
+### Render Deployment (Free Tier, VermiLinks.com)
+
+The repository includes a Render blueprint tuned for the ESP32-only VermiLinks stack. It provisions three free-tier services: `vermilinks-backend` (Node), `vermilinks-frontend` (static site), and `vermilinks-db` (managed PostgreSQL).
+
+1. Commit and push your changes to the branch Render will track (recommended: `main`).
+2. In Render, choose **Blueprints → New Blueprint Instance** and select this repository.
+3. Confirm the generated resources match `render.yaml`:
+  - `vermilinks-backend` (plan `free`, rootDir `backend`, health path `/api/health`).
+  - `vermilinks-frontend` (plan `free`, rootDir `frontend`, publish path `build`).
+  - `vermilinks-db` (plan `free`).
+4. Populate backend environment variables under **vermilinks-backend → Environment**:
+  - `JWT_SECRET=vermilinks_secret_2025`
+  - `SMTP_HOST=smtp.gmail.com`
+  - `SMTP_PORT=587`
+  - `EMAIL_USER=beantobin2025@gmail.com`
+  - `EMAIL_PASS=<Gmail app password>`
+  - `EMAIL_FROM="BeanToBin <beantobin2025@gmail.com>"`
+  - `CORS_ORIGINS=https://vermilinks.com,https://www.vermilinks.com`
+  - `SOCKETIO_CORS_ORIGINS=https://vermilinks.com,https://www.vermilinks.com`
+  - `ESP32_URL=https://api.vermilinks.com/api/esp32`
+  - `ESP32_COMMAND_TIMEOUT_MS=5000`
+  - `INIT_ADMIN_EMAIL=beantobin2025@gmail.com`
+  - `INIT_ADMIN_PASSWORD=Bean2bin2025`
+5. Populate frontend variables under **vermilinks-frontend → Environment**:
+  - `REACT_APP_API_URL=https://api.vermilinks.com`
+  - `REACT_APP_WS_URL=wss://api.vermilinks.com`
+6. Deploy the blueprint. Once the backend is live, open a shell for `vermilinks-backend` and run:
+
+  ```bash
+  npm run migrate
+  npm run seed-admin
+  ```
+
+7. Verify `https://api.vermilinks.com/api/health` returns `{ "status": "ok" }`, then log in at `https://vermilinks.com/admin/login` using `beantobin2025@gmail.com / Bean2bin2025`.
+
+- Render automatically wires `DATABASE_URL` from `vermilinks-db`; no manual secret is needed for the connection string.
+- All resources stay on the free plan so the deployment runs at $0/month (services auto-sleep when idle).
 
 Recommended quick production flows:
 
