@@ -11,7 +11,7 @@ services:
     name: beantobin-backend
     env: node
     plan: starter
-    branch: main
+    branch: master
     buildCommand: cd backend && npm ci
     startCommand: cd backend && npm run start
     healthCheckPath: /api/health
@@ -31,7 +31,7 @@ services:
     name: beantobin-poller
     env: node
     plan: starter
-    branch: main
+    branch: master
     buildCommand: cd backend && npm ci
     startCommand: cd backend && node services/sensor-poller-ha.js
     envVars:
@@ -46,7 +46,7 @@ services:
     name: beantobin-frontend
     env: node
     plan: starter
-    branch: main
+    branch: master
     buildCommand: cd frontend && npm ci && npm run build
     startCommand: npx serve -s frontend/build
     envVars:
@@ -56,7 +56,7 @@ services:
 
 databases:
   - name: beantobin-db
-    plan: starter
+    plan: free
     region: oregon
     databaseName: beantobin
     user: beantobin_admin
