@@ -56,7 +56,7 @@ services:
 
 databases:
   - name: beantobin-db
-    plan: free
+    plan: basic-256mb
     region: oregon
     databaseName: beantobin
     user: beantobin_admin
