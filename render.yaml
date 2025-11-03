@@ -9,7 +9,7 @@ services:
     name: vermilinks-backend
     env: node
     plan: free
-    branch: main
+    branch: master
     rootDir: backend
     buildCommand: npm install --force
     startCommand: npm run start
@@ -45,14 +45,12 @@ services:
       - key: INIT_ADMIN_PASSWORD
         sync: false
 
-  - type: web
+  - type: static_site
     name: vermilinks-frontend
-    env: static
-    plan: free
-    branch: main
+    branch: master
     rootDir: frontend
     buildCommand: npm install && npm run build
-    staticPublishPath: build
+    publishPath: build
     autoDeploy: true
     envVars:
       - key: REACT_APP_API_URL
