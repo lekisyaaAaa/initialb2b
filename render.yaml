@@ -45,13 +45,14 @@ services:
       - key: INIT_ADMIN_PASSWORD
         sync: false
 
-  - type: static
+  - type: web
     name: vermilinks-frontend
+    env: static
     plan: free
     branch: main
     rootDir: frontend
     buildCommand: npm install && npm run build
-    publishPath: build
+    staticPublishPath: build
     autoDeploy: true
     envVars:
       - key: REACT_APP_API_URL

@@ -280,7 +280,7 @@ The repository includes a Render blueprint tuned for the ESP32-only VermiLinks s
   - `vermilinks-backend` (plan `free`, rootDir `backend`, health path `/api/health`).
   - `vermilinks-frontend` (plan `free`, rootDir `frontend`, publish path `build`).
   - `vermilinks-db` (plan `free`).
-4. Populate backend environment variables under **vermilinks-backend → Environment**:
+4. Populate backend environment variables under **vermilinks-backend → Environment** (values mirror `backend/.env.example`):
   - `JWT_SECRET=vermilinks_secret_2025`
   - `SMTP_HOST=smtp.gmail.com`
   - `SMTP_PORT=587`
@@ -294,7 +294,7 @@ The repository includes a Render blueprint tuned for the ESP32-only VermiLinks s
   - `INIT_ADMIN_EMAIL=beantobin2025@gmail.com`
   - `INIT_ADMIN_PASSWORD=Bean2bin2025`
 5. Populate frontend variables under **vermilinks-frontend → Environment**:
-  - `REACT_APP_API_URL=https://api.vermilinks.com`
+  - `REACT_APP_API_URL=https://api.vermilinks.com/api`
   - `REACT_APP_WS_URL=wss://api.vermilinks.com`
 6. Deploy the blueprint. Once the backend is live, open a shell for `vermilinks-backend` and run:
 
