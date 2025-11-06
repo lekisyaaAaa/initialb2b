@@ -15,17 +15,24 @@ const baseOptions = {
 	}
 };
 
+const databaseUrl = process.env.DATABASE_URL || '';
+const sslFlagFromUrl = /[?&]sslmode=require/i.test(databaseUrl);
+const sslFlagFromEnv = (process.env.PGSSLMODE || '').toLowerCase() === 'require';
+const shouldRequireSsl = sslFlagFromUrl || sslFlagFromEnv;
+
 if (!process.env.DATABASE_URL) {
 	logger.fatal('DATABASE_URL is required but missing. Set a PostgreSQL connection string in your environment.');
 	process.exit(1);
 }
 
+const dialectOptions = shouldRequireSsl
+	? { ssl: { require: true, rejectUnauthorized: false } }
+	: {};
+
 let sequelize = new Sequelize(process.env.DATABASE_URL, {
 	...baseOptions,
 	dialect: 'postgres',
-	dialectOptions: {
-		ssl: process.env.PGSSLMODE === 'require' ? { rejectUnauthorized: false } : false
-	}
+	dialectOptions,
 });
 let currentDialect = 'postgres';
 
