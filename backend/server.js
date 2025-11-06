@@ -43,6 +43,7 @@ const maintenanceRoutes = require('./routes/maintenance');
 const notificationRoutes = require('./routes/notifications');
 const actuatorControlRoutes = require('./routes/actuatorControl');
 const deviceCommandRoutes = require('./routes/deviceCommands');
+const commandRoutes = require('./routes/command');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -329,6 +330,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/actuators', actuatorRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/device-commands', deviceCommandRoutes);
+app.use('/api/command', commandRoutes);
 // Admin authentication + management routes
 const adminAuthRoutes = require('./routes/adminAuth');
 app.use('/api/admin', adminAuthRoutes);

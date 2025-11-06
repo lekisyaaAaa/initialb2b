@@ -5,9 +5,15 @@ const SensorData = require('../models/SensorData');
 const sequelize = require('./database_pg');
 const deviceCommandQueue = require('./deviceCommandQueue');
 
+function normalizeName(value = '') {
+  return value.trim().toLowerCase();
+}
+
 const DEFAULT_ACTUATORS = [
-  { name: 'Water Pump', type: 'pump' },
-  { name: 'Solenoid Valve', type: 'solenoid' },
+  { key: 'pump', name: 'Water Pump', type: 'pump' },
+  { key: 'solenoid1', name: 'Solenoid Valve 1', type: 'solenoid' },
+  { key: 'solenoid2', name: 'Solenoid Valve 2', type: 'solenoid' },
+  { key: 'solenoid3', name: 'Solenoid Valve 3', type: 'solenoid' },
 ];
 
 const ALLOWED_ACTUATOR_NAMES = DEFAULT_ACTUATORS.map((item) => item.name);
@@ -15,6 +21,30 @@ const ALLOWED_ACTUATOR_NAMES = DEFAULT_ACTUATORS.map((item) => item.name);
 const ACTUATOR_TYPE_BY_NAME = new Map(
   DEFAULT_ACTUATORS.map((item) => [normalizeName(item.name), item.type])
 );
+
+const ACTUATOR_KEY_BY_NAME = new Map(
+  DEFAULT_ACTUATORS.map((item) => [normalizeName(item.name), item.key])
+);
+
+const LEGACY_ACTUATOR_ALIASES = new Map([
+  ['solenoid valve', 'solenoid1'],
+  ['solenoid', 'solenoid1'],
+]);
+
+function getDefinitionByKey(key) {
+  return DEFAULT_ACTUATORS.find((item) => item.key === key) || null;
+}
+
+function resolveDefinitionByName(name) {
+  const normalized = normalizeName(name);
+  if (ACTUATOR_KEY_BY_NAME.has(normalized)) {
+    return getDefinitionByKey(ACTUATOR_KEY_BY_NAME.get(normalized));
+  }
+  if (LEGACY_ACTUATOR_ALIASES.has(normalized)) {
+    return getDefinitionByKey(LEGACY_ACTUATOR_ALIASES.get(normalized));
+  }
+  return null;
+}
 
 const ACTUATOR_COMMANDS = {
   pump: {
@@ -29,13 +59,10 @@ const ACTUATOR_COMMANDS = {
 
 let schedulerHandle = null;
 
-function normalizeName(value = '') {
-  return value.trim().toLowerCase();
-}
-
 function sanitizeActuator(actuator) {
   if (!actuator) return null;
   const data = actuator.get ? actuator.get({ plain: true }) : actuator;
+  const key = actuatorKeyFromName(data.name);
   const lastUpdated = data.lastUpdated instanceof Date
     ? data.lastUpdated.toISOString()
     : new Date(data.lastUpdated || Date.now()).toISOString();
@@ -44,6 +71,7 @@ function sanitizeActuator(actuator) {
     id: data.id,
     name: data.name,
     type: data.type || actuatorTypeFromName(data.name),
+    key,
     status: Boolean(data.status),
     mode: data.mode === 'manual' ? 'manual' : 'auto',
     lastUpdated,
@@ -151,6 +179,10 @@ async function findActuatorById(id) {
   return actuator;
 }
 
+function actuatorKeyFromName(name) {
+  return ACTUATOR_KEY_BY_NAME.get(normalizeName(name)) || null;
+}
+
 function actuatorTypeFromName(name) {
   return ACTUATOR_TYPE_BY_NAME.get(normalizeName(name)) || 'pump';
 }
@@ -231,6 +263,11 @@ async function updateActuatorStatus(actuator, status, options = {}) {
   await actuator.save();
 
   const hardwareId = resolveDeviceTarget(options.deviceId);
+  const actuatorKey = actuatorKeyFromName(actuator.name);
+  const commandContext = {
+    ...options,
+    ...(actuatorKey ? { actuator: actuatorKey } : {}),
+  };
   let queueResult = null;
   if (hardwareId) {
     try {
@@ -238,7 +275,7 @@ async function updateActuatorStatus(actuator, status, options = {}) {
         hardwareId,
         actuatorName: actuator.name,
         desiredState: desired,
-        context: options,
+        context: commandContext,
       });
     } catch (queueError) {
       console.warn('actuatorService: failed to queue actuator command:', queueError && queueError.message ? queueError.message : queueError);
@@ -321,7 +358,7 @@ async function markDeviceAck(actuatorName, ackOk, { message = null } = {}) {
     return null;
   }
 
-  const canonical = DEFAULT_ACTUATORS.find((item) => normalizeName(item.name) === normalizeName(actuatorName));
+  const canonical = resolveDefinitionByName(actuatorName);
   if (!canonical) {
     return null;
   }
@@ -365,7 +402,10 @@ async function runAutomaticControl({ source = 'scheduler' } = {}) {
 
   if (moisture !== null) {
     const pump = byName.get(normalizeName('Water Pump'));
-    const valve = byName.get(normalizeName('Solenoid Valve'));
+    const valveDefs = DEFAULT_ACTUATORS.filter((item) => item.key.startsWith('solenoid'));
+    const valves = valveDefs
+      .map((definition) => byName.get(normalizeName(definition.name)))
+      .filter(Boolean);
 
     if (pump && pump.mode === 'auto') {
       if (moisture < 50) {
@@ -389,7 +429,10 @@ async function runAutomaticControl({ source = 'scheduler' } = {}) {
       }
     }
 
-    if (valve && valve.mode === 'auto') {
+    for (const valve of valves) {
+      if (valve.mode !== 'auto') {
+        continue;
+      }
       if (moisture < 50) {
         const result = await updateActuatorStatus(valve, true, {
           ...contextBase,

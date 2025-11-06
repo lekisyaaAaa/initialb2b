@@ -312,6 +312,15 @@ export const deviceService = {
     api.get<ApiResponse<DeviceSensorSummary>>(`/devices/${encodeURIComponent(deviceId)}/sensors`, { params }),
 };
 
+export const commandService = {
+  queue: (payload: { device_id: string; actuator: 'pump' | 'solenoid1' | 'solenoid2' | 'solenoid3'; action: 'on' | 'off' }) =>
+    api.post<ApiResponse<any>>('/command', payload),
+  status: (deviceId: string) =>
+    api.get<ApiResponse<any>>('/command/status', {
+      params: deviceId ? { device_id: deviceId } : undefined,
+    }),
+};
+
 export const actuatorService = {
   list: () => api.get<ApiResponse<Actuator[]>>('/actuators'),
   toggle: (id: number) => api.post<ApiResponse<Actuator>>(`/actuators/${id}/toggle`),

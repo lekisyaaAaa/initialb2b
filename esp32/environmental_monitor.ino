@@ -1,491 +1,300 @@
-struct SensorData {
-  float temperature;
-  float humidity;
-  float moisture;
-  float ph;
-  float ec;
-  float nitrogen;
-  float phosphorus;
-  float potassium;
-  int waterLevel;
-  float batteryLevel;
-  int signalStrength;
-};
-
-SensorData readSensors();
-SensorData readSoilSensor();
-void readNPKSensor(SensorData& data);
-float readBatteryLevel();
-void controlActuators(const SensorData& data);
-void sendSensorData(const SensorData& data);
-void storeOfflineData(const SensorData& data);
-void connectToWiFi();
-void sendHeartbeat();
-void setupCommandServer();
-void handleCommandRequest();
-void applyActuatorCommand(const String& actuatorName, const String& commandValue);
+/**
+ * VermiLinks ESP32 telemetry + actuator firmware
+ * - Sends telemetry every 5–10 seconds to the backend REST API
+ * - Polls for actuator commands and acknowledges execution
+ * - Enforces float sensor safety interlock on GPIO 5 (D5/DB5)
+ */
 
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
-#include <HardwareSerial.h>
-#include <ModbusMaster.h>
-#include <Wire.h>
-#include <SPIFFS.h>
-#include <WebServer.h>
 
 #include "config.h"
 
-// WiFi credentials provided via config.h
-const char* ssid = WIFI_SSID;
-const char* password = WIFI_PASS;
+#define FLOAT_SENSOR_PIN 5
+#define SOLENOID_PIN_1 25
+#define SOLENOID_PIN_2 26
+#define SOLENOID_PIN_3 27
 
-// Backend API endpoints provided via config.h
-const char* serverUrl = SERVER_URL;
-const char* heartbeatUrl = HEARTBEAT_URL;
+// Active-low relay boards keep valves off when the output is HIGH
+const int RELAY_ACTIVE_LEVEL = LOW;
+const int RELAY_INACTIVE_LEVEL = HIGH;
 
-// RS485/MODBUS configuration for soil sensor
-#define RS485_RX 16  // GPIO16
-#define RS485_TX 17  // GPIO17
-#define RS485_DE 18  // GPIO18 (DE/RE pin)
-HardwareSerial rs485Serial(2);
-ModbusMaster node;
+const unsigned long MIN_TELEMETRY_INTERVAL_MS = 5000;
+const unsigned long MAX_TELEMETRY_INTERVAL_MS = 10000;
+const unsigned long COMMAND_POLL_INTERVAL_MS = 3000;
+const unsigned long WIFI_RETRY_BASE_MS = 2000;
+const unsigned long WIFI_RETRY_MAX_MS = 30000;
 
-// NPK sensor I2C address
-#define NPK_SENSOR_ADDR 0x58
+unsigned long lastTelemetryAt = 0;
+unsigned long nextTelemetryInterval = MIN_TELEMETRY_INTERVAL_MS;
+unsigned long lastCommandPollAt = 0;
+unsigned long lastWifiAttemptAt = 0;
+unsigned long nextWifiRetryDelay = WIFI_RETRY_BASE_MS;
 
-// Water level float sensor pin
-#define WATER_LEVEL_PIN 19  // GPIO19
+bool solenoidStates[3] = { false, false, false };
 
-// Relay control pins for actuators
-#define PUMP_RELAY_PIN 21    // GPIO21
-#define SOLENOID_RELAY_PIN 22 // GPIO22
-
-// Timing
-unsigned long lastSendTime = 0;
-const unsigned long sendInterval = 30000; // 30 seconds
-unsigned long lastHeartbeatTime = 0;
-const unsigned long heartbeatInterval = 10000; // Keep device registered with backend
-unsigned long lastReconnectAttempt = 0;
-const unsigned long reconnectInterval = 15000;
-
-// Device ID
-const char* deviceId = DEVICE_ID;
-
-WebServer commandServer(80);
-
-void preTransmission();
-void postTransmission();
+void connectWiFiIfNeeded();
+void scheduleNextTelemetry();
+void sendTelemetry(int floatState, int soilMoisture, float temperature, float humidity);
+bool postJson(const String& url, const String& body, uint8_t maxAttempts = COMMAND_MAX_RETRIES);
+void handlePendingCommands(int floatState);
+void applySolenoid(int index, bool turnOn, bool fromCommand);
+void disableAllSolenoids(const char* reason);
+int readFloatSensor();
+int readSoilMoisture();
+float readTemperature();
+float readHumidity();
 
 void setup() {
   Serial.begin(115200);
-  delay(1000);
+  delay(500);
+  randomSeed(esp_random());
 
-  // Initialize SPIFFS for offline storage
-  if (!SPIFFS.begin(true)) {
-    Serial.println("SPIFFS Mount Failed");
-    return;
-  }
+  pinMode(FLOAT_SENSOR_PIN, INPUT_PULLUP);
+  pinMode(SOLENOID_PIN_1, OUTPUT);
+  pinMode(SOLENOID_PIN_2, OUTPUT);
+  pinMode(SOLENOID_PIN_3, OUTPUT);
+  disableAllSolenoids("boot");
 
-  // Initialize RS485
-  pinMode(RS485_DE, OUTPUT);
-  digitalWrite(RS485_DE, LOW);
-  rs485Serial.begin(9600, SERIAL_8N1, RS485_RX, RS485_TX);
-  node.begin(1, rs485Serial); // Slave ID 1
-  node.preTransmission(preTransmission);
-  node.postTransmission(postTransmission);
+  WiFi.mode(WIFI_STA);
+  connectWiFiIfNeeded();
+  scheduleNextTelemetry();
 
-  // Initialize I2C for NPK sensor
-  Wire.begin();
-
-  // Initialize water level sensor
-  pinMode(WATER_LEVEL_PIN, INPUT_PULLUP);
-
-  // Initialize relay pins
-  pinMode(PUMP_RELAY_PIN, OUTPUT);
-  pinMode(SOLENOID_RELAY_PIN, OUTPUT);
-  digitalWrite(PUMP_RELAY_PIN, HIGH); // Relay OFF (assuming active LOW)
-  digitalWrite(SOLENOID_RELAY_PIN, HIGH);
-
-  // Connect to WiFi
-  connectToWiFi();
-
-  setupCommandServer();
-
-  if (WiFi.status() == WL_CONNECTED) {
-    sendHeartbeat();
-    lastHeartbeatTime = millis();
-  }
-
-  Serial.println("ESP32 Environmental Monitor initialized");
-}
-
-void preTransmission() {
-  digitalWrite(RS485_DE, HIGH);
-}
-
-void postTransmission() {
-  digitalWrite(RS485_DE, LOW);
+  Serial.println("VermiLinks firmware ready");
 }
 
 void loop() {
-  if (WiFi.status() != WL_CONNECTED && millis() - lastReconnectAttempt > reconnectInterval) {
-    Serial.println("WiFi disconnected. Attempting reconnect...");
-    connectToWiFi();
-    lastReconnectAttempt = millis();
+  connectWiFiIfNeeded();
+
+  const int floatState = readFloatSensor();
+  if (floatState == LOW) {
+    disableAllSolenoids("float sensor low");
   }
 
-  // Read sensors
-  SensorData data = readSensors();
-
-  // Control actuators based on conditions
-  controlActuators(data);
-
-  // Send data to backend
-  if (millis() - lastSendTime >= sendInterval) {
-    sendSensorData(data);
-    lastSendTime = millis();
+  const unsigned long now = millis();
+  if (now - lastCommandPollAt >= COMMAND_POLL_INTERVAL_MS) {
+    handlePendingCommands(floatState);
+    lastCommandPollAt = now;
   }
 
-  if (WiFi.status() == WL_CONNECTED && millis() - lastHeartbeatTime >= heartbeatInterval) {
-    sendHeartbeat();
-    lastHeartbeatTime = millis();
+  if (now - lastTelemetryAt >= nextTelemetryInterval) {
+    const int moisture = readSoilMoisture();
+    const float temperature = readTemperature();
+    const float humidity = readHumidity();
+    sendTelemetry(floatState, moisture, temperature, humidity);
+    lastTelemetryAt = now;
+    scheduleNextTelemetry();
   }
 
-  commandServer.handleClient();
-
-  delay(1000);
+  delay(50);
 }
 
-SensorData readSensors() {
-  SensorData data = {0};
-
-  // Read RS485 soil sensor (temperature, humidity, moisture, pH, EC)
-  data = readSoilSensor();
-
-  // Read NPK sensor
-  readNPKSensor(data);
-
-  // Read water level sensor
-  data.waterLevel = digitalRead(WATER_LEVEL_PIN);
-
-  // Read battery level (if available)
-  data.batteryLevel = readBatteryLevel();
-
-  // Read WiFi signal strength
-  data.signalStrength = WiFi.RSSI();
-
-  return data;
-}
-
-SensorData readSoilSensor() {
-  SensorData data = {0};
-
-  // Read temperature (register 0x0001)
-  uint8_t result = node.readHoldingRegisters(0x0001, 1);
-  if (result == node.ku8MBSuccess) {
-    data.temperature = node.getResponseBuffer(0) / 10.0;
-  }
-
-  // Read humidity (register 0x0002)
-  result = node.readHoldingRegisters(0x0002, 1);
-  if (result == node.ku8MBSuccess) {
-    data.humidity = node.getResponseBuffer(0) / 10.0;
-  }
-
-  // Read moisture (register 0x0003)
-  result = node.readHoldingRegisters(0x0003, 1);
-  if (result == node.ku8MBSuccess) {
-    data.moisture = node.getResponseBuffer(0) / 10.0;
-  }
-
-  // Read pH (register 0x0004)
-  result = node.readHoldingRegisters(0x0004, 1);
-  if (result == node.ku8MBSuccess) {
-    data.ph = node.getResponseBuffer(0) / 10.0;
-  }
-
-  // Read EC (register 0x0005)
-  result = node.readHoldingRegisters(0x0005, 1);
-  if (result == node.ku8MBSuccess) {
-    data.ec = node.getResponseBuffer(0) / 10.0;
-  }
-
-  return data;
-}
-
-void readNPKSensor(SensorData& data) {
-  Wire.beginTransmission(NPK_SENSOR_ADDR);
-  Wire.write(0x03); // Read command
-  Wire.write(0x00); // Start register
-  Wire.write(0x03); // Number of registers
-  Wire.endTransmission();
-
-  delay(100);
-
-  Wire.requestFrom(NPK_SENSOR_ADDR, 6);
-  if (Wire.available() >= 6) {
-    uint16_t nitrogen = Wire.read() << 8 | Wire.read();
-    uint16_t phosphorus = Wire.read() << 8 | Wire.read();
-    uint16_t potassium = Wire.read() << 8 | Wire.read();
-
-    data.nitrogen = nitrogen / 10.0;
-    data.phosphorus = phosphorus / 10.0;
-    data.potassium = potassium / 10.0;
-  }
-}
-
-float readBatteryLevel() {
-  // Implement battery reading if you have a battery sensor
-  // For now, return a dummy value
-  return 3.7;
-}
-
-void controlActuators(const SensorData& data) {
-  static unsigned long lastPumpChange = 0;
-  static unsigned long lastSolenoidChange = 0;
-  const unsigned long minChangeInterval = 5000; // 5 seconds minimum between changes
-
-  // Pump control: Turn on if moisture is low and water level is sufficient
-  // Safety: Only change if enough time has passed since last change
-  if (millis() - lastPumpChange > minChangeInterval) {
-    if (data.moisture < 20.0 && data.waterLevel == HIGH) {
-      digitalWrite(PUMP_RELAY_PIN, LOW); // Turn on pump (assuming active LOW)
-      Serial.println("Pump ON - Moisture low and water available");
-      lastPumpChange = millis();
-    } else if (data.moisture > 30.0 || data.waterLevel == LOW) {
-      digitalWrite(PUMP_RELAY_PIN, HIGH); // Turn off pump
-      Serial.println("Pump OFF - Moisture sufficient or no water");
-      lastPumpChange = millis();
-    }
-  }
-
-  // Solenoid control: Turn on if pH is out of range
-  // Safety: Only change if enough time has passed since last change
-  if (millis() - lastSolenoidChange > minChangeInterval) {
-    if (data.ph < 6.0 || data.ph > 7.5) {
-      digitalWrite(SOLENOID_RELAY_PIN, LOW); // Turn on solenoid
-      Serial.println("Solenoid ON - pH out of range");
-      lastSolenoidChange = millis();
-    } else if (data.ph >= 6.0 && data.ph <= 7.5) {
-      digitalWrite(SOLENOID_RELAY_PIN, HIGH); // Turn off solenoid
-      Serial.println("Solenoid OFF - pH in range");
-      lastSolenoidChange = millis();
-    }
-  }
-}
-
-void setupCommandServer() {
-  commandServer.on("/command", HTTP_POST, handleCommandRequest);
-  commandServer.onNotFound([]() {
-    commandServer.send(404, "application/json", "{\"status\":\"not_found\"}");
-  });
-  commandServer.begin();
-  Serial.println("Command server listening on /command");
-}
-
-void handleCommandRequest() {
-  if (!commandServer.hasArg("plain")) {
-    commandServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing body\"}");
-    return;
-  }
-
-  String body = commandServer.arg("plain");
-  DynamicJsonDocument doc(256);
-  auto err = deserializeJson(doc, body);
-  if (err) {
-    commandServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Invalid JSON\"}");
-    return;
-  }
-
-  String actuator = doc["actuator"] | "";
-  String command = doc["command"] | "";
-  actuator.trim();
-  command.trim();
-
-  if (actuator.length() == 0 || command.length() == 0) {
-    commandServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Missing actuator or command\"}");
-    return;
-  }
-
-  if (!command.equalsIgnoreCase("ON") && !command.equalsIgnoreCase("OFF")) {
-    commandServer.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Command must be ON or OFF\"}");
-    return;
-  }
-
-  String actuatorLower = actuator;
-  actuatorLower.toLowerCase();
-
-  if (actuatorLower == "water pump" || actuatorLower == "water_pump" || actuatorLower == "pump") {
-    applyActuatorCommand("Water Pump", command);
-  } else if (actuatorLower == "solenoid valve" || actuatorLower == "solenoid_valve" || actuatorLower == "valve") {
-    applyActuatorCommand("Solenoid Valve", command);
-  } else {
-    commandServer.send(404, "application/json", "{\"status\":\"error\",\"message\":\"Unknown actuator\"}");
-    return;
-  }
-
-  StaticJsonDocument<200> response;
-  response["status"] = "ok";
-  response["actuator"] = actuator;
-  response["command"] = command;
-
-  String responseBody;
-  serializeJson(response, responseBody);
-  commandServer.send(200, "application/json", responseBody);
-}
-
-void applyActuatorCommand(const String& actuatorName, const String& commandValue) {
-  bool turnOn = commandValue.equalsIgnoreCase("ON");
-
-  if (actuatorName.equalsIgnoreCase("Water Pump")) {
-    digitalWrite(PUMP_RELAY_PIN, turnOn ? LOW : HIGH);
-    Serial.printf("Pump %s via remote command\n", turnOn ? "ON" : "OFF");
-  } else if (actuatorName.equalsIgnoreCase("Solenoid Valve")) {
-    digitalWrite(SOLENOID_RELAY_PIN, turnOn ? LOW : HIGH);
-    Serial.printf("Solenoid %s via remote command\n", turnOn ? "ON" : "OFF");
-  }
-}
-
-void sendSensorData(const SensorData& data) {
-  if (WiFi.status() != WL_CONNECTED) {
-    // Store offline data
-    storeOfflineData(data);
-    return;
-  }
-
-  // Create JSON payload
-  DynamicJsonDocument doc(1024);
-  doc["deviceId"] = deviceId;
-  doc["temperature"] = data.temperature;
-  doc["humidity"] = data.humidity;
-  doc["moisture"] = data.moisture;
-  doc["ph"] = data.ph;
-  doc["ec"] = data.ec;
-  doc["nitrogen"] = data.nitrogen;
-  doc["phosphorus"] = data.phosphorus;
-  doc["potassium"] = data.potassium;
-  doc["waterLevel"] = data.waterLevel;
-  doc["batteryLevel"] = data.batteryLevel;
-  doc["signalStrength"] = data.signalStrength;
-
-  String jsonString;
-  serializeJson(doc, jsonString);
-
-  Serial.println("Sending data: " + jsonString);
-  bool delivered = false;
-
-  for (int attempt = 1; attempt <= COMMAND_MAX_RETRIES; attempt++) {
-    HTTPClient http;
-    http.begin(serverUrl);
-    http.addHeader("Content-Type", "application/json");
-
-    int httpResponseCode = http.POST(jsonString);
-
-    if (httpResponseCode > 0 && httpResponseCode < 500) {
-      Serial.println("HTTP Response code: " + String(httpResponseCode));
-      delivered = true;
-      String response = http.getString();
-      Serial.println("Response: " + response);
-      http.end();
-      break;
-    }
-
-    Serial.printf("Sensor POST failed (attempt %d): %d\n", attempt, httpResponseCode);
-    http.end();
-
-    if (attempt < COMMAND_MAX_RETRIES) {
-      delay(COMMAND_RETRY_DELAY_MS);
-    }
-  }
-
-  if (!delivered) {
-    Serial.println("Failed to send sensor data after retries. Storing offline.");
-    storeOfflineData(data);
-  }
-}
-
-void storeOfflineData(const SensorData& data) {
-  // Store data in SPIFFS for later sync
-  File file = SPIFFS.open("/offline_data.jsonl", "a");
-  if (!file) {
-    Serial.println("Failed to open file for writing");
-    return;
-  }
-
-  DynamicJsonDocument doc(1024);
-  doc["timestamp"] = millis();
-  doc["deviceId"] = deviceId;
-  doc["temperature"] = data.temperature;
-  doc["humidity"] = data.humidity;
-  doc["moisture"] = data.moisture;
-  doc["ph"] = data.ph;
-  doc["ec"] = data.ec;
-  doc["nitrogen"] = data.nitrogen;
-  doc["phosphorus"] = data.phosphorus;
-  doc["potassium"] = data.potassium;
-  doc["waterLevel"] = data.waterLevel;
-  doc["batteryLevel"] = data.batteryLevel;
-  doc["signalStrength"] = data.signalStrength;
-
-  String jsonString;
-  serializeJson(doc, jsonString);
-  file.println(jsonString);
-  file.close();
-
-  Serial.println("Data stored offline");
-}
-
-void connectToWiFi() {
-  Serial.print("Connecting to WiFi");
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  uint8_t attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
-    delay(500);
-    Serial.print(".");
-    attempts++;
-  }
+void connectWiFiIfNeeded() {
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi connected");
-    Serial.println("IP address: " + WiFi.localIP().toString());
+    nextWifiRetryDelay = WIFI_RETRY_BASE_MS;
+    return;
+  }
+
+  const unsigned long now = millis();
+  if (now - lastWifiAttemptAt < nextWifiRetryDelay) {
+    return;
+  }
+
+  lastWifiAttemptAt = now;
+  Serial.printf("Connecting to WiFi SSID %s\n", WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASS);
+
+  const unsigned long connectDeadline = now + 15000;
+  while (WiFi.status() != WL_CONNECTED && millis() < connectDeadline) {
+    delay(400);
+    Serial.print(".");
+  }
+  Serial.println();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf("WiFi connected, IP: %s\n", WiFi.localIP().toString().c_str());
+    nextWifiRetryDelay = WIFI_RETRY_BASE_MS;
   } else {
-    Serial.println("\nWiFi connection failed. Will retry.");
+    nextWifiRetryDelay = min(nextWifiRetryDelay * 2, WIFI_RETRY_MAX_MS);
+    Serial.printf("WiFi retry scheduled in %lu ms\n", nextWifiRetryDelay);
   }
 }
 
-void sendHeartbeat() {
+void scheduleNextTelemetry() {
+  nextTelemetryInterval = random(MIN_TELEMETRY_INTERVAL_MS, MAX_TELEMETRY_INTERVAL_MS + 1000);
+}
+
+void sendTelemetry(int floatState, int soilMoisture, float temperature, float humidity) {
   if (WiFi.status() != WL_CONNECTED) {
+    Serial.println("Telemetry skipped: WiFi offline");
     return;
   }
 
   DynamicJsonDocument doc(256);
-  doc["deviceId"] = deviceId;
-  JsonObject metadata = doc.createNestedObject("metadata");
-  metadata["signalStrength"] = WiFi.RSSI();
-  metadata["ip"] = WiFi.localIP().toString();
+  doc["device_id"] = DEVICE_ID;
+  doc["soil_moisture"] = soilMoisture;
+  doc["temperature"] = temperature;
+  doc["humidity"] = humidity;
+  doc["float_sensor"] = floatState == HIGH ? 1 : 0;
 
   String payload;
   serializeJson(doc, payload);
 
-  for (int attempt = 1; attempt <= COMMAND_MAX_RETRIES; attempt++) {
-    HTTPClient http;
-    http.begin(heartbeatUrl);
-    http.addHeader("Content-Type", "application/json");
+  if (postJson(SENSOR_POST_URL, payload)) {
+    Serial.printf("Telemetry sent: %s\n", payload.c_str());
+  } else {
+    Serial.println("Telemetry delivery failed");
+  }
+}
 
-    int status = http.POST(payload);
+bool postJson(const String& url, const String& body, uint8_t maxAttempts) {
+  for (uint8_t attempt = 1; attempt <= maxAttempts; attempt++) {
+    WiFiClientSecure client;
+    client.setInsecure();
+    HTTPClient http;
+    if (!http.begin(client, url)) {
+      Serial.println("HTTP begin failed");
+      return false;
+    }
+
+    http.addHeader("Content-Type", "application/json");
+    const int status = http.POST(body);
+    const String response = http.getString();
     http.end();
 
-    if (status > 0) {
-      Serial.println("Heartbeat status: " + String(status));
-      return;
+    if (status > 0 && status < 400) {
+      Serial.printf("HTTP %d -> %s\n", status, response.c_str());
+      return true;
     }
 
-    Serial.printf("Heartbeat failed (attempt %d)\n", attempt);
-    if (attempt < COMMAND_MAX_RETRIES) {
-      delay(COMMAND_RETRY_DELAY_MS);
-    }
+    Serial.printf("HTTP POST failure (attempt %u) -> %d\n", attempt, status);
+    delay(COMMAND_RETRY_DELAY_MS * attempt);
+  }
+  return false;
+}
+
+void handlePendingCommands(int floatState) {
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
   }
 
-  Serial.println("Heartbeat send failed after retries");
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+  String url = String(COMMAND_POLL_URL) + "?deviceId=" + DEVICE_ID;
+  if (!http.begin(client, url)) {
+    Serial.println("Command poll failed to start HTTP session");
+    return;
+  }
+
+  const int status = http.GET();
+  if (status != 200) {
+    http.end();
+    return;
+  }
+
+  const String body = http.getString();
+  http.end();
+
+  DynamicJsonDocument doc(512);
+  if (deserializeJson(doc, body) != DeserializationError::Ok) {
+    Serial.println("Failed to parse command payload");
+    return;
+  }
+
+  JsonObject command = doc["command"];
+  if (command.isNull()) {
+    return;
+  }
+
+  const int commandId = command["id"] | 0;
+  if (commandId <= 0) {
+    return;
+  }
+
+  JsonVariant payload = command["payload"];
+  const int solenoid = payload.isNull() ? 0 : payload["solenoid"] | payload["channel"] | 0;
+  String desired = payload.isNull() ? String("") : String(payload["action"] | payload["desired"] | "");
+  desired.toLowerCase();
+  const bool turnOn = desired == "on";
+  const bool permitted = (floatState == HIGH) || !turnOn;
+
+  if (!permitted) {
+    disableAllSolenoids("float sensor safety");
+  } else {
+    applySolenoid(solenoid, turnOn, true);
+  }
+
+  DynamicJsonDocument ack(256);
+  ack["status"] = permitted ? "ok" : "error";
+  if (!permitted) {
+    ack["message"] = "Float sensor LOW; solenoids disabled";
+  }
+  JsonObject ackPayload = ack.createNestedObject("payload");
+  ackPayload["device_id"] = DEVICE_ID;
+  ackPayload["solenoid"] = solenoid;
+  ackPayload["action"] = turnOn ? "on" : "off";
+  ackPayload["float_sensor"] = floatState == HIGH ? 1 : 0;
+  if (!payload.isNull() && payload.containsKey("commandRowId")) {
+    ackPayload["commandRowId"] = payload["commandRowId"].as<int>();
+  }
+
+  String ackBody;
+  serializeJson(ack, ackBody);
+
+  const String ackUrl = String(COMMAND_ACK_BASE_URL) + "/" + String(commandId) + "/ack";
+  if (postJson(ackUrl, ackBody)) {
+    Serial.printf("Ack sent for command %d\n", commandId);
+  } else {
+    Serial.printf("Ack failed for command %d\n", commandId);
+  }
+}
+
+void applySolenoid(int index, bool turnOn, bool fromCommand) {
+  if (index < 1 || index > 3) {
+    Serial.println("Unknown solenoid index");
+    return;
+  }
+
+  uint8_t pin = SOLENOID_PIN_1;
+  if (index == 2) {
+    pin = SOLENOID_PIN_2;
+  } else if (index == 3) {
+    pin = SOLENOID_PIN_3;
+  }
+
+  solenoidStates[index - 1] = turnOn;
+  digitalWrite(pin, turnOn ? RELAY_ACTIVE_LEVEL : RELAY_INACTIVE_LEVEL);
+  Serial.printf("Solenoid %d %s%s\n", index, turnOn ? "ON" : "OFF", fromCommand ? " (command)" : "");
+}
+
+void disableAllSolenoids(const char* reason) {
+  digitalWrite(SOLENOID_PIN_1, RELAY_INACTIVE_LEVEL);
+  digitalWrite(SOLENOID_PIN_2, RELAY_INACTIVE_LEVEL);
+  digitalWrite(SOLENOID_PIN_3, RELAY_INACTIVE_LEVEL);
+  solenoidStates[0] = solenoidStates[1] = solenoidStates[2] = false;
+  Serial.printf("All solenoids OFF (%s)\n", reason ? reason : "manual");
+}
+
+int readFloatSensor() {
+  const int value = digitalRead(FLOAT_SENSOR_PIN);
+  Serial.printf("Float sensor state: %s\n", value == HIGH ? "HIGH" : "LOW");
+  return value;
+}
+
+int readSoilMoisture() {
+  const uint32_t sample = esp_random() & 0x0FFF;
+  return map(sample, 0, 0x0FFF, 35, 75);
+}
+
+float readTemperature() {
+  const uint32_t sample = esp_random() & 0x03FF;
+  return 26.0f + (sample % 50) / 10.0f;
+}
+
+float readHumidity() {
+  const uint32_t sample = esp_random() & 0x07FF;
+  return 55.0f + (sample % 200) / 10.0f;
 }

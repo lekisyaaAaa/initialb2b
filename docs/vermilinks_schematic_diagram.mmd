@@ -1,0 +1,30 @@
+flowchart LR
+    %% ===== Field Devices Layer =====
+    subgraph Field_Devices["Field Devices (IoT Layer)"]
+        ESP32["ESP32 Microcontroller\n(Wi-Fi Enabled)"]
+        MAX485["MAX485 RS485-to-TTL Transceiver"]
+        RS485_Sensors["RS485 Sensors\n• Soil Moisture\n• Temperature\n• Humidity\n• Water Level (optional)"]
+
+        RS485_Sensors --> MAX485 --> ESP32
+    end
+
+    %% ===== Cloud Layer =====
+    subgraph Render_Cloud["Render Cloud Infrastructure"]
+        Backend["Node.js / Express Backend API\n(REST + WebSocket via Socket.IO)"]
+        DB["Render Managed PostgreSQL\n• Sensor Readings\n• Device Registry\n• Command Logs"]
+
+        Backend --> DB
+    end
+
+    %% ===== Application Layer =====
+    subgraph Operators["Application Layer (Frontend & Users)"]
+        Frontend["React Frontend (Render Static Site)\n• Real-time Dashboard\n• CRUD Interfaces"]
+        Browser["User / Admin Web Browser"]
+        Browser --> Frontend
+    end
+
+    %% ===== Data Flow =====
+    ESP32 -->|"HTTPS POST /api/sensors\nWebSocket (Telemetry)"| Backend
+    Backend -->|"HTTP POST /command\nActuator Control"| ESP32
+    Frontend -->|"REST /api/* + WebSocket"| Backend
+    Backend -->|"Sequelize ORM"| DB

@@ -345,16 +345,19 @@ const checkThresholds = async (sensorData) => {
 // @desc    Submit sensor data (from ESP32)
 // @access  Public (ESP32 doesn't authenticate)
 router.post('/', [
-  body('deviceId').notEmpty().withMessage('Device ID is required'),
+  body('deviceId').optional().isString().trim().isLength({ min: 1, max: 120 }).withMessage('deviceId must be a non-empty string'),
+  body('device_id').optional().isString().trim().isLength({ min: 1, max: 120 }).withMessage('device_id must be a non-empty string'),
   body('temperature').optional().isNumeric().withMessage('Temperature must be a number'),
   body('humidity').optional().isNumeric().withMessage('Humidity must be a number'),
   body('moisture').optional().isNumeric().withMessage('Moisture must be a number'),
+  body('soil_moisture').optional().isNumeric().withMessage('soil_moisture must be a number'),
   body('ph').optional().isNumeric().withMessage('pH must be a number'),
   body('ec').optional().isNumeric().withMessage('EC must be a number'),
   body('nitrogen').optional().isNumeric().withMessage('Nitrogen must be a number'),
   body('phosphorus').optional().isNumeric().withMessage('Phosphorus must be a number'),
   body('potassium').optional().isNumeric().withMessage('Potassium must be a number'),
   body('waterLevel').optional().isInt().withMessage('Water level must be an integer'),
+  body('float_sensor').optional().isInt({ min: 0, max: 1 }).withMessage('float_sensor must be 0 or 1'),
   body('timestamp').optional().isISO8601().withMessage('Invalid timestamp format')
 ], async (req, res) => {
   try {
@@ -368,8 +371,12 @@ router.post('/', [
       });
     }
 
+    const normalizedDeviceId = (req.body.deviceId || req.body.device_id || '').toString().trim();
+    if (!normalizedDeviceId) {
+      return res.status(400).json({ success: false, message: 'Device ID is required' });
+    }
+
     const {
-      deviceId,
       temperature,
       humidity,
       moisture,
@@ -385,12 +392,15 @@ router.post('/', [
       isOfflineData = false
     } = req.body;
 
+    const soilMoisture = req.body.soil_moisture !== undefined ? Number(req.body.soil_moisture) : moisture;
+    const floatSensor = req.body.float_sensor !== undefined ? Number(req.body.float_sensor) : undefined;
+
     // Validate device registration and online status before accepting live sensor data
-    let device = await Device.findOne({ where: { deviceId } });
+    let device = await Device.findOne({ where: { deviceId: normalizedDeviceId } });
     if (!device || device.status !== 'online') {
       try {
         // Auto-register devices that skipped the heartbeat flow so readings are not discarded.
-        device = await deviceManager.markDeviceOnline(deviceId, {
+  device = await deviceManager.markDeviceOnline(normalizedDeviceId, {
           autoRegisteredAt: new Date().toISOString(),
           source: 'sensor_post_auto_register'
         });
@@ -405,24 +415,25 @@ router.post('/', [
     }
 
     // Enforce recent timestamp (avoid stale readings). Accept readings no older than 5 seconds
-    const ts = timestamp ? new Date(timestamp) : new Date();
+  const ts = timestamp ? new Date(timestamp) : new Date();
     if (Math.abs(Date.now() - ts.getTime()) > 5 * 1000) {
       // If the data is older than 5s, drop it to avoid false alerts from delayed sources
       return res.status(400).json({ success: false, message: 'Stale reading - rejected' });
     }
 
     // Create sensor data (Sequelize-compatible)
-  const sensorData = await SensorData.create({
-      deviceId,
+    const sensorData = await SensorData.create({
+      deviceId: normalizedDeviceId,
       temperature: temperature !== undefined ? parseFloat(temperature) : undefined,
       humidity: humidity !== undefined ? parseFloat(humidity) : undefined,
-      moisture: moisture !== undefined ? parseFloat(moisture) : undefined,
+      moisture: soilMoisture !== undefined ? parseFloat(soilMoisture) : undefined,
       ph: ph !== undefined ? parseFloat(ph) : undefined,
       ec: ec !== undefined ? parseFloat(ec) : undefined,
       nitrogen: nitrogen !== undefined ? parseFloat(nitrogen) : undefined,
       phosphorus: phosphorus !== undefined ? parseFloat(phosphorus) : undefined,
       potassium: potassium !== undefined ? parseFloat(potassium) : undefined,
-      waterLevel: waterLevel !== undefined ? parseInt(waterLevel) : undefined,
+      waterLevel: waterLevel !== undefined ? parseInt(waterLevel, 10) : (typeof floatSensor === 'number' ? floatSensor : undefined),
+      floatSensor: typeof floatSensor === 'number' ? floatSensor : undefined,
       timestamp: timestamp ? new Date(timestamp) : new Date(),
       batteryLevel: batteryLevel !== undefined ? parseFloat(batteryLevel) : undefined,
       signalStrength: signalStrength !== undefined ? parseFloat(signalStrength) : undefined,
@@ -438,7 +449,7 @@ router.post('/', [
     device && typeof device.metadata === 'object' ? device.metadata : {},
     { lastSeen: new Date().toISOString() }
   );
-  await deviceManager.markDeviceOnline(deviceId, metadataUpdate);
+  await deviceManager.markDeviceOnline(normalizedDeviceId, metadataUpdate);
 
   // Fire-and-forget alerts and broadcast
     (async () => {

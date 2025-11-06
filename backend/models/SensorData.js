@@ -43,6 +43,11 @@ const SensorData = sequelize.define('SensorData', {
     type: DataTypes.INTEGER,
     allowNull: true,
   },
+  floatSensor: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'float_sensor',
+  },
   batteryLevel: {
     type: DataTypes.FLOAT,
     allowNull: true,

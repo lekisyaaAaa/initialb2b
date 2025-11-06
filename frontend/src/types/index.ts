@@ -219,6 +219,7 @@ export interface Actuator {
   id: number;
   name: string;
   type?: string;
+  key?: string | null;
   status: boolean;
   mode: 'manual' | 'auto';
   lastUpdated: string;

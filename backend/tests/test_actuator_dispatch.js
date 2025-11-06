@@ -79,7 +79,7 @@ describe('ESP32 actuator dispatch', () => {
       .mockRejectedValueOnce(new Error('Timeout'))
       .mockResolvedValueOnce({ status: 200, data: { ok: true } });
 
-    const result = await sendCommand('Solenoid Valve', 'OFF');
+  const result = await sendCommand('Solenoid Valve 1', 'OFF');
     expect(result).toEqual({ ok: true });
     expect(axios.post).toHaveBeenCalledTimes(2);
   });

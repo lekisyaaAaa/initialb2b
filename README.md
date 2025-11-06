@@ -231,6 +231,58 @@ When a simulator is connected the actuator endpoints will return `forwarded: tru
 
 ---
 
+## IoT integration guide
+
+### Required Arduino libraries
+
+- `WiFi.h` (bundled with the ESP32 core)
+- `WiFiClientSecure.h` and `HTTPClient.h`
+- `ArduinoJson` (install through the Arduino Library Manager)
+- *(Optional)* `SocketIoClient.h` — only needed if you switch the firmware back to a socket-first transport
+
+### Firmware upload checklist
+
+1. Open `esp32/environmental_monitor.ino` in the Arduino IDE.
+2. Install the ESP32 board definitions (Tools → Board → Boards Manager → *esp32* by Espressif).
+3. Select **ESP32 Dev Module**, set Flash size to 4 MB, and choose the COM port detected when the board is connected.
+4. Review `esp32/config.h` and confirm the production credentials:
+   - SSID `Knights_IOT`
+   - Password `smbcr-5540`
+   - Telemetry endpoint `https://vermilinks-backend.onrender.com/api/sensors`
+5. Click **Verify** then **Upload**. Keep the board powered during flashing.
+
+### Wiring reference
+
+- **Power**: 5 V adapter into the ESP32 *VIN* pin and GND shared with all peripherals.
+- **RS485/MAX485** (soil probe): RO → GPIO16, DI → GPIO17, RE/DE → GPIO18.
+- **Solenoid relays**: IN1 → GPIO25, IN2 → GPIO26, IN3 → GPIO27 (active-low expected).
+- **Float sensor**: connect to GPIO5 (board silk “D5/DB5”) with the other lead tied to GND; use the ESP32 internal pull-up.
+- **Optional battery monitor / analog sensors**: wire as needed and update the firmware stubs.
+
+### Field test plan
+
+1. Open the Arduino Serial Monitor at 115200 baud and power the ESP32. Confirm Wi-Fi connection logs and HTTP 200 responses.
+2. In the Render dashboard open the backend logs – each telemetry POST should create a row in the `sensordata` table (check via `npm run migrate && npm run db:console` locally if needed).
+3. From the dashboard Solenoid Valve cards press **Turn ON/OFF** for each valve. A matching row should appear in `/api/command/status`, and Socket.IO updates should flip the badge in real time once the ESP32 acknowledges.
+4. Trip the float sensor (LOW). All valves should immediately show OFF and new commands must fail with a float-sensor warning (check the command message).
+
+### Deployment & troubleshooting notes
+
+- Render’s Basic Postgres tier requires allow-listing outbound IPs. Fetch them with:
+
+  ```powershell
+  Invoke-RestMethod -Headers @{ Authorization = "Bearer $env:RENDER_API_KEY" } \
+    -Uri "https://api.render.com/v1/services/srv-d43v9q0dl3ps73aarv30/outboundIPs"
+  ```
+
+  Add each `outboundIPs[]` value with `/32` under **Render → vermilinks-db → Networking → Allowed inbound IPs**.
+- Keep `DATABASE_URL` appended with `?sslmode=require`. The backend automatically applies `dialectOptions.ssl = { require: true, rejectUnauthorized: false }`.
+- If Sequelize migrations fail on Render, run `npm run migrate` from the service shell after the allow list is updated.
+- Socket.IO failures usually mean the browser is connecting to the wrong host. Confirm `REACT_APP_WS_URL` equals `wss://vermilinks-backend.onrender.com` (or the custom domain).
+- Float sensor wiring now depends on GPIO5 — if valves remain disabled, verify the reed switch is pulled HIGH when water is present.
+
+---
+
 ## Seeding admin user
 
 To provision an admin account in development, supply credentials via environment variables and run the seed script manually:

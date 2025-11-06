@@ -1,11 +1,64 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Pause, Play, RefreshCw, Settings2, WifiOff } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
-import { actuatorService, API_BASE_URL } from '../services/api';
+import { actuatorService, API_BASE_URL, commandService } from '../services/api';
 import { Actuator } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
 type Props = { className?: string; deviceOnline?: boolean };
+
+const TARGET_DEVICE_ID = 'ESP32-01';
+
+type ActuatorKey = 'pump' | 'solenoid1' | 'solenoid2' | 'solenoid3';
+
+const CONTROL_ACTUATORS: Array<{ key: ActuatorKey; label: string }> = [
+  { key: 'pump', label: 'Water Pump' },
+  { key: 'solenoid1', label: 'Solenoid Valve 1' },
+  { key: 'solenoid2', label: 'Solenoid Valve 2' },
+  { key: 'solenoid3', label: 'Solenoid Valve 3' },
+];
+
+const CONTROL_ACTUATOR_KEYS: ActuatorKey[] = CONTROL_ACTUATORS.map(({ key }) => key);
+
+const isActuatorKey = (value: unknown): value is ActuatorKey =>
+  typeof value === 'string' && CONTROL_ACTUATOR_KEYS.includes(value as ActuatorKey);
+
+const normalizeActuatorKey = (raw?: string | null): ActuatorKey | null => {
+  if (!raw) return null;
+  const value = raw.toString().trim().toLowerCase();
+  return isActuatorKey(value) ? (value as ActuatorKey) : null;
+};
+
+const inferActuatorKeyFromName = (name?: string | null): ActuatorKey | null => {
+  if (!name) return null;
+  const normalized = name.toString().trim().toLowerCase();
+  if (!normalized) return null;
+  if (normalized.includes('pump')) {
+    return 'pump';
+  }
+  const solenoidMatch = normalized.match(/solenoid(?:\s+valve)?\s*(\d)/);
+  if (solenoidMatch) {
+    const index = Number(solenoidMatch[1]);
+    const key = `solenoid${index}` as ActuatorKey;
+    if (isActuatorKey(key)) {
+      return key;
+    }
+  }
+  return null;
+};
+
+type ControlCardState = {
+  key: ActuatorKey;
+  label: string;
+  status: 'on' | 'off';
+  mode: 'auto' | 'manual';
+  pending: boolean;
+  modePending: boolean;
+  commandStatus: 'idle' | 'pending' | 'dispatched' | 'done' | 'failed';
+  message: string | null;
+  lastUpdated: string | null;
+  actuatorId?: number | null;
+};
 
 const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true }) => {
   const [actuators, setActuators] = useState<Actuator[]>([]);
@@ -13,7 +66,25 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
   const [error, setError] = useState<string | null>(null);
   const [socketState, setSocketState] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
   const [pending, setPending] = useState<Record<number, boolean>>({});
+  const [controlCards, setControlCards] = useState<ControlCardState[]>(() =>
+    CONTROL_ACTUATORS.map(({ key, label }) => ({
+      key,
+      label,
+      status: 'off',
+      mode: 'manual',
+      pending: false,
+      modePending: false,
+      commandStatus: 'idle',
+      message: null,
+      lastUpdated: null,
+      actuatorId: null,
+    }))
+  );
   const [socketMeta, setSocketMeta] = useState<{ host?: string; lastError?: string; attempts: number }>({ attempts: 0 });
+
+  const updateControlCard = useCallback((key: ActuatorKey, updater: (card: ControlCardState) => ControlCardState) => {
+    setControlCards((prev) => prev.map((card) => (card.key === key ? updater(card) : card)));
+  }, []);
   const [reconnectVersion, setReconnectVersion] = useState(0);
   const socketRef = useRef<Socket | null>(null);
   const { logout } = useAuth();
@@ -61,7 +132,19 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
       }
       return [...prev, update].sort((a, b) => a.id - b.id);
     });
-  }, []);
+    const inferredKey = inferActuatorKeyFromName(update.name);
+    if (inferredKey) {
+      updateControlCard(inferredKey, (card) => ({
+        ...card,
+        actuatorId: update.id,
+        mode: update.mode,
+        status: update.status ? 'on' : 'off',
+        lastUpdated: update.lastUpdated || card.lastUpdated,
+        pending: false,
+        modePending: false,
+      }));
+    }
+  }, [updateControlCard]);
 
   const fetchActuators = useCallback(async () => {
     const response = await actuatorService.list();
@@ -69,8 +152,23 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
     if (Array.isArray(payload)) {
       const sanitized = payload.map(sanitizeActuator).filter(Boolean) as Actuator[];
       setActuators(sanitized);
+      setControlCards((prev) =>
+        prev.map((card) => {
+          const match = sanitized.find((act) => inferActuatorKeyFromName(act.name) === card.key);
+          if (!match) {
+            return card;
+          }
+          return {
+            ...card,
+            actuatorId: match.id,
+            mode: match.mode,
+            status: match.status ? 'on' : 'off',
+            lastUpdated: match.lastUpdated || card.lastUpdated,
+          };
+        })
+      );
     }
-  }, [sanitizeActuator]);
+  }, [sanitizeActuator, inferActuatorKeyFromName]);
 
   const loadActuators = useCallback(async () => {
     setIsLoading(true);
@@ -101,6 +199,21 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
       if (Array.isArray(snapshot)) {
         const sanitized = snapshot.map(sanitizeActuator).filter(Boolean) as Actuator[];
         setActuators(sanitized);
+        setControlCards((prev) =>
+          prev.map((card) => {
+            const match = sanitized.find((act) => inferActuatorKeyFromName(act.name) === card.key);
+            if (!match) {
+              return card;
+            }
+            return {
+              ...card,
+              actuatorId: match.id,
+              mode: match.mode,
+              status: match.status ? 'on' : 'off',
+              lastUpdated: match.lastUpdated || card.lastUpdated,
+            };
+          })
+        );
       }
     };
 
@@ -110,19 +223,61 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
         applyActuatorUpdate(normalized);
       }
     };
+    const handleCommandUpdate = (payload: any) => {
+      if (!payload) {
+        return;
+      }
+      const targetDevice = (payload.deviceId || payload.device_id || payload.deviceID || '').toString();
+      if (targetDevice && targetDevice !== TARGET_DEVICE_ID) {
+        return;
+      }
+
+      let actuatorKey = normalizeActuatorKey(payload.actuator || payload.actuator_key || payload.actuatorKey);
+      if (!actuatorKey) {
+        const solenoidIndex = Number(payload.solenoid ?? payload.channel);
+        if (Number.isFinite(solenoidIndex) && solenoidIndex >= 1 && solenoidIndex <= 3) {
+          actuatorKey = `solenoid${solenoidIndex}` as ActuatorKey;
+        }
+      }
+      if (!actuatorKey) {
+        return;
+      }
+
+      updateControlCard(actuatorKey, (card) => {
+        const status = typeof payload.status === 'string' ? payload.status : card.commandStatus;
+        const action = typeof payload.action === 'string' ? payload.action.toLowerCase() : null;
+        const nextState = status === 'done' && action ? (action === 'on' ? 'on' : 'off') : card.status;
+        const allowedStatuses: ControlCardState['commandStatus'][] = ['idle', 'pending', 'dispatched', 'done', 'failed'];
+        const commandStatus = allowedStatuses.includes(status as ControlCardState['commandStatus'])
+          ? (status as ControlCardState['commandStatus'])
+          : card.commandStatus;
+        return {
+          ...card,
+          status: nextState,
+          commandStatus,
+          pending: false,
+          message: payload.message || payload.responseMessage || null,
+          lastUpdated: payload.ackReceivedAt || payload.updatedAt || new Date().toISOString(),
+        };
+      });
+    };
 
     socket.on('actuator_snapshot', handleSnapshot);
     socket.on('actuatorSnapshot', handleSnapshot);
     socket.on('actuatorUpdate', handleUpdate);
     socket.on('actuator_update', handleUpdate);
+    socket.on('actuator_command_update', handleCommandUpdate);
+    socket.on('solenoid_command_update', handleCommandUpdate);
 
     return () => {
       socket.off('actuator_snapshot', handleSnapshot);
       socket.off('actuatorSnapshot', handleSnapshot);
       socket.off('actuatorUpdate', handleUpdate);
       socket.off('actuator_update', handleUpdate);
+      socket.off('actuator_command_update', handleCommandUpdate);
+      socket.off('solenoid_command_update', handleCommandUpdate);
     };
-  }, [applyActuatorUpdate, sanitizeActuator]);
+  }, [applyActuatorUpdate, sanitizeActuator, updateControlCard, inferActuatorKeyFromName]);
 
   const handleManualReconnect = useCallback(() => {
     setSocketMeta((prev) => ({ ...prev, lastError: undefined }));
@@ -186,6 +341,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
         setSocketState('connected');
         setSocketMeta({ host, lastError: undefined, attempts: attempt });
         fetchActuators().catch(() => null);
+        loadCommandStatus().catch(() => null);
       });
 
       const onFailure = (err?: Error) => {
@@ -228,11 +384,129 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
       cancelled = true;
       disconnectActive();
     };
-  }, [fetchActuators, registerSocketHandlers, socketHosts, reconnectVersion]);
+  }, [fetchActuators, loadCommandStatus, registerSocketHandlers, socketHosts, reconnectVersion]);
 
   const setPendingState = useCallback((id: number, value: boolean) => {
     setPending((prev) => ({ ...prev, [id]: value }));
   }, []);
+
+  const loadCommandStatus = useCallback(async () => {
+    try {
+      const response = await commandService.status(TARGET_DEVICE_ID);
+      const latest = response?.data?.data?.latestByActuator;
+      if (Array.isArray(latest)) {
+        const latestMap = new Map<ActuatorKey, any>();
+        latest.forEach((entry: any) => {
+          const key =
+            normalizeActuatorKey(entry?.actuator || entry?.actuator_key || entry?.actuatorKey) ||
+            (() => {
+              const idx = Number(entry?.solenoid);
+              if (Number.isFinite(idx) && idx >= 1 && idx <= 3) {
+                return `solenoid${idx}` as ActuatorKey;
+              }
+              return null;
+            })();
+          if (key) {
+            latestMap.set(key, entry);
+          }
+        });
+
+        setControlCards((prev) =>
+          prev.map((card) => {
+            const match = latestMap.get(card.key);
+            if (!match) {
+              return card;
+            }
+            const status = typeof match.status === 'string' ? match.status : card.commandStatus;
+            const action = typeof match.action === 'string' ? match.action.toLowerCase() : null;
+            const nextState = status === 'done' && action ? (action === 'on' ? 'on' : 'off') : card.status;
+            const allowedStatuses: ControlCardState['commandStatus'][] = ['idle', 'pending', 'dispatched', 'done', 'failed'];
+            const commandStatus = allowedStatuses.includes(status as ControlCardState['commandStatus'])
+              ? (status as ControlCardState['commandStatus'])
+              : card.commandStatus;
+            return {
+              ...card,
+              status: nextState,
+              commandStatus,
+              message: match.responseMessage || match.message || null,
+              lastUpdated: match.updatedAt || match.createdAt || card.lastUpdated,
+              pending: false,
+              modePending: false,
+            };
+          })
+        );
+      }
+    } catch (err: any) {
+      console.debug('Failed to load command status', err?.message || err);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCommandStatus();
+  }, [loadCommandStatus]);
+
+  const handleActuatorCommand = useCallback(async (key: ActuatorKey, action: 'on' | 'off') => {
+    updateControlCard(key, (card) => ({
+      ...card,
+      pending: true,
+      commandStatus: 'pending',
+      message: null,
+    }));
+
+    try {
+      const response = await commandService.queue({ device_id: TARGET_DEVICE_ID, actuator: key, action });
+      const dispatched = Boolean(response?.data?.data?.dispatched);
+      updateControlCard(key, (card) => ({
+        ...card,
+        pending: false,
+        commandStatus: dispatched ? 'dispatched' : 'pending',
+        lastUpdated: new Date().toISOString(),
+      }));
+      setError(null);
+    } catch (err: any) {
+      const message = err?.response?.data?.message || err?.message || 'Unable to queue actuator command';
+      updateControlCard(key, (card) => ({
+        ...card,
+        pending: false,
+        commandStatus: 'failed',
+        message,
+      }));
+      setError(message);
+    }
+  }, [setError, updateControlCard]);
+
+  const handleControlModeSwitch = useCallback(async (key: ActuatorKey, nextMode: 'auto' | 'manual') => {
+    updateControlCard(key, (card) => ({ ...card, modePending: true, message: null }));
+    try {
+      const match = actuators.find((act) => inferActuatorKeyFromName(act.name) === key);
+      if (match) {
+        const response = await actuatorService.setMode(match.id, nextMode);
+        const updated = sanitizeActuator(response?.data?.data ?? response?.data);
+        if (updated) {
+          applyActuatorUpdate(updated);
+        }
+        updateControlCard(key, (card) => ({
+          ...card,
+          mode: nextMode,
+          modePending: false,
+          actuatorId: match.id,
+          lastUpdated: new Date().toISOString(),
+        }));
+      } else {
+        updateControlCard(key, (card) => ({
+          ...card,
+          mode: nextMode,
+          modePending: false,
+          lastUpdated: new Date().toISOString(),
+        }));
+      }
+      setError(null);
+    } catch (err: any) {
+      const message = err?.response?.data?.message || err?.message || 'Unable to change actuator mode';
+      updateControlCard(key, (card) => ({ ...card, modePending: false, message }));
+      setError(message);
+    }
+  }, [actuators, applyActuatorUpdate, sanitizeActuator, setError, updateControlCard, inferActuatorKeyFromName]);
 
   const handleToggle = useCallback(async (actuator: Actuator) => {
     if (!deviceOnline) {
@@ -252,7 +526,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
 
     setPendingState(actuator.id, true);
     try {
-  const response = await actuatorService.toggle(actuator.id);
+      const response = await actuatorService.toggle(actuator.id);
       const updated = sanitizeActuator(response?.data?.data ?? response?.data);
       if (updated) {
         applyActuatorUpdate(updated);
@@ -334,7 +608,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
             Actuator Controls
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400">
-            Monitor and manage the water pump and solenoid valve in real time.
+            Monitor and manage the water pump and solenoid valves in real time.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 justify-end text-right">
@@ -373,6 +647,111 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
           >
             <RefreshCw className="w-4 h-4" /> Refresh
           </button>
+        </div>
+      </div>
+
+      <div className="mt-6">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Pump & Valve Controls</h3>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {controlCards.map((card) => {
+            const statusLabel = card.status === 'on' ? 'ON' : 'OFF';
+            const statusClasses = card.status === 'on'
+              ? 'bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200'
+              : 'bg-slate-500/10 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300';
+            const modeLabel = card.mode === 'manual' ? 'Manual' : 'Auto';
+            const modeClasses = card.mode === 'manual'
+              ? 'text-amber-600 dark:text-amber-300'
+              : 'text-emerald-600 dark:text-emerald-300';
+            const hasInFlightCommand = card.commandStatus === 'pending' || card.commandStatus === 'dispatched';
+            const hasActuatorRecord = Boolean(card.actuatorId);
+            const isCommandBusy = card.pending || card.modePending || realtimeUnavailable || hasInFlightCommand;
+            const disabledOn = isCommandBusy || card.status === 'on' || card.mode !== 'manual';
+            const disabledOff = isCommandBusy || card.status === 'off' || card.mode !== 'manual';
+            const disabledAuto = card.modePending || card.mode === 'auto' || !hasActuatorRecord;
+            const disabledManual = card.modePending || card.mode === 'manual' || !hasActuatorRecord;
+
+            return (
+              <div key={card.key} className="rounded-xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900/80 p-5 shadow-sm">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{card.label}</h4>
+                    <p className={`text-sm font-medium mt-1 ${modeClasses}`}>Mode: {modeLabel}</p>
+                  </div>
+                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusClasses}`}>
+                    Status: {statusLabel}
+                  </span>
+                </div>
+
+                <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
+                  Last updated: {card.lastUpdated ? formatTimestamp(card.lastUpdated) : 'Not yet'}
+                </p>
+
+                {!hasActuatorRecord && (
+                  <p className="mt-2 text-xs text-amber-600 dark:text-amber-300">
+                    Awaiting actuator registration from backend — mode switching is temporarily disabled.
+                  </p>
+                )}
+
+                <div className="mt-5 grid gap-2">
+                  <button
+                    type="button"
+                    disabled={disabledOn}
+                    onClick={() => handleActuatorCommand(card.key, 'on')}
+                    className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      disabledOn
+                        ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
+                        : 'bg-emerald-500 text-white hover:bg-emerald-600'
+                    }`}
+                  >
+                    Turn ON
+                  </button>
+                  <button
+                    type="button"
+                    disabled={disabledOff}
+                    onClick={() => handleActuatorCommand(card.key, 'off')}
+                    className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                      disabledOff
+                        ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
+                        : 'bg-rose-500 text-white hover:bg-rose-600'
+                    }`}
+                  >
+                    Turn OFF
+                  </button>
+
+                  <div className="mt-1 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      disabled={disabledAuto}
+                      onClick={() => handleControlModeSwitch(card.key, 'auto')}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Switch to Auto
+                    </button>
+                    <button
+                      type="button"
+                      disabled={disabledManual}
+                      onClick={() => handleControlModeSwitch(card.key, 'manual')}
+                      className="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      Switch to Manual
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                  <span className="block font-medium">Command status: {card.commandStatus}</span>
+                  {card.message && (
+                    <span className="mt-1 block text-rose-600 dark:text-rose-300">{card.message}</span>
+                  )}
+                  {card.mode !== 'manual' && (
+                    <span className="mt-2 block text-amber-600 dark:text-amber-300">
+                      Automatic mode active — manual toggles are disabled until manual mode is selected.
+                    </span>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 

@@ -1,17 +1,18 @@
 #pragma once
 
-// Wi-Fi credentials
-#define WIFI_SSID "YourSSID"
-#define WIFI_PASS "YourPassword"
+// Wi-Fi credentials for the field deployment
+#define WIFI_SSID "Knights_IOT"
+#define WIFI_PASS "smbcr-5540"
 
 // Backend endpoints
-#define SERVER_URL "https://your-backend-domain/api/sensors"
-#define HEARTBEAT_URL "https://your-backend-domain/api/devices/heartbeat"
-#define COMMAND_ACK_URL "https://your-backend-domain/api/devices/ack"
+#define SENSOR_POST_URL "https://vermilinks-backend.onrender.com/api/sensors"
+#define COMMAND_QUEUE_URL "https://vermilinks-backend.onrender.com/api/command"
+#define COMMAND_POLL_URL "https://vermilinks-backend.onrender.com/api/device-commands/next"
+#define COMMAND_ACK_BASE_URL "https://vermilinks-backend.onrender.com/api/device-commands"
 
 // Device metadata
-#define DEVICE_ID "ESP32_001"
+#define DEVICE_ID "ESP32-01"
 
-// Command retry configuration
-#define COMMAND_RETRY_DELAY_MS 250
-#define COMMAND_MAX_RETRIES 2
+// Command retry configuration (milliseconds)
+#define COMMAND_RETRY_DELAY_MS 500
+#define COMMAND_MAX_RETRIES 3

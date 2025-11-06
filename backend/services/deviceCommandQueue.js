@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
 const DeviceCommand = require('../models/DeviceCommand');
+const Command = require('../models/Command');
 const Device = require('../models/Device');
 const logger = require('../utils/logger');
 const { markDeviceOnline } = require('./deviceManager');
@@ -97,6 +98,9 @@ async function dispatchCommand(command, hardwareId, socketOverride = null) {
     command.status = 'dispatched';
     command.dispatched_at = new Date();
     await command.save();
+    if (command.payload && command.payload.commandRowId) {
+      await Command.update({ status: 'dispatched' }, { where: { id: command.payload.commandRowId } });
+    }
     return true;
   } catch (error) {
     logger.warn('deviceCommandQueue: failed to emit command to socket', {
@@ -138,9 +142,16 @@ async function queueActuatorCommand({ hardwareId, actuatorName, desiredState, co
     throw new Error('Unable to resolve target device for actuator command');
   }
 
+  const commandRowId = context.commandRowId || null;
+  const actuatorKey = typeof context.actuator === 'string' ? String(context.actuator).toLowerCase() : null;
+  const solenoidIndex = typeof context.solenoid === 'number' ? context.solenoid : null;
+
   const payload = {
     actuator: actuatorName,
     desired: desiredState ? 'on' : 'off',
+    actuatorKey,
+    solenoid: solenoidIndex,
+    commandRowId,
     context,
   };
 
@@ -160,6 +171,10 @@ async function queueActuatorCommand({ hardwareId, actuatorName, desiredState, co
     });
   }
 
+  if (commandRowId) {
+    await Command.update({ status: dispatched ? 'dispatched' : 'pending' }, { where: { id: commandRowId } });
+  }
+
   return { command, dispatched };
 }
 
@@ -172,6 +187,9 @@ async function markCommandPending(commandId, message) {
   command.response_payload = message ? { error: message } : null;
   command.response_received_at = null;
   await command.save();
+  if (command.payload && command.payload.commandRowId) {
+    await Command.update({ status: 'pending', responseMessage: message || null }, { where: { id: command.payload.commandRowId } });
+  }
   return command;
 }
 
@@ -183,6 +201,9 @@ async function markCommandCompleted(commandId, info = {}) {
   command.response_payload = info && info.response ? info.response : info;
   command.response_received_at = new Date();
   await command.save();
+  if (command.payload && command.payload.commandRowId) {
+    await Command.update({ status: 'done' }, { where: { id: command.payload.commandRowId } });
+  }
   return command;
 }
 
@@ -195,6 +216,39 @@ async function handleCommandAck({ commandId, success, payload = null, message = 
   command.response_payload = payload || (message ? { message } : null);
   command.response_received_at = new Date();
   await command.save();
+
+  let linkedCommand = null;
+  if (command.payload && command.payload.commandRowId) {
+    linkedCommand = await Command.findByPk(command.payload.commandRowId);
+    if (linkedCommand) {
+      linkedCommand.status = success ? 'done' : 'failed';
+      linkedCommand.responseMessage = message || null;
+      await linkedCommand.save();
+    }
+  }
+
+  try {
+    if (global.io) {
+      const summary = {
+        id: linkedCommand ? linkedCommand.id : null,
+        deviceId: linkedCommand ? linkedCommand.deviceId : null,
+        actuator: linkedCommand ? linkedCommand.actuator : (payload && payload.actuatorKey ? payload.actuatorKey : null),
+        solenoid: payload && typeof payload.solenoid !== 'undefined' ? payload.solenoid : null,
+        action: linkedCommand ? linkedCommand.action : (payload && payload.action ? payload.action : null),
+        status: success ? 'done' : 'failed',
+        message: message || null,
+        ackReceivedAt: new Date().toISOString(),
+      };
+      global.io.emit('actuator_command_update', summary);
+      global.io.emit('solenoid_command_update', summary);
+      if (summary.deviceId) {
+        global.io.to(`device:${summary.deviceId}`).emit('actuator_command_update', summary);
+        global.io.to(`device:${summary.deviceId}`).emit('solenoid_command_update', summary);
+      }
+    }
+  } catch (ioError) {
+    logger.debug('deviceCommandQueue: failed to broadcast solenoid_command_update', ioError && ioError.message ? ioError.message : ioError);
+  }
 
   return {
     command,

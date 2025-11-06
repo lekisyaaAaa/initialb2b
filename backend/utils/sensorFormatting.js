@@ -8,6 +8,7 @@ const SENSOR_FIELD_CONFIG = [
   { key: 'phosphorus', label: 'Phosphorus', unit: 'mg/kg' },
   { key: 'potassium', label: 'Potassium', unit: 'mg/kg' },
   { key: 'waterLevel', label: 'Water Level', unit: '' },
+  { key: 'floatSensor', label: 'Float Sensor', unit: '' },
   { key: 'batteryLevel', label: 'Battery Level', unit: '%' },
   { key: 'signalStrength', label: 'Signal Strength', unit: 'dBm' },
 ];
