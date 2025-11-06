@@ -29,7 +29,9 @@ const {
   ensureDefaultActuators,
   listActuators,
   scheduleAutomaticControl,
+  markDeviceAck,
 } = require('./services/actuatorService');
+const deviceCommandQueue = require('./services/deviceCommandQueue');
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -40,6 +42,7 @@ const actuatorRoutes = require('./routes/actuators');
 const maintenanceRoutes = require('./routes/maintenance');
 const notificationRoutes = require('./routes/notifications');
 const actuatorControlRoutes = require('./routes/actuatorControl');
+const deviceCommandRoutes = require('./routes/deviceCommands');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -140,6 +143,19 @@ global.io = io;
 
 io.on('connection', async (socket) => {
   logger.info('Socket.IO client connected', { socketId: socket.id });
+
+  const handshakeDeviceId = (() => {
+    const authId = socket.handshake && socket.handshake.auth ? socket.handshake.auth.deviceId : null;
+    const queryId = socket.handshake && socket.handshake.query ? socket.handshake.query.deviceId : null;
+    const candidate = authId || queryId;
+    return candidate && String(candidate).trim().length > 0 ? String(candidate).trim() : null;
+  })();
+
+  if (handshakeDeviceId) {
+    const metadata = (socket.handshake && socket.handshake.auth && socket.handshake.auth.metadata) || {};
+    deviceCommandQueue.registerSocket(handshakeDeviceId, socket, metadata);
+  }
+
   try {
     const actuators = await listActuators();
     socket.emit('actuator_snapshot', actuators);
@@ -150,8 +166,58 @@ io.on('connection', async (socket) => {
     socket.emit('actuatorSnapshot', []);
   }
 
+  const handleAckEvent = async (payload = {}, overrideSuccess = null) => {
+    const commandId = payload.commandId || payload.id;
+    if (!commandId) {
+      return;
+    }
+
+    const computedSuccess = overrideSuccess !== null
+      ? overrideSuccess
+      : !(payload.status === 'error' || payload.status === 'failed');
+
+    const ackPayload = payload.payload || payload.data || null;
+    const message = payload.message || null;
+
+    try {
+      const result = await deviceCommandQueue.handleCommandAck({
+        commandId,
+        success: computedSuccess,
+        payload: ackPayload,
+        message,
+      });
+
+      if (result && result.command && result.command.payload && result.command.payload.actuator) {
+        await markDeviceAck(result.command.payload.actuator, computedSuccess, { message });
+      }
+
+      if (socket.data && socket.data.hardwareId) {
+        await deviceCommandQueue.dispatchPendingCommands(socket.data.hardwareId);
+      }
+    } catch (ackError) {
+      logger.warn('Socket.IO command acknowledgement failed', {
+        commandId,
+        error: ackError && ackError.message ? ackError.message : ackError,
+      });
+    }
+  };
+
+  socket.on('device:register', async (payload = {}) => {
+    const hardwareId = payload.deviceId || payload.hardwareId || payload.id;
+    if (!hardwareId) {
+      return;
+    }
+    await deviceCommandQueue.registerSocket(String(hardwareId).trim(), socket, payload.metadata || {});
+  });
+
+  socket.on('command:ack', (payload) => handleAckEvent(payload, null));
+  socket.on('command:ok', (payload) => handleAckEvent(payload, true));
+  socket.on('command:error', (payload) => handleAckEvent(payload, false));
+
   socket.on('disconnect', () => {
-    logger.info('Socket.IO client disconnected', { socketId: socket.id });
+    const hardwareId = socket.data && socket.data.hardwareId ? socket.data.hardwareId : null;
+    deviceCommandQueue.deregisterSocket(hardwareId, socket);
+    logger.info('Socket.IO client disconnected', { socketId: socket.id, hardwareId });
   });
 });
 
@@ -162,6 +228,8 @@ const wss = new WebSocket.Server({ server });
 global.wsConnections = new Set();
 // Optional mapping from deviceId -> ws connection (when ESP32 registers itself)
 global.deviceSockets = new Map();
+
+deviceCommandQueue.startCommandRetryLoop();
 
 wss.on('connection', (ws) => {
   logger.info('New WebSocket connection established');
@@ -174,7 +242,7 @@ wss.on('connection', (ws) => {
       if (msg && msg.type === 'register' && msg.deviceId) {
         ws.deviceId = msg.deviceId;
         global.deviceSockets.set(msg.deviceId, ws);
-  logger.debug('WebSocket client registered', { deviceId: msg.deviceId });
+        logger.debug('WebSocket client registered', { deviceId: msg.deviceId });
       }
     } catch (e) {
       // ignore non-JSON or unexpected messages
@@ -260,6 +328,7 @@ app.use('/api/sensors', sensorRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/actuators', actuatorRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
+app.use('/api/device-commands', deviceCommandRoutes);
 // Admin authentication + management routes
 const adminAuthRoutes = require('./routes/adminAuth');
 app.use('/api/admin', adminAuthRoutes);

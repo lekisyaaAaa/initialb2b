@@ -27,6 +27,16 @@ const Actuator = sequelize.define('Actuator', {
     allowNull: false,
     defaultValue: DataTypes.NOW,
   },
+  deviceAck: {
+    type: DataTypes.BOOLEAN,
+    allowNull: true,
+    field: 'device_ack',
+  },
+  deviceAckMessage: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    field: 'device_ack_message',
+  },
 }, {
   tableName: 'actuators',
   timestamps: false,

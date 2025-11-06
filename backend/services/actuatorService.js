@@ -3,6 +3,7 @@ const Actuator = require('../models/Actuator');
 const ActuatorLog = require('../models/ActuatorLog');
 const SensorData = require('../models/SensorData');
 const sequelize = require('./database_pg');
+const deviceCommandQueue = require('./deviceCommandQueue');
 
 const DEFAULT_ACTUATORS = [
   { name: 'Water Pump', type: 'pump' },
@@ -49,6 +50,27 @@ function sanitizeActuator(actuator) {
     deviceAck: typeof data.deviceAck === 'boolean' ? data.deviceAck : undefined,
     deviceAckMessage: data.deviceAckMessage || undefined,
   };
+}
+
+function resolveDeviceTarget(candidate) {
+  const normalized = candidate && String(candidate).trim();
+  if (normalized) {
+    return normalized;
+  }
+
+  if (deviceCommandQueue && typeof deviceCommandQueue.getDefaultDeviceId === 'function') {
+    const defaultFromQueue = deviceCommandQueue.getDefaultDeviceId();
+    if (defaultFromQueue) {
+      return defaultFromQueue;
+    }
+  }
+
+  const envFallback = process.env.PRIMARY_DEVICE_ID || process.env.DEFAULT_DEVICE_ID;
+  if (envFallback && envFallback.trim().length > 0) {
+    return envFallback.trim();
+  }
+
+  return null;
 }
 
 async function ensureEnumSupport() {
@@ -101,10 +123,8 @@ async function ensureDefaultActuators() {
       existing.status = false;
       existing.mode = 'auto';
       existing.lastUpdated = new Date();
-      if (typeof existing.setDataValue === 'function') {
-        existing.setDataValue('deviceAck', true);
-        existing.setDataValue('deviceAckMessage', null);
-      }
+      existing.deviceAck = true;
+      existing.deviceAckMessage = null;
       await existing.save();
     }
   }
@@ -206,22 +226,51 @@ async function updateActuatorStatus(actuator, status, options = {}) {
 
   actuator.status = desired;
   actuator.lastUpdated = new Date();
-  actuator.setDataValue('deviceAck', true);
-  actuator.setDataValue('deviceAckMessage', null);
+  actuator.deviceAck = true;
+  actuator.deviceAckMessage = null;
   await actuator.save();
 
+  const hardwareId = resolveDeviceTarget(options.deviceId);
+  let queueResult = null;
+  if (hardwareId) {
+    try {
+      queueResult = await deviceCommandQueue.queueActuatorCommand({
+        hardwareId,
+        actuatorName: actuator.name,
+        desiredState: desired,
+        context: options,
+      });
+    } catch (queueError) {
+      console.warn('actuatorService: failed to queue actuator command:', queueError && queueError.message ? queueError.message : queueError);
+    }
+  }
+
   let dispatchResult = { ok: true, message: null };
-  try {
-    dispatchResult = await sendToEsp32(actuator, desired);
-  } catch (err) {
-    dispatchResult = { ok: false, message: err && err.message ? err.message : 'Unknown ESP32 error' };
+  let usedHttpFallback = false;
+
+  if (!queueResult || queueResult.dispatched !== true) {
+    usedHttpFallback = true;
+    try {
+      dispatchResult = await sendToEsp32(actuator, desired);
+    } catch (err) {
+      dispatchResult = { ok: false, message: err && err.message ? err.message : 'Unknown ESP32 error' };
+    }
   }
 
   if (!dispatchResult.ok) {
     console.warn(`[ACTUATOR → ESP32] ${new Date().toISOString()} Dispatch failed: ${dispatchResult.message}`);
-    actuator.setDataValue('deviceAck', false);
-    actuator.setDataValue('deviceAckMessage', dispatchResult.message);
+    actuator.deviceAck = false;
+    actuator.deviceAckMessage = dispatchResult.message;
     await actuator.save();
+
+    if (queueResult && queueResult.command) {
+      await deviceCommandQueue.markCommandPending(queueResult.command.id, dispatchResult.message);
+    }
+  } else if (queueResult && queueResult.command && usedHttpFallback) {
+    await deviceCommandQueue.markCommandCompleted(queueResult.command.id, {
+      transport: 'http',
+      response: dispatchResult,
+    });
   }
 
   if (!options.skipLog) {
@@ -253,8 +302,8 @@ async function updateActuatorMode(actuator, mode, options = {}) {
 
   actuator.mode = mode;
   actuator.lastUpdated = new Date();
-  actuator.setDataValue('deviceAck', true);
-  actuator.setDataValue('deviceAckMessage', null);
+  actuator.deviceAck = true;
+  actuator.deviceAckMessage = null;
   await actuator.save();
 
   if (!options.skipLog) {
@@ -265,6 +314,30 @@ async function updateActuatorMode(actuator, mode, options = {}) {
   await broadcastActuator(actuator);
 
   return { changed: true, actuator };
+}
+
+async function markDeviceAck(actuatorName, ackOk, { message = null } = {}) {
+  if (!actuatorName) {
+    return null;
+  }
+
+  const canonical = DEFAULT_ACTUATORS.find((item) => normalizeName(item.name) === normalizeName(actuatorName));
+  if (!canonical) {
+    return null;
+  }
+
+  const actuator = await Actuator.findOne({ where: { name: canonical.name } });
+  if (!actuator) {
+    return null;
+  }
+
+  actuator.deviceAck = Boolean(ackOk);
+  actuator.deviceAckMessage = ackOk ? null : (message || actuator.deviceAckMessage || null);
+  actuator.lastUpdated = new Date();
+  await actuator.save();
+  await broadcastActuator(actuator);
+
+  return sanitizeActuator(actuator);
 }
 
 async function runAutomaticControl({ source = 'scheduler' } = {}) {
@@ -378,4 +451,5 @@ module.exports = {
   runAutomaticControl,
   scheduleAutomaticControl,
   sanitizeActuator,
+  markDeviceAck,
 };
