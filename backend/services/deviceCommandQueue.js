@@ -1,6 +1,6 @@
 const { Op } = require('sequelize');
 const DeviceCommand = require('../models/DeviceCommand');
-const Command = require('../models/Command');
+const { Command } = require('../models');
 const Device = require('../models/Device');
 const logger = require('../utils/logger');
 const { markDeviceOnline } = require('./deviceManager');

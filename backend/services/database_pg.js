@@ -62,7 +62,7 @@ function loadModels() {
 	require('../models/ActuatorLog');
 	require('../models/DevicePort');
 	require('../models/DeviceCommand');
-	require('../models/Command');
+	require('../models').Command;
 	require('../models/Admin');
 	require('../models/AdminOTP');
 	require('../models/PasswordResetToken');

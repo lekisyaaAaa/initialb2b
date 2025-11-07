@@ -4,7 +4,7 @@ function toLegacySolenoid(actuatorKey) {
 }
 const express = require('express');
 const { body, query, validationResult } = require('express-validator');
-const Command = require('../models/Command');
+const { Command } = require('../models');
 const deviceCommandQueue = require('../services/deviceCommandQueue');
 
 const router = express.Router();
