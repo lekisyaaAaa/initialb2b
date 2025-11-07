@@ -3,7 +3,11 @@ const path = require('path');
 const dotenv = require('dotenv');
 const logger = require('../utils/logger');
 
-dotenv.config({ path: path.join(__dirname, '..', '.env'), override: true });
+const rawNodeEnv = (process.env.NODE_ENV || '').toLowerCase();
+const isTestEnv = rawNodeEnv === 'test' || Boolean(process.env.JEST_WORKER_ID);
+const envFile = isTestEnv ? '.env.test' : '.env';
+
+dotenv.config({ path: path.join(__dirname, '..', envFile), override: true });
 
 const baseOptions = {
 	logging: false,
@@ -15,26 +19,38 @@ const baseOptions = {
 	}
 };
 
-const databaseUrl = process.env.DATABASE_URL || '';
-const sslFlagFromUrl = /[?&]sslmode=require/i.test(databaseUrl);
-const sslFlagFromEnv = (process.env.PGSSLMODE || '').toLowerCase() === 'require';
-const shouldRequireSsl = sslFlagFromUrl || sslFlagFromEnv;
-
-if (!process.env.DATABASE_URL) {
-	logger.fatal('DATABASE_URL is required but missing. Set a PostgreSQL connection string in your environment.');
-	process.exit(1);
-}
-
-const dialectOptions = shouldRequireSsl
-	? { ssl: { require: true, rejectUnauthorized: false } }
-	: {};
-
-let sequelize = new Sequelize(process.env.DATABASE_URL, {
-	...baseOptions,
-	dialect: 'postgres',
-	dialectOptions,
-});
+let sequelize;
 let currentDialect = 'postgres';
+
+if (isTestEnv) {
+	// Use SQLite in-memory DB to keep tests hermetic and fast.
+	sequelize = new Sequelize({
+		dialect: 'sqlite',
+		storage: process.env.SQLITE_STORAGE || ':memory:',
+		logging: false
+	});
+	currentDialect = 'sqlite';
+} else {
+	const databaseUrl = process.env.DATABASE_URL || '';
+	const sslFlagFromUrl = /[?&]sslmode=require/i.test(databaseUrl);
+	const sslFlagFromEnv = (process.env.PGSSLMODE || '').toLowerCase() === 'require';
+	const shouldRequireSsl = sslFlagFromUrl || sslFlagFromEnv;
+
+	if (!process.env.DATABASE_URL) {
+		logger.fatal('DATABASE_URL is required but missing. Set a PostgreSQL connection string in your environment.');
+		process.exit(1);
+	}
+
+	const dialectOptions = shouldRequireSsl
+		? { ssl: { require: true, rejectUnauthorized: false } }
+		: {};
+
+	sequelize = new Sequelize(process.env.DATABASE_URL, {
+		...baseOptions,
+		dialect: 'postgres',
+		dialectOptions,
+	});
+}
 
 function loadModels() {
 	require('../models/User');
@@ -53,8 +69,6 @@ function loadModels() {
 }
 
 let setupPromise = null;
-
-const isTestEnv = (process.env.NODE_ENV || '').toLowerCase() === 'test' || Boolean(process.env.JEST_WORKER_ID);
 
 async function ensureDatabaseSetup(options = {}) {
 	if (setupPromise) {

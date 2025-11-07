@@ -168,7 +168,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
         })
       );
     }
-  }, [sanitizeActuator, inferActuatorKeyFromName]);
+  }, [sanitizeActuator]);
 
   const loadActuators = useCallback(async () => {
     setIsLoading(true);
@@ -277,11 +277,62 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
       socket.off('actuator_command_update', handleCommandUpdate);
       socket.off('solenoid_command_update', handleCommandUpdate);
     };
-  }, [applyActuatorUpdate, sanitizeActuator, updateControlCard, inferActuatorKeyFromName]);
+  }, [applyActuatorUpdate, sanitizeActuator, updateControlCard]);
 
   const handleManualReconnect = useCallback(() => {
     setSocketMeta((prev) => ({ ...prev, lastError: undefined }));
     setReconnectVersion((value) => value + 1);
+  }, []);
+
+  const loadCommandStatus = useCallback(async () => {
+    try {
+      const response = await commandService.status(TARGET_DEVICE_ID);
+      const latest = response?.data?.data?.latestByActuator;
+      if (Array.isArray(latest)) {
+        const latestMap = new Map<ActuatorKey, any>();
+        latest.forEach((entry: any) => {
+          const key =
+            normalizeActuatorKey(entry?.actuator || entry?.actuator_key || entry?.actuatorKey) ||
+            (() => {
+              const idx = Number(entry?.solenoid);
+              if (Number.isFinite(idx) && idx >= 1 && idx <= 3) {
+                return `solenoid${idx}` as ActuatorKey;
+              }
+              return null;
+            })();
+          if (key) {
+            latestMap.set(key, entry);
+          }
+        });
+
+        setControlCards((prev) =>
+          prev.map((card) => {
+            const match = latestMap.get(card.key);
+            if (!match) {
+              return card;
+            }
+            const status = typeof match.status === 'string' ? match.status : card.commandStatus;
+            const action = typeof match.action === 'string' ? match.action.toLowerCase() : null;
+            const nextState = status === 'done' && action ? (action === 'on' ? 'on' : 'off') : card.status;
+            const allowedStatuses: ControlCardState['commandStatus'][] = ['idle', 'pending', 'dispatched', 'done', 'failed'];
+            const commandStatus = allowedStatuses.includes(status as ControlCardState['commandStatus'])
+              ? (status as ControlCardState['commandStatus'])
+              : card.commandStatus;
+            return {
+              ...card,
+              status: nextState,
+              commandStatus,
+              message: match.responseMessage || match.message || null,
+              lastUpdated: match.updatedAt || match.createdAt || card.lastUpdated,
+              pending: false,
+              modePending: false,
+            };
+          })
+        );
+      }
+    } catch (err: any) {
+      console.debug('Failed to load command status', err?.message || err);
+    }
   }, []);
 
   useEffect(() => {
@@ -390,57 +441,6 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
     setPending((prev) => ({ ...prev, [id]: value }));
   }, []);
 
-  const loadCommandStatus = useCallback(async () => {
-    try {
-      const response = await commandService.status(TARGET_DEVICE_ID);
-      const latest = response?.data?.data?.latestByActuator;
-      if (Array.isArray(latest)) {
-        const latestMap = new Map<ActuatorKey, any>();
-        latest.forEach((entry: any) => {
-          const key =
-            normalizeActuatorKey(entry?.actuator || entry?.actuator_key || entry?.actuatorKey) ||
-            (() => {
-              const idx = Number(entry?.solenoid);
-              if (Number.isFinite(idx) && idx >= 1 && idx <= 3) {
-                return `solenoid${idx}` as ActuatorKey;
-              }
-              return null;
-            })();
-          if (key) {
-            latestMap.set(key, entry);
-          }
-        });
-
-        setControlCards((prev) =>
-          prev.map((card) => {
-            const match = latestMap.get(card.key);
-            if (!match) {
-              return card;
-            }
-            const status = typeof match.status === 'string' ? match.status : card.commandStatus;
-            const action = typeof match.action === 'string' ? match.action.toLowerCase() : null;
-            const nextState = status === 'done' && action ? (action === 'on' ? 'on' : 'off') : card.status;
-            const allowedStatuses: ControlCardState['commandStatus'][] = ['idle', 'pending', 'dispatched', 'done', 'failed'];
-            const commandStatus = allowedStatuses.includes(status as ControlCardState['commandStatus'])
-              ? (status as ControlCardState['commandStatus'])
-              : card.commandStatus;
-            return {
-              ...card,
-              status: nextState,
-              commandStatus,
-              message: match.responseMessage || match.message || null,
-              lastUpdated: match.updatedAt || match.createdAt || card.lastUpdated,
-              pending: false,
-              modePending: false,
-            };
-          })
-        );
-      }
-    } catch (err: any) {
-      console.debug('Failed to load command status', err?.message || err);
-    }
-  }, []);
-
   useEffect(() => {
     loadCommandStatus();
   }, [loadCommandStatus]);
@@ -506,7 +506,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
       updateControlCard(key, (card) => ({ ...card, modePending: false, message }));
       setError(message);
     }
-  }, [actuators, applyActuatorUpdate, sanitizeActuator, setError, updateControlCard, inferActuatorKeyFromName]);
+  }, [actuators, applyActuatorUpdate, sanitizeActuator, setError, updateControlCard]);
 
   const handleToggle = useCallback(async (actuator: Actuator) => {
     if (!deviceOnline) {

@@ -22,23 +22,15 @@ This script will:
 # Install PM2 globally (one-time setup)
 npm install -g pm2
 
+
 # Start all services
 pm2 start ecosystem.config.js
 
-# Check status
-pm2 list
-
 # View logs
 pm2 logs
-
-# Stop services
-pm2 stop all
 ```
 
-## 🔧 Troubleshooting
-
 ### "Unable to connect to server" Error
-
 If you get connection errors when trying to sign in:
 
 1. **Check if backend is running:**

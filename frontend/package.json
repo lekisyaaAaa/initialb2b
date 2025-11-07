@@ -22,12 +22,12 @@
   "scripts": {
     "ui-test:login": "node tests/ui-login-test.js",
     "start": "cross-env PORT=3002 node ./scripts/wrapped-start.js",
-    "dev": "cross-env CI=false GENERATE_SOURCEMAP=false PORT=3002 react-scripts start",
-    "start:dev": "cross-env CI=false GENERATE_SOURCEMAP=false PORT=3002 react-scripts start",
-    "start:supervised": "react-scripts start",
-    "build": "react-scripts build",
+  "dev": "cross-env CI=false GENERATE_SOURCEMAP=false PORT=3002 react-app-rewired start",
+  "start:dev": "cross-env CI=false GENERATE_SOURCEMAP=false PORT=3002 react-app-rewired start",
+  "start:supervised": "react-app-rewired start",
+  "build": "react-app-rewired build",
     "preview": "node ./scripts/serve-build.js",
-    "test": "react-scripts test",
+  "test": "react-app-rewired test",
     "eject": "react-scripts eject"
   },
   "eslintConfig": {
@@ -81,6 +81,7 @@
     "cross-env": "^7.0.3",
     "http-server": "^14.1.1",
     "postcss": "^8.5.6",
+  "react-app-rewired": "^2.2.1",
     "puppeteer": "^24.21.0",
     "serve-handler": "^6.1.6",
     "tailwindcss": "^3.4.17",
