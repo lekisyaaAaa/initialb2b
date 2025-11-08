@@ -241,3 +241,29 @@ export interface DevicePort {
   status?: DevicePortStatus;
   known?: boolean;
 }
+
+export type SystemTestStatus = 'pending' | 'running' | 'ok' | 'warn' | 'failed' | 'error';
+
+export interface SystemTestRecord {
+  id?: number;
+  runId: string | null;
+  section: string;
+  status: SystemTestStatus;
+  details?: string | null;
+  timestamp?: string | null;
+  metadata?: Record<string, any> | null;
+  durationMs?: number | null;
+}
+
+export interface SystemTestRun {
+  runId: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  overallStatus: SystemTestStatus;
+  entries: SystemTestRecord[];
+}
+
+export interface SystemTestSnapshot {
+  latest: SystemTestRecord[];
+  history: SystemTestRun[];
+}

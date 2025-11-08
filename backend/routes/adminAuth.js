@@ -50,4 +50,6 @@ router.post(
   adminAuthController.resetPassword,
 );
 
+router.get('/session', adminAuthController.getSession);
+
 module.exports = router;

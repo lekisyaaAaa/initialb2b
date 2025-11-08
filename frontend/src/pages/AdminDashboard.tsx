@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { Bell, Check, Settings, Activity, Users, BarChart3, Calendar, RefreshCw } from 'lucide-react';
 import SensorCharts from '../components/SensorCharts';
@@ -615,6 +615,12 @@ export default function AdminDashboard(): React.ReactElement {
               <span className="font-medium">Latency:</span>
               <span>{systemStatus.apiLatency}ms</span>
             </div>
+            <Link
+              to="/admin/system-tests"
+              className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition-colors hover:border-emerald-400 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
+            >
+              System Tests
+            </Link>
             <button
               type="button"
               onClick={() => setShowLogoutConfirm(true)}
@@ -692,6 +698,19 @@ export default function AdminDashboard(): React.ReactElement {
       <main className="relative max-w-7xl mx-auto space-y-6">
         {/* Background accent */}
         <div className="pointer-events-none absolute -top-20 left-1/2 transform -translate-x-1/2 w-[1100px] h-[300px] bg-gradient-to-r from-rose-200 via-yellow-100 to-indigo-100 opacity-30 blur-3xl rounded-full dark:opacity-20" />
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-gray-500 dark:text-gray-300">
+            Monitor every subsystem and jump into the readiness dashboard to review automated checks.
+          </div>
+          <Link
+            to="/admin/system-tests"
+            data-e2e-system-tests-link
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:border-emerald-400 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
+          >
+            View System Tests Dashboard
+          </Link>
+        </div>
 
         {/* Main Navigation Tabs */}
         <div className="bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 rounded-lg shadow">

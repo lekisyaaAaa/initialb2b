@@ -3,15 +3,17 @@ require('dotenv').config({ path: path.join(__dirname, '..', '.env'), override: t
 
 const sequelize = require('../services/database_pg');
 const Admin = require('../models/Admin');
-const AdminOTP = require('../models/AdminOTP');
+const Otp = require('../models/Otp');
+const UserSession = require('../models/UserSession');
 
 (async () => {
   try {
     await sequelize.authenticate();
     console.log('Connected to database, syncing admin models...');
     await Admin.sync();
-    await AdminOTP.sync();
-    console.log('✅ Admin models synced');
+    await Otp.sync();
+    await UserSession.sync();
+    console.log('✅ Admin, Otp, and UserSession models synced');
     process.exit(0);
   } catch (err) {
     console.error('Failed to sync admin models:', err && err.message ? err.message : err);

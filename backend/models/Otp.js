@@ -1,8 +1,8 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../services/database_pg');
 
-// Dedicated administrator accounts rely on email-based authentication.
-const Admin = sequelize.define('Admin', {
+// Basic OTP log table for auditability and troubleshooting.
+const Otp = sequelize.define('Otp', {
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
@@ -11,30 +11,26 @@ const Admin = sequelize.define('Admin', {
   email: {
     type: DataTypes.STRING,
     allowNull: false,
-    unique: true,
-    validate: {
-      isEmail: true,
-    },
   },
-  passwordHash: {
+  codeHash: {
     type: DataTypes.STRING,
     allowNull: false,
-    field: 'password_hash',
+    field: 'code_hash',
   },
-  otpHash: {
-    type: DataTypes.STRING,
-    allowNull: true,
-    field: 'otp_hash',
+  expiresAt: {
+    type: DataTypes.DATE,
+    allowNull: false,
+    field: 'expires_at',
   },
-  otpExpiresAt: {
+  verifiedAt: {
     type: DataTypes.DATE,
     allowNull: true,
-    field: 'otp_expires_at',
+    field: 'verified_at',
   },
 }, {
-  tableName: 'admins',
+  tableName: 'otps',
   timestamps: true,
   underscored: true,
 });
 
-module.exports = Admin;
+module.exports = Otp;

@@ -93,16 +93,30 @@ router.post('/control', [auth, adminOnly, ...baseValidators], async (req, res) =
       return res.status(409).json({ success: false, message: 'Actuator is not in manual mode' });
     }
 
+    const normalizedDeviceId = typeof deviceId === 'string' && deviceId.trim().length > 0 ? deviceId.trim() : null;
+
     const context = {
       triggeredBy: 'manual',
       userId: req.user && req.user.id ? req.user.id : null,
-      deviceId: deviceId || 'system',
+      deviceId: normalizedDeviceId,
       reason: reason || `Manual ${desiredState ? 'enable' : 'disable'} via /api/actuator/control`,
     };
 
     const result = await updateActuatorStatus(actuatorRecord, desiredState, context);
 
     if (result.error) {
+      if (result.statusCode === 423) {
+        return res.status(423).json({
+          success: false,
+          message: result.error,
+          code: 'float_lockout',
+          data: {
+            actuator: sanitizeActuator(result.actuator),
+            floatSensor: typeof result.floatSensor === 'number' ? result.floatSensor : null,
+            floatSensorTimestamp: result.floatSensorTimestamp || null,
+          },
+        });
+      }
       return res.status(502).json({
         success: false,
         message: result.error,
@@ -114,7 +128,7 @@ router.post('/control', [auth, adminOnly, ...baseValidators], async (req, res) =
     try {
       if (typeof ActuatorLog.create === 'function') {
         await ActuatorLog.create({
-          deviceId: context.deviceId,
+          deviceId: context.deviceId || 'system',
           actuatorType: sanitizeActuator(actuatorRecord).type,
           action: desiredState ? 'on' : 'off',
           reason: context.reason,

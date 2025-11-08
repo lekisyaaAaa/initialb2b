@@ -73,7 +73,7 @@ router.post(
         return;
       }
 
-      const { actuatorType, action, deviceId, reason } = req.body;
+  const { actuatorType, action, deviceId, reason } = req.body;
       const availableActuators = await listActuators();
       const target = availableActuators.find((item) => item.type === actuatorType);
 
@@ -86,8 +86,10 @@ router.post(
         return res.status(404).json({ success: false, message: 'Actuator not found' });
       }
 
+      const normalizedDeviceId = typeof deviceId === 'string' && deviceId.trim().length > 0 ? deviceId.trim() : null;
+
       const controlOptions = {
-        deviceId: deviceId || 'system',
+        deviceId: normalizedDeviceId,
         reason: reason || null,
         triggeredBy: 'manual',
         userId: req.user && req.user.id ? req.user.id : null,
@@ -98,6 +100,18 @@ router.post(
       const result = await updateActuatorStatus(actuator, desiredStatus, controlOptions);
 
       if (result.error) {
+        if (result.statusCode === 423) {
+          return res.status(423).json({
+            success: false,
+            message: result.error,
+            code: 'float_lockout',
+            data: {
+              actuator: sanitizeActuator(result.actuator),
+              floatSensor: typeof result.floatSensor === 'number' ? result.floatSensor : null,
+              floatSensorTimestamp: result.floatSensorTimestamp || null,
+            },
+          });
+        }
         return res.status(502).json({
           success: false,
           message: result.error,
@@ -109,7 +123,7 @@ router.post(
       try {
         if (typeof ActuatorLog.create === 'function') {
           await ActuatorLog.create({
-            deviceId: controlOptions.deviceId,
+            deviceId: controlOptions.deviceId || 'system',
             actuatorType,
             action,
             reason: controlOptions.reason,
@@ -155,6 +169,18 @@ router.post('/:id/toggle', [auth, adminOnly], async (req, res) => {
     });
 
     if (result.error) {
+      if (result.statusCode === 423) {
+        return res.status(423).json({
+          success: false,
+          message: result.error,
+          code: 'float_lockout',
+          data: {
+            actuator: sanitizeActuator(result.actuator),
+            floatSensor: typeof result.floatSensor === 'number' ? result.floatSensor : null,
+            floatSensorTimestamp: result.floatSensorTimestamp || null,
+          },
+        });
+      }
       return res.status(502).json({
         success: false,
         message: result.error,

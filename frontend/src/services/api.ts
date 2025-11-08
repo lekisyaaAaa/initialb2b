@@ -321,6 +321,11 @@ export const commandService = {
     }),
 };
 
+export const systemTestService = {
+  getSnapshot: () => api.get<ApiResponse<{ latest: any[]; history: any[] }>>('/system-tests'),
+  run: () => api.post<ApiResponse<{ runId: string }>>('/system-tests/run'),
+};
+
 export const actuatorService = {
   list: () => api.get<ApiResponse<Actuator[]>>('/actuators'),
   toggle: (id: number) => api.post<ApiResponse<Actuator>>(`/actuators/${id}/toggle`),

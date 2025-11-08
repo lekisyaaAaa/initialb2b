@@ -1,0 +1,9 @@
+║ Test Area             │ Status │ Notes                                                                                                                ║
+║ Backend Health        │ ✅     │ Backend reachable (200) in 375ms                                                                                     ║
+║ Database              │ ✅     │ PostgreSQL connected (tables: 16) in 1.4s                                                                            ║
+║ Admin Login + OTP     │ ✅     │ Admin credentials verified, OTP delivered, session token issued.                                                     ║
+║ Telemetry             │ ✅     │ Telemetry stored, websocket event sensor_update received, database row 90                                            ║
+║ Actuators             │ ✅     │ Actuator command acknowledged for Solenoid Valve 2 (event actuator_command_update) after clearing 1 stale command(s) ║
+║ Float Sensor Logic    │ ⚠      │ Actuator command accepted while float=0; confirm backend lockout logic.                                              ║
+║ ESP32 Wi-Fi Reconnect │ ✅     │ ESP32 offline state simulated and auto-reconnect confirmed.                                                          ║
+║ Frontend              │ ❌     │ System Test dashboard not rendered                                                                                   ║

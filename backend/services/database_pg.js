@@ -21,6 +21,7 @@ const baseOptions = {
 
 let sequelize;
 let currentDialect = 'postgres';
+let usesSsl = false;
 
 if (isTestEnv) {
 	// Use SQLite in-memory DB to keep tests hermetic and fast.
@@ -35,6 +36,7 @@ if (isTestEnv) {
 	const sslFlagFromUrl = /[?&]sslmode=require/i.test(databaseUrl);
 	const sslFlagFromEnv = (process.env.PGSSLMODE || '').toLowerCase() === 'require';
 	const shouldRequireSsl = sslFlagFromUrl || sslFlagFromEnv;
+	usesSsl = shouldRequireSsl;
 
 	if (!process.env.DATABASE_URL) {
 		logger.fatal('DATABASE_URL is required but missing. Set a PostgreSQL connection string in your environment.');
@@ -64,8 +66,10 @@ function loadModels() {
 	require('../models/DeviceCommand');
 	require('../models').Command;
 	require('../models/Admin');
-	require('../models/AdminOTP');
+	require('../models/Otp');
+	require('../models/UserSession');
 	require('../models/PasswordResetToken');
+	require('../models/SystemTest');
 }
 
 let setupPromise = null;
@@ -82,6 +86,12 @@ async function ensureDatabaseSetup(options = {}) {
 		syncOptions.force = true;
 	}
 
+	if (!syncOptions.force) {
+		syncOptions.alter = options.alter ?? true;
+	}
+
+	logger.info('Syncing database schema', { force: Boolean(syncOptions.force), alter: Boolean(syncOptions.alter) });
+
 	setupPromise = sequelize.sync(syncOptions).catch((err) => {
 		setupPromise = null;
 		throw err;
@@ -94,7 +104,7 @@ const connectDB = async () => {
 	try {
 		await sequelize.authenticate();
 		currentDialect = sequelize.getDialect();
-		logger.info('Database connected successfully via PostgreSQL');
+		logger.info(`✅ Connected to Render PostgreSQL (SSL mode: ${usesSsl ? 'require' : 'disabled'})`);
 	} catch (error) {
 		logger.error('Unable to connect to the database:', error.message);
 		logger.error('Verify DATABASE_URL and ensure the PostgreSQL service is reachable.');
@@ -106,3 +116,4 @@ module.exports = sequelize;
 module.exports.connectDB = connectDB;
 module.exports.getActiveDialect = () => currentDialect;
 module.exports.ensureDatabaseSetup = ensureDatabaseSetup;
+module.exports.getSslMode = () => (usesSsl ? 'require' : 'disabled');

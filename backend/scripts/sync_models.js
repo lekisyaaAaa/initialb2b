@@ -3,15 +3,16 @@ const sequelize = require('../services/database_pg');
 (async () => {
   try {
     // require models so they are registered
-  require('../models/Device');
-  require('../models/Alert');
-  require('../models/SensorData');
-  require('../models/User');
-  require('../models/Actuator');
-  require('../models/ActuatorLog');
-  require('../models/Settings');
-  require('../models/Admin');
-  require('../models/AdminOTP');
+    require('../models/Device');
+    require('../models/Alert');
+    require('../models/SensorData');
+    require('../models/User');
+    require('../models/Actuator');
+    require('../models/ActuatorLog');
+    require('../models/Settings');
+    require('../models/Admin');
+    require('../models/Otp');
+    require('../models/UserSession');
     await sequelize.sync({ alter: true });
     console.log('✅ Models synced (alter: true)');
     process.exit(0);

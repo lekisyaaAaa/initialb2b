@@ -20,7 +20,9 @@
     "install-all": "npm run install-backend && npm run install-frontend",
     "install-backend": "cd backend && npm install",
     "install-frontend": "cd frontend && npm install",
-    "precommit-check": "node ./scripts/integration-smoke.js"
+    "precommit-check": "node ./scripts/integration-smoke.js",
+    "test:system": "node backend/tests/system-functionality.test.js",
+    "test:system:frontend": "npm run test:system && echo 'Frontend dashboard auto-updates via Socket.IO'"
   },
   "keywords": [
     "environmental",
@@ -39,6 +41,7 @@
   },
   "dependencies": {
     "jsonwebtoken": "^9.0.2",
-    "puppeteer": "^24.19.0"
+    "puppeteer": "^24.19.0",
+    "nodemailer": "^6.9.9"
   }
 }

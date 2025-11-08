@@ -54,8 +54,8 @@ describe('Admin password reset flow', () => {
     expect(resetRes.status).toBe(200);
     expect(resetRes.body.success).toBe(true);
 
-    await admin.reload();
-    const passwordMatches = await bcrypt.compare('NewSecurePass!45', admin.passwordHash);
+  await admin.reload();
+  const passwordMatches = await bcrypt.compare('NewSecurePass!45', admin.passwordHash);
     expect(passwordMatches).toBe(true);
 
     const reuseRes = await request(app)

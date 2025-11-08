@@ -4,6 +4,7 @@ const ActuatorLog = require('../models/ActuatorLog');
 const SensorData = require('../models/SensorData');
 const sequelize = require('./database_pg');
 const deviceCommandQueue = require('./deviceCommandQueue');
+const { enforceFloatSafety } = require('./floatSensorGuard');
 
 function normalizeName(value = '') {
   return value.trim().toLowerCase();
@@ -256,13 +257,35 @@ async function updateActuatorStatus(actuator, status, options = {}) {
     return { changed: false, actuator };
   }
 
+  const hardwareId = resolveDeviceTarget(options.deviceId);
+
+  if (desired && !options.ignoreFloatSafety) {
+    const safety = await enforceFloatSafety({
+      deviceId: hardwareId,
+      desiredState: desired,
+      actuatorKey: actuatorKeyFromName(actuator.name),
+      actuatorName: actuator.name,
+      source: options.triggeredBy || 'actuatorService.updateActuatorStatus',
+    });
+
+    if (!safety.allowed) {
+      return {
+        changed: false,
+        actuator,
+        error: safety.message || 'Float sensor lockout active',
+        statusCode: safety.statusCode || 423,
+        floatSensor: safety.floatState,
+        floatSensorTimestamp: safety.timestamp,
+      };
+    }
+  }
+
   actuator.status = desired;
   actuator.lastUpdated = new Date();
   actuator.deviceAck = true;
   actuator.deviceAckMessage = null;
   await actuator.save();
 
-  const hardwareId = resolveDeviceTarget(options.deviceId);
   const actuatorKey = actuatorKeyFromName(actuator.name);
   const commandContext = {
     ...options,

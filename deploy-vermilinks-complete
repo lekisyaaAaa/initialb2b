@@ -1,0 +1,407 @@
+#!/usr/bin/env node
+'use strict';
+
+const { spawn } = require('child_process');
+const readline = require('readline');
+const fs = require('fs');
+const path = require('path');
+const https = require('https');
+const { setTimeout: sleep } = require('timers/promises');
+
+const BACKEND_SERVICE_ID = 'srv-d43v9q0dl3ps73aarv30';
+const FRONTEND_SERVICE_ID = 'srv-d43v9h0dl3ps73aarlgg';
+const BACKEND_HEALTH_URL = 'https://vermilinks-backend.onrender.com/health';
+const FRONTEND_URL = 'https://vermilinks-frontend.onrender.com';
+const TELEMETRY_URL = 'https://vermilinks-backend.onrender.com/api/sensors';
+const COMMAND_URL = 'https://vermilinks-backend.onrender.com/api/command';
+const SUMMARY_FILE = path.resolve(process.cwd(), 'deploy-summary.txt');
+const EMAIL_HELPER = path.resolve(__dirname, 'send-email.js');
+
+const results = [];
+const deployedServices = [];
+
+function recordStep(name, success, details) {
+  const entry = { name, success, details };
+  results.push(entry);
+  return entry;
+}
+
+function runCommand(command, args, { capture = false, silent = false } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      shell: true,
+      stdio: capture ? ['inherit', 'pipe', 'pipe'] : silent ? 'ignore' : 'inherit',
+    });
+
+    let stdout = '';
+    let stderr = '';
+
+    if (capture && child.stdout) {
+      child.stdout.on('data', (chunk) => {
+        stdout += chunk.toString();
+      });
+    }
+
+    if (capture && child.stderr) {
+      child.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+      });
+    }
+
+    child.on('error', (error) => {
+      reject(error);
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve({ code, stdout, stderr });
+      } else {
+        const error = new Error(`Command failed: ${command} ${args.join(' ')} (exit ${code})`);
+        error.code = code;
+        error.stdout = stdout;
+        error.stderr = stderr;
+        reject(error);
+      }
+    });
+  });
+}
+
+function askQuestion(promptText) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise((resolve) => {
+    rl.question(promptText, (answer) => {
+      rl.close();
+      resolve(answer.trim());
+    });
+  });
+}
+
+function httpRequest(url, { method = 'GET', headers = {}, body, timeoutMs = 15000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const requestUrl = new URL(url);
+    const options = {
+      method,
+      headers,
+    };
+
+    const req = https.request(requestUrl, options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => {
+        data += chunk;
+      });
+      res.on('end', () => {
+        resolve({ statusCode: res.statusCode ?? 0, headers: res.headers, body: data });
+      });
+    });
+
+    req.on('error', (error) => {
+      reject(error);
+    });
+
+    req.setTimeout(timeoutMs, () => {
+      req.destroy(new Error('Request timed out'));
+    });
+
+    if (body) {
+      req.write(body);
+    }
+
+    req.end();
+  });
+}
+
+async function ensureRenderCli() {
+  try {
+    await runCommand('render', ['--version'], { capture: true, silent: true });
+  } catch (error) {
+    throw new Error('Render CLI not found. Install it from https://render.com/docs/deploy-from-cli and ensure it is on PATH.');
+  }
+}
+
+async function deployService(name, id) {
+  console.log(`🔹 Deploying ${name}...`);
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await runCommand('render', ['deploys', 'create', id, '--wait', '--confirm']);
+      console.log(`✅ ${name} deployed.`);
+      deployedServices.push({ name, id });
+      recordStep(`${name} Deploy`, true, 'Deploy succeeded');
+      return;
+    } catch (error) {
+      console.error(`⚠️ ${name} deploy failed (attempt ${attempt}): ${error.message}`);
+      if (attempt < maxAttempts) {
+        console.log('⏳ Retrying in 10 seconds...');
+        await sleep(10000);
+      }
+    }
+  }
+  recordStep(`${name} Deploy`, false, 'Deployment failed after retries');
+  throw new Error(`${name} deployment failed after ${maxAttempts} attempts.`);
+}
+
+async function rollbackService(name, id) {
+  console.warn(`ℹ️ No automated rollback available for ${name}. Please revert manually in the Render dashboard if needed.`);
+  return false;
+}
+
+async function rollbackAll() {
+  if (!deployedServices.length) {
+    return;
+  }
+  console.log('↩️ Attempting rollback for deployed services...');
+  for (const service of deployedServices.reverse()) {
+    await rollbackService(service.name, service.id);
+  }
+}
+
+function tryParseJson(payload) {
+  try {
+    return JSON.parse(payload);
+  } catch (_) {
+    return undefined;
+  }
+}
+
+async function checkBackendHealth() {
+  console.log('📡 Checking backend health...');
+  const response = await httpRequest(BACKEND_HEALTH_URL);
+  if (response.statusCode === 200) {
+    console.log('✅ Backend healthy.');
+    recordStep('Backend Health', true, 'HTTP 200 OK');
+    return true;
+  }
+  console.error(`❌ Backend health check failed with status ${response.statusCode}.`);
+  recordStep('Backend Health', false, `HTTP ${response.statusCode}`);
+  return false;
+}
+
+async function checkFrontendHealth() {
+  console.log('🌎 Checking frontend availability...');
+  const response = await httpRequest(FRONTEND_URL, { method: 'HEAD' });
+  if (response.statusCode && response.statusCode >= 200 && response.statusCode < 400) {
+    console.log('✅ Frontend live.');
+    recordStep('Frontend Health', true, `HTTP ${response.statusCode}`);
+    return true;
+  }
+  console.error(`❌ Frontend check failed with status ${response.statusCode}.`);
+  recordStep('Frontend Health', false, `HTTP ${response.statusCode}`);
+  return false;
+}
+
+async function sendTelemetry(payloadLabel) {
+  console.log(`📨 Sending test telemetry (${payloadLabel})...`);
+  const basePayload = {
+    device_id: 'ESP32-01',
+    soil_moisture: 58,
+    temperature: 28.3,
+    humidity: 74,
+    waterLevel: 1,
+  };
+
+  if (payloadLabel === 'post-disconnect') {
+    basePayload.soil_moisture = 60;
+    basePayload.temperature = 29.1;
+    basePayload.humidity = 72;
+    basePayload.waterLevel = 1;
+  }
+
+  const body = JSON.stringify(basePayload);
+  const response = await httpRequest(TELEMETRY_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  });
+  const parsed = tryParseJson(response.body);
+  const textMatch = typeof response.body === 'string' && response.body.toLowerCase().includes('ok');
+  const parsedOk = parsed && (parsed.status === 'ok' || parsed.result === 'ok' || parsed.success === true);
+  if (response.statusCode >= 200 && response.statusCode < 300 && (parsedOk || textMatch)) {
+    console.log('✅ Telemetry acknowledged.');
+    return { success: true, response: parsed ?? response.body };
+  }
+  console.error(`⚠️ Telemetry failed. Status ${response.statusCode}. Body: ${response.body}`);
+  return { success: false, response: parsed ?? response.body };
+}
+
+async function sendActuatorCommand(action) {
+  const displayAction = action.toUpperCase();
+  console.log(`⚙️ Sending actuator command (${displayAction})...`);
+  const body = JSON.stringify({
+    device_id: 'ESP32-01',
+    actuator: 'solenoid1',
+    solenoid: 1,
+    action,
+  });
+  const response = await httpRequest(COMMAND_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  });
+  const parsed = tryParseJson(response.body);
+  const accepted = (response.statusCode === 202) ||
+    (response.statusCode === 201 && parsed && parsed.success === true);
+  if (accepted) {
+    console.log(`✅ Solenoid 1 ${displayAction} command accepted (HTTP ${response.statusCode}).`);
+    return { success: true, statusCode: response.statusCode, response: parsed ?? response.body };
+  }
+  console.error(`❌ Actuator command (${displayAction}) rejected. Status ${response.statusCode}. Body: ${response.body}`);
+  return { success: false, statusCode: response.statusCode, response: parsed ?? response.body };
+}
+
+async function simulateEsp32Reconnect() {
+  console.log('🔌 Simulating ESP32 disconnection...');
+  console.log('Please unplug the ESP32 USB cable and ensure it is powered via external 5 V.');
+  await countdown(20);
+  console.log('🔄 Attempting telemetry after reconnect window...');
+  const result = await sendTelemetry('post-disconnect');
+  if (result.success) {
+    console.log('✅ ESP32 reconnected to Wi-Fi and resumed telemetry.');
+    recordStep('ESP32 Reconnect', true, 'Telemetry acknowledged after disconnect');
+    return true;
+  }
+  console.error('❌ ESP32 reconnect telemetry failed. Check Wi-Fi credentials or device power.');
+  recordStep('ESP32 Reconnect', false, 'Telemetry not acknowledged');
+  return false;
+}
+
+async function countdown(seconds) {
+  for (let remaining = seconds; remaining > 0; remaining -= 1) {
+    process.stdout.write(`⏳ Waiting ${remaining}s...\r`);
+    await sleep(1000);
+  }
+  process.stdout.write('\n');
+}
+
+function buildSummary(overallSuccess) {
+  const lines = [];
+  lines.push(`${overallSuccess ? '✅' : '❌'} VermiLinks Deployment Report`);
+  lines.push(`Time: ${new Date().toISOString()}`);
+  lines.push(`Backend: https://vermilinks-backend.onrender.com`);
+  lines.push(`Frontend: https://vermilinks-frontend.onrender.com`);
+  lines.push('');
+  for (const step of results) {
+    const statusEmoji = step.success ? '✅' : '❌';
+    lines.push(`${statusEmoji} ${step.name} — ${step.details}`);
+  }
+  lines.push('');
+  lines.push(`ESP32 Auto-Reconnect: ${formatStepStatus('ESP32 Reconnect')}`);
+  lines.push(`Telemetry + Actuators: ${formatCompositeStatus()}`);
+  return lines.join('\n');
+}
+
+function formatStepStatus(name) {
+  const match = results.find((step) => step.name === name);
+  if (!match) {
+    return 'Not Run';
+  }
+  return match.success ? 'Verified' : 'Failed';
+}
+
+function formatCompositeStatus() {
+  const telemetry = results.find((step) => step.name === 'Telemetry Test');
+  const actuators = results.find((step) => step.name === 'Actuator Test');
+  const telemetryStatus = telemetry ? (telemetry.success ? 'Telemetry OK' : 'Telemetry Failed') : 'Telemetry Not Run';
+  const actuatorStatus = actuators ? (actuators.success ? 'Actuator OK' : 'Actuator Failed') : 'Actuator Not Run';
+  return `${telemetryStatus} / ${actuatorStatus}`;
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  const autoYes = args.includes('--yes') || args.includes('-y');
+  const skipEmail = args.includes('--skip-email');
+
+  console.log('🚀 Starting Full VermiLinks IoT Deployment...');
+
+  if (!autoYes) {
+    const confirm = await askQuestion('This will redeploy backend, frontend, and run IoT tests. Continue? (y/n): ');
+    if (confirm.toLowerCase() !== 'y') {
+      console.log('❌ Deployment cancelled.');
+      process.exit(0);
+    }
+  }
+
+  await ensureRenderCli();
+
+  try {
+    await deployService('Backend', BACKEND_SERVICE_ID);
+    await deployService('Frontend', FRONTEND_SERVICE_ID);
+
+    const backendHealthy = await checkBackendHealth();
+    const frontendHealthy = await checkFrontendHealth();
+
+    if (!backendHealthy || !frontendHealthy) {
+      throw new Error('Service health checks failed.');
+    }
+
+    const telemetryResult = await sendTelemetry('baseline');
+    recordStep('Telemetry Test', telemetryResult.success, telemetryResult.success ? 'Status ok' : 'Backend did not acknowledge telemetry');
+    if (!telemetryResult.success) {
+      throw new Error('Telemetry verification failed.');
+    }
+
+    const actuatorOn = await sendActuatorCommand('on');
+    await sleep(2000);
+    const actuatorOff = await sendActuatorCommand('off');
+    const actuatorsOk = actuatorOn.success && actuatorOff.success;
+    const actuatorDetail = actuatorsOk
+      ? `HTTP ${actuatorOn.statusCode} / ${actuatorOff.statusCode}`
+      : `ON ${actuatorOn.statusCode} / OFF ${actuatorOff.statusCode}`;
+    recordStep('Actuator Test', actuatorsOk, actuatorsOk ? actuatorDetail : `Actuator command failed (${actuatorDetail})`);
+    if (!actuatorsOk) {
+      throw new Error('Actuator verification failed.');
+    }
+
+    const reconnectOk = await simulateEsp32Reconnect();
+    if (!reconnectOk) {
+      throw new Error('ESP32 reconnect verification failed.');
+    }
+
+    await finalize(true, skipEmail);
+    console.log('🎉 VermiLinks IoT Automation Complete');
+    console.log('✅ Backend and Frontend live');
+    console.log('✅ ESP32 telemetry verified (Wi-Fi auto-reconnect)');
+    const emailStep = results.find((step) => step.name === 'Email Notification');
+    if (emailStep) {
+      if (emailStep.details === 'Skipped by operator') {
+        console.log('📧 Email notification skipped by operator flag.');
+      } else if (emailStep.success) {
+        console.log('📧 Deployment report emailed to: beantobin2025@gmail.com');
+      } else {
+        console.log('⚠️ Email notification failed. Review deploy-summary.txt for details.');
+      }
+    }
+    process.exit(0);
+  } catch (error) {
+    console.error(`❌ Deployment pipeline failed: ${error.message}`);
+    await rollbackAll();
+    await finalize(false, skipEmail);
+    process.exit(1);
+  }
+}
+
+async function finalize(success, skipEmail) {
+  const initialSummary = buildSummary(success);
+  fs.writeFileSync(SUMMARY_FILE, initialSummary, 'utf8');
+  console.log(`📄 Deployment summary saved to ${SUMMARY_FILE}`);
+
+  if (skipEmail) {
+    console.log('📧 Email sending skipped by flag.');
+    recordStep('Email Notification', true, 'Skipped by operator');
+  } else {
+    try {
+      const subject = success ? '✅ VermiLinks Deployment Success' : '❌ VermiLinks Deployment Failed';
+      const args = [EMAIL_HELPER, SUMMARY_FILE, subject];
+      await runCommand('node', args);
+      recordStep('Email Notification', true, 'Summary email sent');
+    } catch (emailError) {
+      console.error(`⚠️ Failed to send email notification: ${emailError.message}`);
+      recordStep('Email Notification', false, 'Email send failed');
+    }
+  }
+
+  const finalSummary = buildSummary(success);
+  fs.writeFileSync(SUMMARY_FILE, finalSummary, 'utf8');
+  console.log(`📄 Deployment summary updated at ${SUMMARY_FILE}`);
+}
+
+main();

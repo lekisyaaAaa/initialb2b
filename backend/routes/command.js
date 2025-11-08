@@ -6,6 +6,7 @@ const express = require('express');
 const { body, query, validationResult } = require('express-validator');
 const { Command } = require('../models');
 const deviceCommandQueue = require('../services/deviceCommandQueue');
+const { enforceFloatSafety } = require('../services/floatSensorGuard');
 
 const router = express.Router();
 
@@ -81,6 +82,30 @@ router.post(
     }
 
     const actuatorMeta = VALID_ACTUATORS.get(actuatorKey);
+
+    if (action === 'on') {
+      const safety = await enforceFloatSafety({
+        deviceId,
+        desiredState: true,
+        actuatorKey,
+        actuatorName: actuatorMeta.label,
+        source: 'api/command',
+      });
+
+      if (!safety.allowed) {
+        return res.status(safety.statusCode || 423).json({
+          success: false,
+          message: safety.message || 'Float sensor lockout active',
+          code: 'float_lockout',
+          data: {
+            deviceId,
+            actuator: actuatorKey,
+            floatSensor: typeof safety.floatState === 'number' ? safety.floatState : null,
+            floatSensorTimestamp: safety.timestamp || null,
+          },
+        });
+      }
+    }
 
     try {
       const command = await Command.create({

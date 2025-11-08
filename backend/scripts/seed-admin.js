@@ -13,8 +13,11 @@ if (!adminEmail || !adminPassword) {
 }
 
 async function seedWithSequelize(sequelize, AdminModel) {
-  await sequelize.sync();
-  const hash = bcrypt.hashSync(adminPassword, 12);
+  await sequelize.sync({ alter: true });
+  const saltRounds = Number.isFinite(Number(process.env.ADMIN_PASSWORD_SALT_ROUNDS))
+    ? Number(process.env.ADMIN_PASSWORD_SALT_ROUNDS)
+    : 10;
+  const hash = bcrypt.hashSync(adminPassword, saltRounds);
   const [admin, created] = await AdminModel.findOrCreate({
     where: { email: adminEmail },
     defaults: { passwordHash: hash }
@@ -26,11 +29,13 @@ async function seedWithSequelize(sequelize, AdminModel) {
       await admin.save();
       console.log(`Updated password for existing admin '${adminEmail}'`);
     } else {
-      console.log(`Admin '${adminEmail}' already exists`);
+      console.log(`Admin '${adminEmail}' already exists with matching credentials`);
     }
   } else {
     console.log(`Created admin '${adminEmail}'`);
   }
+
+  console.log(`✅ Admin seeded: ${adminEmail}`);
 }
 
 async function main() {
@@ -46,6 +51,13 @@ async function main() {
     process.exit(0);
   } catch (pgErr) {
     console.warn('Postgres unavailable or seeding failed:', pgErr && pgErr.message ? pgErr.message : pgErr);
+
+    const allowFallback = (process.env.ALLOW_SQLITE_FALLBACK || '').toLowerCase() === 'true';
+    if (!allowFallback) {
+      console.error('Aborting admin seeding because Postgres is unavailable and ALLOW_SQLITE_FALLBACK is not enabled.');
+      process.exit(1);
+    }
+
     console.log('Falling back to local SQLite dev DB at backend/data/dev.sqlite');
     try {
       const storagePath = path.join(__dirname, '..', 'data', 'dev.sqlite');
@@ -53,7 +65,9 @@ async function main() {
       const AdminSql = sqlite.define('Admin', {
         id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
         email: { type: DataTypes.STRING, allowNull: false, unique: true },
-        passwordHash: { type: DataTypes.STRING, allowNull: false },
+        passwordHash: { type: DataTypes.STRING, allowNull: false, field: 'password_hash' },
+        otpHash: { type: DataTypes.STRING, field: 'otp_hash' },
+        otpExpiresAt: { type: DataTypes.DATE, field: 'otp_expires_at' },
       }, { tableName: 'admins', timestamps: true, underscored: true });
 
       await seedWithSequelize(sqlite, AdminSql);
