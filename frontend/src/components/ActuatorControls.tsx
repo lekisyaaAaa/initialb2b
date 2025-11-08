@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pause, Play, RefreshCw, Settings2, WifiOff } from 'lucide-react';
+import { RefreshCw, Settings2, WifiOff } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
 import { actuatorService, API_BASE_URL, commandService } from '../services/api';
 import { Actuator } from '../types';
@@ -65,7 +65,6 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [socketState, setSocketState] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
-  const [pending, setPending] = useState<Record<number, boolean>>({});
   const [controlCards, setControlCards] = useState<ControlCardState[]>(() =>
     CONTROL_ACTUATORS.map(({ key, label }) => ({
       key,
@@ -437,10 +436,6 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
     };
   }, [fetchActuators, loadCommandStatus, registerSocketHandlers, socketHosts, reconnectVersion]);
 
-  const setPendingState = useCallback((id: number, value: boolean) => {
-    setPending((prev) => ({ ...prev, [id]: value }));
-  }, []);
-
   useEffect(() => {
     loadCommandStatus();
   }, [loadCommandStatus]);
@@ -508,86 +503,6 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
     }
   }, [actuators, applyActuatorUpdate, sanitizeActuator, setError, updateControlCard]);
 
-  const handleToggle = useCallback(async (actuator: Actuator) => {
-    if (!deviceOnline) {
-      setError('No devices are currently online. Wait for a device to reconnect before sending commands.');
-      return;
-    }
-
-    if (socketState !== 'connected') {
-      setError('Socket connection unavailable. Commands are disabled until the realtime link is restored.');
-      return;
-    }
-
-    if (actuator.mode !== 'manual') {
-      setError('Switch actuator to manual mode before toggling.');
-      return;
-    }
-
-    setPendingState(actuator.id, true);
-    try {
-      const response = await actuatorService.toggle(actuator.id);
-      const updated = sanitizeActuator(response?.data?.data ?? response?.data);
-      if (updated) {
-        applyActuatorUpdate(updated);
-      }
-      setError(null);
-    } catch (err: any) {
-      const fallback = err?.response?.data?.data;
-      if (fallback) {
-        const normalized = sanitizeActuator(fallback);
-        if (normalized) {
-          applyActuatorUpdate(normalized);
-        }
-      }
-
-      const message = err?.response?.data?.message || err?.message || 'Unable to toggle actuator';
-      setError(message);
-      await fetchActuators().catch(() => null);
-    } finally {
-      setPendingState(actuator.id, false);
-    }
-  }, [applyActuatorUpdate, deviceOnline, fetchActuators, sanitizeActuator, setPendingState, socketState]);
-
-  const handleModeSwitch = useCallback(async (actuator: Actuator) => {
-    if (!deviceOnline) {
-      setError('No devices are currently online. Wait for a device to reconnect before sending commands.');
-      return;
-    }
-
-    if (socketState !== 'connected') {
-      setError('Socket connection unavailable. Commands are disabled until the realtime link is restored.');
-      return;
-    }
-
-    const nextMode: 'manual' | 'auto' = actuator.mode === 'manual' ? 'auto' : 'manual';
-    setPendingState(actuator.id, true);
-    try {
-      const response = await actuatorService.setMode(actuator.id, nextMode);
-      const updated = sanitizeActuator(response?.data?.data ?? response?.data);
-      if (updated) {
-        applyActuatorUpdate(updated);
-      }
-      setError(null);
-    } catch (err: any) {
-      const fallback = err?.response?.data?.data;
-      if (fallback) {
-        const normalized = sanitizeActuator(fallback);
-        if (normalized) {
-          applyActuatorUpdate(normalized);
-        }
-      }
-
-      const message = err?.response?.data?.message || err?.message || 'Unable to change actuator mode';
-      setError(message);
-      await fetchActuators().catch(() => null);
-    } finally {
-      setPendingState(actuator.id, false);
-    }
-  }, [applyActuatorUpdate, deviceOnline, fetchActuators, sanitizeActuator, setPendingState, socketState]);
-
-  const isPending = useCallback((id: number) => Boolean(pending[id]), [pending]);
-
   const formatTimestamp = useCallback((value?: string) => {
     if (!value) return 'Never';
     try {
@@ -654,6 +569,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
         <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Pump & Valve Controls</h3>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {controlCards.map((card) => {
+            const linkedActuator = actuators.find((act) => inferActuatorKeyFromName(act.name) === card.key);
             const statusLabel = card.status === 'on' ? 'ON' : 'OFF';
             const statusClasses = card.status === 'on'
               ? 'bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200'
@@ -663,12 +579,15 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
               ? 'text-amber-600 dark:text-amber-300'
               : 'text-emerald-600 dark:text-emerald-300';
             const hasInFlightCommand = card.commandStatus === 'pending' || card.commandStatus === 'dispatched';
-            const hasActuatorRecord = Boolean(card.actuatorId);
+            const hasActuatorRecord = Boolean(card.actuatorId || linkedActuator?.id);
             const isCommandBusy = card.pending || card.modePending || realtimeUnavailable || hasInFlightCommand;
             const disabledOn = isCommandBusy || card.status === 'on' || card.mode !== 'manual';
             const disabledOff = isCommandBusy || card.status === 'off' || card.mode !== 'manual';
             const disabledAuto = card.modePending || card.mode === 'auto' || !hasActuatorRecord;
             const disabledManual = card.modePending || card.mode === 'manual' || !hasActuatorRecord;
+            const ackIssue = linkedActuator?.deviceAck === false;
+            const ackMessage = linkedActuator?.deviceAckMessage;
+            const lastUpdated = linkedActuator?.lastUpdated || card.lastUpdated;
 
             return (
               <div key={card.key} className="rounded-xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900/80 p-5 shadow-sm">
@@ -683,13 +602,20 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
                 </div>
 
                 <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
-                  Last updated: {card.lastUpdated ? formatTimestamp(card.lastUpdated) : 'Not yet'}
+                  Last updated: {lastUpdated ? formatTimestamp(lastUpdated) : 'Not yet'}
                 </p>
 
                 {!hasActuatorRecord && (
                   <p className="mt-2 text-xs text-amber-600 dark:text-amber-300">
                     Awaiting actuator registration from backend — mode switching is temporarily disabled.
                   </p>
+                )}
+
+                {ackIssue && (
+                  <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/30 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
+                    <WifiOff className="w-4 h-4" />
+                    <span>{ackMessage || 'ESP32 unreachable. Command not applied.'}</span>
+                  </div>
                 )}
 
                 <div className="mt-5 grid gap-2">
@@ -774,82 +700,8 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
         </div>
       )}
 
-      {isLoading && actuators.length === 0 ? (
+      {isLoading && actuators.length === 0 && (
         <div className="py-12 text-center text-sm text-gray-500 dark:text-gray-400">Loading actuators…</div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2">
-          {actuators.map((actuator) => {
-            const statusLabel = actuator.status ? 'ON' : 'OFF';
-            const statusClasses = actuator.status
-              ? 'bg-emerald-500/10 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200'
-              : 'bg-slate-500/10 text-slate-600 dark:bg-slate-500/20 dark:text-slate-300';
-            const modeLabel = actuator.mode === 'manual' ? 'Manual' : 'Auto';
-            const modeClasses = actuator.mode === 'manual'
-              ? 'text-amber-600 dark:text-amber-300'
-              : 'text-emerald-600 dark:text-emerald-300';
-            const hasAckIssue = actuator.deviceAck === false;
-
-            return (
-              <div key={actuator.id} className="rounded-xl border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900/80 p-5 shadow-sm">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{actuator.name}</h3>
-                    <p className={`text-sm font-medium mt-1 ${modeClasses}`}>Mode: {modeLabel}</p>
-                  </div>
-                  <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${statusClasses}`}>
-                    Status: {statusLabel}
-                  </span>
-                </div>
-
-                <p className="mt-4 text-xs text-gray-500 dark:text-gray-400">
-                  Last updated: {formatTimestamp(actuator.lastUpdated)}
-                </p>
-
-                {hasAckIssue && (
-                  <div className="mt-3 inline-flex items-center gap-2 rounded-lg border border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-900/30 px-3 py-2 text-xs text-rose-700 dark:text-rose-200">
-                    <WifiOff className="w-4 h-4" />
-                    <span>{actuator.deviceAckMessage || 'ESP32 unreachable. Command not applied.'}</span>
-                  </div>
-                )}
-
-                <div className="mt-6 flex flex-col gap-2">
-                  <button
-                    type="button"
-                    disabled={actuator.mode !== 'manual' || isPending(actuator.id) || realtimeUnavailable}
-                    onClick={() => handleToggle(actuator)}
-                    className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${
-                      actuator.mode !== 'manual'
-                        ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
-                        : realtimeUnavailable
-                          ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
-                          : actuator.status
-                          ? 'bg-rose-500 text-white hover:bg-rose-600'
-                          : 'bg-emerald-500 text-white hover:bg-emerald-600'
-                    }`}
-                  >
-                    {actuator.status ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                    {actuator.status ? 'Turn OFF' : 'Turn ON'}
-                  </button>
-
-                  <button
-                    type="button"
-                    disabled={isPending(actuator.id) || realtimeUnavailable}
-                    onClick={() => handleModeSwitch(actuator)}
-                    className="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-medium border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition"
-                  >
-                    <Settings2 className="w-4 h-4" /> Switch to {actuator.mode === 'manual' ? 'Auto' : 'Manual'}
-                  </button>
-                </div>
-
-                {actuator.mode !== 'manual' && (
-                  <p className="mt-3 text-xs text-amber-600 dark:text-amber-300">
-                    Automatic mode is active. Toggle control is disabled until manual mode is selected.
-                  </p>
-                )}
-              </div>
-            );
-          })}
-        </div>
       )}
 
       {actuators.length === 0 && !isLoading && !error && (
