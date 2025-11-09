@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, Settings2, WifiOff } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
-import { actuatorService, API_BASE_URL, commandService } from '../services/api';
+import { actuatorService, API_BASE_URL, commandService, sensorService } from '../services/api';
 import { Actuator } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -47,6 +47,106 @@ const inferActuatorKeyFromName = (name?: string | null): ActuatorKey | null => {
   return null;
 };
 
+type FloatLockoutSource = 'sensor' | 'command' | 'manual' | null;
+
+type FloatLockoutState = {
+  active: boolean;
+  floatValue: number | null;
+  timestamp: string | null;
+  reason: string | null;
+  source: FloatLockoutSource;
+};
+
+type FloatLockoutUpdate = {
+  active?: boolean;
+  floatValue?: number | null;
+  timestamp?: string | null;
+  reason?: string | null;
+  source?: FloatLockoutSource;
+};
+
+const normalizeFloatValue = (value: unknown): number | null | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const ensureIsoTimestamp = (value: unknown): string | null | undefined => {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const parsed = new Date(trimmed);
+    if (!Number.isNaN(parsed.getTime())) {
+      return parsed.toISOString();
+    }
+    return trimmed;
+  }
+  const parsed = new Date(value as any);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+};
+
+const extractFloatStateFromPayload = (payload: any): { value?: number | null; timestamp?: string | null } => {
+  if (!payload || typeof payload !== 'object') {
+    return {};
+  }
+
+  const baseFloat = normalizeFloatValue((payload as any).floatSensor ?? (payload as any).float_sensor);
+  if (baseFloat !== undefined) {
+    return {
+      value: baseFloat,
+      timestamp: ensureIsoTimestamp(
+        (payload as any).floatSensorTimestamp || (payload as any).timestamp || (payload as any).createdAt || (payload as any).receivedAt,
+      ) ?? null,
+    };
+  }
+
+  const summary = Array.isArray((payload as any).sensorSummary) ? (payload as any).sensorSummary : null;
+  if (summary) {
+    const entry = summary.find((item: any) => item && item.key === 'floatSensor');
+    if (entry) {
+      const value = normalizeFloatValue(entry.value ?? entry.sensorValue);
+      return {
+        value,
+        timestamp: ensureIsoTimestamp(entry.timestamp || entry.recordedAt || entry.updatedAt || (payload as any).timestamp) ?? null,
+      };
+    }
+  }
+
+  const sensors = Array.isArray((payload as any).sensors) ? (payload as any).sensors : null;
+  if (sensors) {
+    const entry = sensors.find((item: any) => item && item.key === 'floatSensor');
+    if (entry) {
+      const value = normalizeFloatValue(entry.value ?? entry.sensorValue);
+      return {
+        value,
+        timestamp: ensureIsoTimestamp(entry.timestamp || entry.recordedAt || entry.updatedAt || (payload as any).timestamp) ?? null,
+      };
+    }
+  }
+
+  if ((payload as any).sensorData) {
+    return extractFloatStateFromPayload((payload as any).sensorData);
+  }
+
+  return {};
+};
+
 type ControlCardState = {
   key: ActuatorKey;
   label: string;
@@ -80,6 +180,62 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
     }))
   );
   const [socketMeta, setSocketMeta] = useState<{ host?: string; lastError?: string; attempts: number }>({ attempts: 0 });
+  // Track float sensor lockout so ON commands mirror backend safety guardrails.
+  const [lockoutState, setLockoutState] = useState<FloatLockoutState>({
+    active: false,
+    floatValue: null,
+    timestamp: null,
+    reason: null,
+    source: null,
+  });
+
+  const updateLockoutState = useCallback((update: FloatLockoutUpdate) => {
+    setLockoutState((prev) => {
+      const nextFloat = update.floatValue !== undefined ? normalizeFloatValue(update.floatValue) : prev.floatValue;
+      const nextTimestampRaw = ensureIsoTimestamp(update.timestamp);
+      const nextTimestamp = nextTimestampRaw === undefined ? prev.timestamp : nextTimestampRaw;
+      const nextSource = update.source === undefined ? prev.source : update.source;
+
+      let nextActive = update.active === undefined ? prev.active : Boolean(update.active);
+      if (update.floatValue !== undefined) {
+        if (nextFloat !== null && nextFloat !== undefined) {
+          nextActive = Number(nextFloat) === 0;
+        }
+      }
+
+      let nextReason = update.reason === undefined ? prev.reason : update.reason;
+      if (update.floatValue !== undefined) {
+        if (nextFloat !== null && nextFloat !== undefined) {
+          nextReason = Number(nextFloat) === 0
+            ? nextReason || prev.reason || 'Float sensor lockout active — manual ON commands disabled.'
+            : null;
+        }
+      }
+
+      const nextState: FloatLockoutState = {
+        active: nextActive,
+        floatValue: nextFloat ?? null,
+        timestamp: nextTimestamp ?? null,
+        reason: nextReason ?? null,
+        source: nextSource ?? null,
+      };
+
+      if (
+        nextState.active === prev.active &&
+        nextState.floatValue === prev.floatValue &&
+        nextState.timestamp === prev.timestamp &&
+        nextState.reason === prev.reason &&
+        nextState.source === prev.source
+      ) {
+        return prev;
+      }
+
+      return nextState;
+    });
+  }, []);
+
+  const systemLocked = lockoutState.active;
+  const lockoutReason = lockoutState.reason;
 
   const updateControlCard = useCallback((key: ActuatorKey, updater: (card: ControlCardState) => ControlCardState) => {
     setControlCards((prev) => prev.map((card) => (card.key === key ? updater(card) : card)));
@@ -259,24 +415,94 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
           lastUpdated: payload.ackReceivedAt || payload.updatedAt || new Date().toISOString(),
         };
       });
+
+      if (payload.code === 'float_lockout') {
+        const details = payload.data || payload.details || {};
+        const floatCandidate = normalizeFloatValue(details.floatSensor ?? details.float_sensor ?? payload.floatSensor);
+        const timestamp = ensureIsoTimestamp(details.floatSensorTimestamp || payload.timestamp || payload.updatedAt) ?? new Date().toISOString();
+        updateLockoutState({
+          active: true,
+          floatValue: floatCandidate === undefined ? 0 : floatCandidate,
+          timestamp,
+          reason: payload.message || payload.responseMessage || 'Float sensor lockout active — manual ON commands disabled.',
+          source: 'command',
+        });
+      }
+    };
+
+    const handleSensorUpdate = (payload: any) => {
+      const deviceId = (payload?.deviceId || payload?.device_id || payload?.hardwareId || payload?.deviceID || '').toString();
+      if (deviceId && deviceId !== TARGET_DEVICE_ID) {
+        return;
+      }
+      const { value, timestamp } = extractFloatStateFromPayload(payload);
+      if (value !== undefined) {
+        updateLockoutState({
+          floatValue: value,
+          timestamp: timestamp ?? null,
+          source: 'sensor',
+        });
+      }
+    };
+
+    const handleFloatLockout = (payload: any) => {
+      const deviceId = (payload?.deviceId || payload?.device_id || payload?.hardwareId || payload?.deviceID || '').toString();
+      if (deviceId && deviceId !== TARGET_DEVICE_ID) {
+        return;
+      }
+      const { value, timestamp } = extractFloatStateFromPayload(payload);
+      updateLockoutState({
+        active: true,
+        floatValue: value === undefined ? 0 : value,
+        timestamp: timestamp ?? ensureIsoTimestamp(payload?.timestamp) ?? new Date().toISOString(),
+        reason: payload?.message || 'Float sensor lockout active — manual ON commands disabled.',
+        source: 'command',
+      });
+    };
+
+    const handleFloatLockoutCleared = (payload: any) => {
+      const deviceId = (payload?.deviceId || payload?.device_id || payload?.hardwareId || payload?.deviceID || '').toString();
+      if (deviceId && deviceId !== TARGET_DEVICE_ID) {
+        return;
+      }
+      const { value, timestamp } = extractFloatStateFromPayload(payload);
+      updateLockoutState({
+        active: false,
+        floatValue: value ?? 1,
+        timestamp: timestamp ?? ensureIsoTimestamp(payload?.timestamp) ?? new Date().toISOString(),
+        reason: null,
+        source: 'sensor',
+      });
     };
 
     socket.on('actuator_snapshot', handleSnapshot);
     socket.on('actuatorSnapshot', handleSnapshot);
     socket.on('actuatorUpdate', handleUpdate);
     socket.on('actuator_update', handleUpdate);
+    socket.on('actuatorModeUpdate', handleUpdate);
+    socket.on('actuator_mode_update', handleUpdate);
     socket.on('actuator_command_update', handleCommandUpdate);
     socket.on('solenoid_command_update', handleCommandUpdate);
+    socket.on('sensor_update', handleSensorUpdate);
+    socket.on('device_sensor_update', handleSensorUpdate);
+    socket.on('float_lockout', handleFloatLockout);
+    socket.on('float_lockout_cleared', handleFloatLockoutCleared);
 
     return () => {
       socket.off('actuator_snapshot', handleSnapshot);
       socket.off('actuatorSnapshot', handleSnapshot);
       socket.off('actuatorUpdate', handleUpdate);
       socket.off('actuator_update', handleUpdate);
+      socket.off('actuatorModeUpdate', handleUpdate);
+      socket.off('actuator_mode_update', handleUpdate);
       socket.off('actuator_command_update', handleCommandUpdate);
       socket.off('solenoid_command_update', handleCommandUpdate);
+      socket.off('sensor_update', handleSensorUpdate);
+      socket.off('device_sensor_update', handleSensorUpdate);
+      socket.off('float_lockout', handleFloatLockout);
+      socket.off('float_lockout_cleared', handleFloatLockoutCleared);
     };
-  }, [applyActuatorUpdate, sanitizeActuator, updateControlCard]);
+  }, [applyActuatorUpdate, sanitizeActuator, updateControlCard, updateLockoutState]);
 
   const handleManualReconnect = useCallback(() => {
     setSocketMeta((prev) => ({ ...prev, lastError: undefined }));
@@ -333,6 +559,26 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
       console.debug('Failed to load command status', err?.message || err);
     }
   }, []);
+
+  const loadFloatSensorSnapshot = useCallback(async () => {
+    try {
+      const response = await sensorService.getLatestData(TARGET_DEVICE_ID);
+      const payload = response?.data?.data;
+      const latestRecord = Array.isArray(payload) ? payload[0] : payload;
+      if (latestRecord) {
+        const { value, timestamp } = extractFloatStateFromPayload(latestRecord);
+        if (value !== undefined) {
+          updateLockoutState({
+            floatValue: value,
+            timestamp: timestamp ?? null,
+            source: 'sensor',
+          });
+        }
+      }
+    } catch (err: any) {
+      console.debug('Failed to load float sensor snapshot', err?.message || err);
+    }
+  }, [updateLockoutState]);
 
   useEffect(() => {
     let cancelled = false;
@@ -392,6 +638,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
         setSocketMeta({ host, lastError: undefined, attempts: attempt });
         fetchActuators().catch(() => null);
         loadCommandStatus().catch(() => null);
+        loadFloatSensorSnapshot().catch(() => null);
       });
 
       const onFailure = (err?: Error) => {
@@ -434,13 +681,29 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
       cancelled = true;
       disconnectActive();
     };
-  }, [fetchActuators, loadCommandStatus, registerSocketHandlers, socketHosts, reconnectVersion]);
+  }, [fetchActuators, loadCommandStatus, loadFloatSensorSnapshot, registerSocketHandlers, socketHosts, reconnectVersion]);
 
   useEffect(() => {
     loadCommandStatus();
   }, [loadCommandStatus]);
 
+  useEffect(() => {
+    loadFloatSensorSnapshot();
+  }, [loadFloatSensorSnapshot]);
+
   const handleActuatorCommand = useCallback(async (key: ActuatorKey, action: 'on' | 'off') => {
+    if (systemLocked && action === 'on') {
+      const message = lockoutReason || 'Float sensor lockout active — manual ON commands disabled.';
+      updateControlCard(key, (card) => ({
+        ...card,
+        pending: false,
+        commandStatus: 'failed',
+        message,
+      }));
+      setError(message);
+      return;
+    }
+
     updateControlCard(key, (card) => ({
       ...card,
       pending: true,
@@ -467,8 +730,22 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
         message,
       }));
       setError(message);
+
+      const code = err?.response?.data?.code;
+      if (code === 'float_lockout') {
+        const details = err?.response?.data?.data || {};
+        const floatCandidate = normalizeFloatValue(details.floatSensor ?? details.float_sensor ?? err?.response?.data?.floatSensor);
+        const timestamp = ensureIsoTimestamp(details.floatSensorTimestamp || details.timestamp || new Date()) ?? new Date().toISOString();
+        updateLockoutState({
+          active: true,
+          floatValue: floatCandidate === undefined ? 0 : floatCandidate,
+          timestamp,
+          reason: message,
+          source: 'command',
+        });
+      }
     }
-  }, [setError, updateControlCard]);
+  }, [lockoutReason, setError, systemLocked, updateControlCard, updateLockoutState]);
 
   const handleControlModeSwitch = useCallback(async (key: ActuatorKey, nextMode: 'auto' | 'manual') => {
     updateControlCard(key, (card) => ({ ...card, modePending: true, message: null }));
@@ -500,8 +777,22 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
       const message = err?.response?.data?.message || err?.message || 'Unable to change actuator mode';
       updateControlCard(key, (card) => ({ ...card, modePending: false, message }));
       setError(message);
+
+      const code = err?.response?.data?.code;
+      if (code === 'float_lockout') {
+        const details = err?.response?.data?.data || {};
+        const floatCandidate = normalizeFloatValue(details.floatSensor ?? details.float_sensor ?? err?.response?.data?.floatSensor);
+        const timestamp = ensureIsoTimestamp(details.floatSensorTimestamp || details.timestamp || new Date()) ?? new Date().toISOString();
+        updateLockoutState({
+          active: true,
+          floatValue: floatCandidate === undefined ? 0 : floatCandidate,
+          timestamp,
+          reason: message,
+          source: 'command',
+        });
+      }
     }
-  }, [actuators, applyActuatorUpdate, sanitizeActuator, setError, updateControlCard]);
+  }, [actuators, applyActuatorUpdate, sanitizeActuator, setError, updateControlCard, updateLockoutState]);
 
   const formatTimestamp = useCallback((value?: string) => {
     if (!value) return 'Never';
@@ -565,6 +856,27 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
         </div>
       </div>
 
+      {systemLocked && (
+        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 dark:border-rose-900 dark:bg-rose-900/20 px-4 py-3 text-sm text-rose-700 dark:text-rose-200">
+          Float sensor lockout active — manual ON commands remain disabled until the float sensor reports a safe level.
+          {typeof lockoutState.floatValue === 'number' && (
+            <span className="block text-xs text-rose-600 dark:text-rose-300 mt-1">
+              Last float sensor reading: {lockoutState.floatValue}
+            </span>
+          )}
+          {lockoutState.timestamp && (
+            <span className="block text-xs text-rose-600 dark:text-rose-300">
+              Updated: {formatTimestamp(lockoutState.timestamp)}
+            </span>
+          )}
+          {lockoutReason && (
+            <span className="block text-xs text-rose-600 dark:text-rose-300">
+              {lockoutReason}
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="mt-6">
         <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Pump & Valve Controls</h3>
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -580,11 +892,12 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
               : 'text-emerald-600 dark:text-emerald-300';
             const hasInFlightCommand = card.commandStatus === 'pending' || card.commandStatus === 'dispatched';
             const hasActuatorRecord = Boolean(card.actuatorId || linkedActuator?.id);
-            const isCommandBusy = card.pending || card.modePending || realtimeUnavailable || hasInFlightCommand;
-            const disabledOn = isCommandBusy || card.status === 'on' || card.mode !== 'manual';
-            const disabledOff = isCommandBusy || card.status === 'off' || card.mode !== 'manual';
-            const disabledAuto = card.modePending || card.mode === 'auto' || !hasActuatorRecord;
-            const disabledManual = card.modePending || card.mode === 'manual' || !hasActuatorRecord;
+            const baseCommandDisabled = card.pending || card.modePending || realtimeUnavailable || hasInFlightCommand;
+            const manualUnavailable = card.mode !== 'manual';
+            const disabledOn = baseCommandDisabled || card.status === 'on' || manualUnavailable || systemLocked;
+            const disabledOff = baseCommandDisabled || card.status === 'off' || manualUnavailable;
+            const disabledAuto = card.modePending || card.mode === 'auto' || !hasActuatorRecord || realtimeUnavailable;
+            const disabledManual = card.modePending || card.mode === 'manual' || !hasActuatorRecord || realtimeUnavailable;
             const ackIssue = linkedActuator?.deviceAck === false;
             const ackMessage = linkedActuator?.deviceAckMessage;
             const lastUpdated = linkedActuator?.lastUpdated || card.lastUpdated;
@@ -668,6 +981,11 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
                   <span className="block font-medium">Command status: {card.commandStatus}</span>
                   {card.message && (
                     <span className="mt-1 block text-rose-600 dark:text-rose-300">{card.message}</span>
+                  )}
+                  {systemLocked && card.mode === 'manual' && (
+                    <span className="mt-2 block text-rose-600 dark:text-rose-300">
+                      Float sensor lockout active — ON commands will resume automatically once the float sensor recovers.
+                    </span>
                   )}
                   {card.mode !== 'manual' && (
                     <span className="mt-2 block text-amber-600 dark:text-amber-300">
