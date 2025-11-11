@@ -182,7 +182,7 @@ const HomePage: React.FC = () => {
                     Repurposing coffee grounds to reduce waste and enrich soil, supporting a greener campus and community.
                   </p>
                   <div className="mt-3">
-                    <span className="feature-cta">Learn more</span>
+                    <span className="feature-cta" role="presentation" tabIndex={-1}>Campus Compost Initiative</span>
                   </div>
                 </div>
                 <div className="accent-corner" />
@@ -204,7 +204,7 @@ const HomePage: React.FC = () => {
                     IoT sensors monitor African nightcrawlers and coffee grounds to optimize production efficiency.
                   </p>
                   <div className="mt-3">
-                    <span className="feature-cta">Explore</span>
+                    <span className="feature-cta" role="presentation" tabIndex={-1}>IoT-Enabled Monitoring</span>
                   </div>
                 </div>
                 <div className="accent-corner" />
@@ -226,7 +226,7 @@ const HomePage: React.FC = () => {
                     African nightcrawlers produce high-quality vermitea for organic farming applications.
                   </p>
                   <div className="mt-3">
-                    <span className="feature-cta">See methods</span>
+                    <span className="feature-cta" role="presentation" tabIndex={-1}>Sustainable Soil Enrichment</span>
                   </div>
                 </div>
                 <div className="accent-corner" />
@@ -249,7 +249,7 @@ const HomePage: React.FC = () => {
                     24/7 environmental data collection with live dashboard analytics and automated reporting.
                   </p>
                   <div className="mt-3">
-                    <span className="feature-cta">View live</span>
+                    <span className="feature-cta" role="presentation" tabIndex={-1}>Automated Sensor Updates</span>
                   </div>
                 </div>
                 <div className="accent-corner" />
@@ -271,7 +271,7 @@ const HomePage: React.FC = () => {
                     Intuitive web-based dashboard accessible to both administrators and general users.
                   </p>
                   <div className="mt-3">
-                    <span className="feature-cta">Try demo</span>
+                    <span className="feature-cta" role="presentation" tabIndex={-1}>Dashboard Overview</span>
                   </div>
                 </div>
                 <div className="accent-corner" />
@@ -293,7 +293,7 @@ const HomePage: React.FC = () => {
                     Automated threshold monitoring with intelligent alert systems and predictive maintenance.
                   </p>
                   <div className="mt-3">
-                    <span className="feature-cta">Setup rules</span>
+                    <span className="feature-cta" role="presentation" tabIndex={-1}>Predictive Maintenance Logic</span>
                   </div>
                 </div>
                 <div className="accent-corner" />
