@@ -8,7 +8,10 @@ const Settings = sequelize.define('Settings', {
     unique: true,
   },
   value: {
-    type: DataTypes.STRING,
+    // Use TEXT for the settings value because we store JSON blobs which frequently exceed 255 chars
+    // and may contain nested keys (thresholds, monitoring, etc.). TEXT prevents insertion errors
+    // like "value too long for type character varying(255)" seen in production.
+    type: DataTypes.TEXT,
     allowNull: false,
   },
 }, {

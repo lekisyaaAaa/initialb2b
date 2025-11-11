@@ -1,3 +1,24 @@
+// === GLOBAL ERROR & ENV VALIDATION ===
+process.on("uncaughtException", (err) => {
+  console.error("\n🚨 [GLOBAL UNCAUGHT EXCEPTION] 🚨");
+  console.error("Message:", err.message);
+  console.error("Stack Trace:\n", err.stack || "No stack trace available");
+});
+
+process.on("unhandledRejection", (reason, promise) => {
+  console.error("\n🚨 [GLOBAL UNHANDLED PROMISE REJECTION] 🚨");
+  console.error("Reason:", reason);
+  if (reason && reason.stack) console.error("Stack Trace:\n", reason.stack);
+});
+
+["DATABASE_URL", "VERMILINKS_BACKEND_URL", "VERMILINKS_FRONTEND_URL"].forEach((env) => {
+  if (!process.env[env]) {
+    console.error(`❌ Missing environment variable: ${env}`);
+    process.exit(1);
+  } else {
+    console.log(`✅ ${env} detected`);
+  }
+});
 'use strict';
 
 const axios = require('axios');

@@ -165,6 +165,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [socketState, setSocketState] = useState<'connecting' | 'connected' | 'disconnected'>('connecting');
+  const [socketConnected, setSocketConnected] = useState(false);
   const [controlCards, setControlCards] = useState<ControlCardState[]>(() =>
     CONTROL_ACTUATORS.map(({ key, label }) => ({
       key,
@@ -234,7 +235,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
     });
   }, []);
 
-  const systemLocked = lockoutState.active;
+  const [systemLocked, setSystemLocked] = useState(lockoutState.active);
   const lockoutReason = lockoutState.reason;
 
   const updateControlCard = useCallback((key: ActuatorKey, updater: (card: ControlCardState) => ControlCardState) => {
@@ -350,6 +351,14 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
   }, [loadActuators]);
 
   const registerSocketHandlers = useCallback((socket: Socket) => {
+  socket.on('connect', () => setSocketConnected(true));
+  socket.on('disconnect', () => setSocketConnected(false));
+  socket.on('floatLockout', () => setSystemLocked(true));
+  socket.on('floatLockoutCleared', () => setSystemLocked(false));
+
+  // Initial state sync
+  setSocketConnected(socket.connected);
+  setSystemLocked(lockoutState.active);
     const handleSnapshot = (snapshot: any) => {
       if (Array.isArray(snapshot)) {
         const sanitized = snapshot.map(sanitizeActuator).filter(Boolean) as Actuator[];
@@ -489,6 +498,10 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
     socket.on('float_lockout_cleared', handleFloatLockoutCleared);
 
     return () => {
+      socket.off('connect');
+      socket.off('disconnect');
+      socket.off('floatLockout');
+      socket.off('floatLockoutCleared');
       socket.off('actuator_snapshot', handleSnapshot);
       socket.off('actuatorSnapshot', handleSnapshot);
       socket.off('actuatorUpdate', handleUpdate);
@@ -807,6 +820,11 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
 
   return (
     <section className={`${className} bg-white dark:bg-gray-900/80 border border-gray-100 dark:border-gray-800 rounded-xl shadow p-6`}>
+      {!socketConnected && (
+        <div className="rounded-md bg-yellow-900/40 text-yellow-300 text-center py-2 mb-3">
+          ⚠️ Realtime control disabled — socket connection offline.
+        </div>
+      )}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
         <div>
           <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
@@ -960,7 +978,13 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
                   <div className="mt-1 grid grid-cols-2 gap-2">
                     <button
                       type="button"
-                      disabled={disabledAuto}
+                      disabled={
+                        !socketConnected ||
+                        card.mode === 'auto' ||
+                        !(card.actuatorId || linkedActuator?.id) ||
+                        card.modePending ||
+                        systemLocked
+                      }
                       onClick={() => handleControlModeSwitch(card.key, 'auto')}
                       className="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >
@@ -968,7 +992,13 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
                     </button>
                     <button
                       type="button"
-                      disabled={disabledManual}
+                      disabled={
+                        !socketConnected ||
+                        card.mode === 'manual' ||
+                        !(card.actuatorId || linkedActuator?.id) ||
+                        card.modePending ||
+                        systemLocked
+                      }
                       onClick={() => handleControlModeSwitch(card.key, 'manual')}
                       className="inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
                     >

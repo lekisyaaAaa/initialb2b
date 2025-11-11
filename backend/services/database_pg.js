@@ -19,6 +19,7 @@ const baseOptions = {
 	}
 };
 
+
 let sequelize;
 let currentDialect = 'postgres';
 let usesSsl = false;
@@ -33,25 +34,38 @@ if (isTestEnv) {
 	currentDialect = 'sqlite';
 } else {
 	const databaseUrl = process.env.DATABASE_URL || '';
+	console.log('[DEBUG] DATABASE_URL:', databaseUrl);
+	console.log('[DEBUG] DATABASE_URL type:', typeof databaseUrl);
+	if (!databaseUrl || typeof databaseUrl !== 'string') {
+		logger.fatal('DATABASE_URL is missing or invalid.');
+		throw new Error('DATABASE_URL is missing or invalid.');
+	}
+	let parsedUrl;
+	try {
+		parsedUrl = new URL(databaseUrl);
+	} catch (err) {
+		console.error('[SAFE URL PARSE ERROR] Database URL:', databaseUrl, err.message);
+		throw err;
+	}
 	const sslFlagFromUrl = /[?&]sslmode=require/i.test(databaseUrl);
 	const sslFlagFromEnv = (process.env.PGSSLMODE || '').toLowerCase() === 'require';
 	const shouldRequireSsl = sslFlagFromUrl || sslFlagFromEnv;
 	usesSsl = shouldRequireSsl;
 
-	if (!process.env.DATABASE_URL) {
-		logger.fatal('DATABASE_URL is required but missing. Set a PostgreSQL connection string in your environment.');
-		process.exit(1);
-	}
-
 	const dialectOptions = shouldRequireSsl
 		? { ssl: { require: true, rejectUnauthorized: false } }
 		: {};
 
-	sequelize = new Sequelize(process.env.DATABASE_URL, {
-		...baseOptions,
-		dialect: 'postgres',
-		dialectOptions,
-	});
+	try {
+		sequelize = new Sequelize(databaseUrl, {
+			...baseOptions,
+			dialect: 'postgres',
+			dialectOptions,
+		});
+	} catch (err) {
+		console.error('[Sequelize Init Error]', err.message);
+		throw err;
+	}
 }
 
 function loadModels() {

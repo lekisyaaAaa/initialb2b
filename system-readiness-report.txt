@@ -1,13 +1,13 @@
 VermiLinks System Readiness Verification
-Generated: 2025-11-08T11:46:26.927Z
+Generated: 2025-11-09T05:52:01.670Z
 
 Step | Status | Detail
 ---- | ------ | ------
-1. STEP 1 — Backend Readiness & Health | FAIL | DATABASE_URL / VERMILINKS_DATABASE_URL is not configured.
+1. STEP 1 — Backend Readiness & Health | FAIL | Cannot read properties of undefined (reading 'searchParams')
 2. STEP 2 — ESP32 Telemetry Simulation | FAIL | timeout
 3. STEP 3 — Actuator Command Test | FAIL | timeout
 4. STEP 4 — Frontend Integration Check | FAIL | Dashboard missing labels: Water Pump, Solenoid Valve 1, Solenoid Valve 2, Solenoid Valve 3
-5. STEP 5 — ESP32 Wi-Fi Reconnect Simulation | FAIL | DATABASE_URL / VERMILINKS_DATABASE_URL is not configured.
+5. STEP 5 — ESP32 Wi-Fi Reconnect Simulation | FAIL | Cannot read properties of undefined (reading 'searchParams')
 6. STEP 6 — Float Sensor Safety Logic | FAIL | timeout
 7. STEP 7 — Automatic Wi-Fi Behaviour (No USB) | FAIL | timeout
 8. STEP 8 — Email Report | PASS | 📧 Email report sent successfully!

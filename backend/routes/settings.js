@@ -217,6 +217,54 @@ router.put('/thresholds', [auth, adminOnly], async (req, res) => {
       await Settings.create({ key: 'thresholds', value: serialized });
     }
 
+    // Broadcast threshold update to connected clients (Socket.IO)
+    try {
+      if (global.io && typeof global.io.emit === 'function') {
+        // Attempt to detect connected socket count for informative logging
+        let clientCount = null;
+        try {
+          if (global.io.sockets && global.io.sockets.sockets) {
+            // socket.io v3+: sockets.sockets is a Map
+            if (typeof global.io.sockets.sockets.size === 'number') {
+              clientCount = global.io.sockets.sockets.size;
+            } else if (typeof Object.keys === 'function') {
+              clientCount = Object.keys(global.io.sockets.sockets).length;
+            }
+          }
+        } catch (countErr) {
+          clientCount = null;
+        }
+
+        if (clientCount === 0) {
+          // Ensure a clear stdout log so Render and other hosts pick this up even if logger utility
+          // isn't wired into this module. This makes it explicit in service logs that emit was skipped.
+          try {
+            console.log('Thresholds saved — no connected Socket.IO clients; skipping live emit');
+          } catch (cLogErr) {
+            // ignore
+          }
+          logger && typeof logger.info === 'function' && logger.info('Thresholds saved — no connected Socket.IO clients; skipping live emit');
+        }
+
+        // Non-blocking emit: wrap in try/catch but don't fail the request if emit fails
+        try {
+          global.io.emit('threshold_update', nextThresholds);
+        } catch (emitErr) {
+          console.warn('Socket emit failed (no devices online). Continuing:', emitErr && emitErr.message ? emitErr.message : emitErr);
+        }
+      }
+    } catch (emitErrOuter) {
+      console.warn('Failed while attempting to broadcast threshold_update (continuing):', emitErrOuter && emitErrOuter.message ? emitErrOuter.message : emitErrOuter);
+    }
+
+    // Return success regardless of socket state. Log to stdout for visibility in hosting logs.
+    try {
+      console.log('Threshold update received → DB write successful');
+    } catch (cLogErr) {
+      // ignore
+    }
+    logger && typeof logger.info === 'function' && logger.info('Threshold update received → DB write successful');
+
     res.json({
       success: true,
       message: 'Thresholds updated successfully',

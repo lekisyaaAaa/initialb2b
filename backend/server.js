@@ -70,11 +70,15 @@ const adminAuthLimiter = rateLimit({
 
 const isProductionEnv = (process.env.NODE_ENV || 'development') === 'production';
 const normalizeOrigin = (origin) => {
-  if (!origin) {
+  if (!origin || typeof origin !== 'string' || origin.trim() === '') {
     return '';
   }
   try {
-    return new URL(origin).origin;
+    // Only attempt to parse if origin looks like a valid URL
+    if (/^https?:\/\//i.test(origin.trim())) {
+      return new URL(origin.trim()).origin;
+    }
+    return origin.replace(/\/$/, '');
   } catch (error) {
     return origin.replace(/\/$/, '');
   }
@@ -259,6 +263,21 @@ wss.on('connection', (ws) => {
         ws.deviceId = msg.deviceId;
         global.deviceSockets.set(msg.deviceId, ws);
         logger.debug('WebSocket client registered', { deviceId: msg.deviceId });
+        // When a device registers, immediately send the current thresholds so device can sync
+        (async () => {
+          try {
+            const Settings = require('./models/Settings');
+            const settings = await Settings.getSettings();
+            const thresholds = settings.thresholds || {};
+            const payload = JSON.stringify({ type: 'thresholds', data: thresholds });
+            if (ws.readyState === 1) {
+              ws.send(payload);
+              logger.info('ESP32 connected → Fetched current thresholds from DB → Synchronized successfully', { deviceId: msg.deviceId });
+            }
+          } catch (err) {
+            logger.warn('Failed to send thresholds to device on register', err && err.message ? err.message : err);
+          }
+        })();
       }
     } catch (e) {
       // ignore non-JSON or unexpected messages
@@ -352,6 +371,14 @@ const adminAuthRoutes = require('./routes/adminAuth');
 app.use('/api/admin', adminAuthRoutes);
 const adminRoutes = require('./routes/admin');
 app.use('/api/admin', adminRoutes);
+
+// Device config endpoint (public) for ESP32 or other devices to fetch current config/thresholds
+try {
+  const deviceConfigRoutes = require('./routes/deviceConfig');
+  app.use('/api/config', deviceConfigRoutes);
+} catch (e) {
+  logger && typeof logger.warn === 'function' && logger.warn('Device config route not available:', e && e.message ? e.message : e);
+}
 
 // Devices (heartbeats) route
 const devicesRoutes = require('./routes/devices');

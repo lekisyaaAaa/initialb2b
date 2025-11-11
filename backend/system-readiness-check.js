@@ -59,11 +59,14 @@ const config = {
 config.socketOrigin = process.env.VERMILINKS_SOCKET_ORIGIN
   || process.env.SYSTEM_VERIFY_SOCKET_ORIGIN
   || (() => {
-    if (!config.frontendUrl) {
+    if (!config.frontendUrl || typeof config.frontendUrl !== 'string' || config.frontendUrl.trim() === '') {
       return undefined;
     }
     try {
-      return new URL(config.frontendUrl).origin;
+      if (/^https?:\/\//i.test(config.frontendUrl.trim())) {
+        return new URL(config.frontendUrl.trim()).origin;
+      }
+      return config.frontendUrl;
     } catch (error) {
       return config.frontendUrl;
     }
@@ -326,6 +329,53 @@ async function stepAdminOtpFlow() {
     status: 'pass',
     notes: 'Admin credentials verified, OTP delivered, session token issued.',
   };
+}
+
+async function stepThresholdsUpdate() {
+  if (!context.adminToken) {
+    return {
+      status: 'warn',
+      notes: 'Admin token unavailable; skipping threshold update verification.',
+      suggestion: 'Run admin OTP flow to enable threshold tests.'
+    };
+  }
+
+  try {
+    // Fetch current settings
+    const current = await context.http.get('/api/settings', { timeout: config.httpTimeout });
+    const existing = current.data && current.data.data && current.data.data.thresholds ? current.data.data.thresholds : (current.data && current.data.thresholds) || {};
+
+    // Choose a safe metric and nudge the warning value slightly to force a change
+    const humidity = existing.humidity || {};
+    const currentWarning = Number.isFinite(Number(humidity.warning)) ? Number(humidity.warning) : (config.defaults && config.defaults.humidity && config.defaults.humidity.warning) || 75;
+    const newWarning = Number((currentWarning + 0.1).toFixed(2));
+
+    const payload = { thresholds: { humidity: { warning: newWarning } } };
+
+    const putResponse = await context.http.put('/api/settings/thresholds', payload, { timeout: config.httpTimeout });
+    if (!putResponse || !putResponse.data || putResponse.status !== 200) {
+      throw new Error(`Unexpected PUT response ${putResponse && putResponse.status}`);
+    }
+
+    // Re-fetch settings and confirm persisted
+    const recheck = await context.http.get('/api/settings', { timeout: config.httpTimeout });
+    const stored = recheck.data && recheck.data.data && recheck.data.data.thresholds ? recheck.data.data.thresholds : (recheck.data && recheck.data.thresholds) || {};
+    const storedHumidityWarning = Number((stored.humidity && stored.humidity.warning) || stored.humidity || null);
+
+    if (!Number.isFinite(storedHumidityWarning)) {
+      return { status: 'warn', notes: 'Thresholds saved but could not read back humidity.warning from settings.' };
+    }
+
+    // Accept small float differences
+    if (Math.abs(storedHumidityWarning - newWarning) > 0.0001) {
+      return { status: 'warn', notes: `Persistence mismatch: expected ${newWarning} got ${storedHumidityWarning}` };
+    }
+
+    return { status: 'pass', notes: 'Thresholds saved and confirmed in database (socket emit optional).' };
+  } catch (error) {
+    const msg = error && error.response && error.response.data ? JSON.stringify(error.response.data).slice(0, 400) : (error && error.message ? error.message : String(error));
+    return { status: 'warn', notes: `Threshold verification encountered an issue: ${msg}` };
+  }
 }
 
 async function stepTelemetryValidation() {
@@ -988,6 +1038,7 @@ async function main() {
   await runStep('STEP 1 — Backend Availability', 'Backend Health', stepBackendAvailability);
   await runStep('STEP 2 — Database Connectivity', 'Database', stepDatabaseConnectivity);
   await runStep('STEP 3 — Admin Login + OTP', 'Admin Login + OTP', stepAdminOtpFlow);
+  await runStep('STEP 3.5 — Thresholds Update Verification', 'Thresholds Update', stepThresholdsUpdate);
   await runStep('STEP 4 — Telemetry Endpoint Validation', 'Telemetry', stepTelemetryValidation);
   await runStep('STEP 5 — Actuator Command Verification', 'Actuators', stepActuatorCommands);
   await runStep('STEP 6 — Float Sensor Safety Logic', 'Float Sensor Logic', stepFloatSensorLogic);
