@@ -515,7 +515,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
       socket.off('float_lockout', handleFloatLockout);
       socket.off('float_lockout_cleared', handleFloatLockoutCleared);
     };
-  }, [applyActuatorUpdate, sanitizeActuator, updateControlCard, updateLockoutState]);
+  }, [applyActuatorUpdate, sanitizeActuator, updateControlCard, updateLockoutState, lockoutState]);
 
   const handleManualReconnect = useCallback(() => {
     setSocketMeta((prev) => ({ ...prev, lastError: undefined }));
@@ -914,8 +914,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
             const manualUnavailable = card.mode !== 'manual';
             const disabledOn = baseCommandDisabled || card.status === 'on' || manualUnavailable || systemLocked;
             const disabledOff = baseCommandDisabled || card.status === 'off' || manualUnavailable;
-            const disabledAuto = card.modePending || card.mode === 'auto' || !hasActuatorRecord || realtimeUnavailable;
-            const disabledManual = card.modePending || card.mode === 'manual' || !hasActuatorRecord || realtimeUnavailable;
+            // `disabledAuto` and `disabledManual` were unused; remove to satisfy ESLint no-unused-vars
             const ackIssue = linkedActuator?.deviceAck === false;
             const ackMessage = linkedActuator?.deviceAckMessage;
             const lastUpdated = linkedActuator?.lastUpdated || card.lastUpdated;
