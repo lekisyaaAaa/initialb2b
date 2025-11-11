@@ -243,7 +243,13 @@ router.put('/thresholds', [auth, adminOnly], async (req, res) => {
           } catch (cLogErr) {
             // ignore
           }
-          logger && typeof logger.info === 'function' && logger.info('Thresholds saved — no connected Socket.IO clients; skipping live emit');
+          try {
+            if (typeof logger !== 'undefined' && logger && typeof logger.info === 'function') {
+              logger.info('Thresholds saved — no connected Socket.IO clients; skipping live emit');
+            }
+          } catch (logGuardErr) {
+            // ignore logging guard errors
+          }
         }
 
         // Non-blocking emit: wrap in try/catch but don't fail the request if emit fails
@@ -263,7 +269,13 @@ router.put('/thresholds', [auth, adminOnly], async (req, res) => {
     } catch (cLogErr) {
       // ignore
     }
-    logger && typeof logger.info === 'function' && logger.info('Threshold update received → DB write successful');
+    try {
+      if (typeof logger !== 'undefined' && logger && typeof logger.info === 'function') {
+        logger.info('Threshold update received → DB write successful');
+      }
+    } catch (logGuardErr) {
+      // ignore logging guard errors
+    }
 
     res.json({
       success: true,
