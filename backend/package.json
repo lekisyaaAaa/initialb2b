@@ -12,6 +12,7 @@
     "verify:system": "node system-readiness-check.js",
     "poller": "node services/sensor-poller.js",
     "migrate": "node scripts/run_migrations.js",
+  "seed": "npx sequelize-cli db:seed:all",
     "seed-admin": "node scripts/seed-admin.js",
     "test-email": "node scripts/test-email.js"
   },
