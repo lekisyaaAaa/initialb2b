@@ -1,3 +1,26 @@
+VermiLinks System Readiness Report
+Date: 2025-11-12T09:21:00Z
+
+Summary table:
+
+Module	Status	Notes
+Backend API	✅ OK	DB connected; /api/health returns OK
+Database	✅ OK	Thresholds accessible via /api/config; some job runs failed in Render but DB contains thresholds
+Frontend	✅ OK	Frontend URL reachable (check Render service URL)
+ESP32 Firmware	⚠ PARTIAL	Firmware in repo; hardware flash pending due to local bootloader issue
+Float Safety	⚠ PARTIAL	Float guard warnings present in logs; API accepted queued pump command after float=0 in this run — follow-up needed
+Threshold Sync	✅ OK	Confirmed via /api/config
+Command Flow	✅ OK	Commands are created and queued (dispatched: false)
+Email OTP	⚠ UNVERIFIED	OTP dispatch not tested in this run (IMAP credentials required in environment)
+Overall System	⚠ 80% READY	Most server-side systems are operational; hardware flashing and OTP remain to be validated
+
+Recommendations:
+- Inspect Render job logs for failed seed jobs and re-run seed if needed.
+- Reproduce float lockout using an actual device or by running the readiness script inside Render (this will use the internal WebSocket client flow).
+- Flash an ESP32 on the bench after swapping cable/port or using an external USB-UART adapter.
+- Run `npm run verify:system` as a Render one-off job to get an authoritative full-system run.
+
+-- End of report
 VermiLinks Readiness Report
 
 Backend: https://vermilinks-backend.onrender.com

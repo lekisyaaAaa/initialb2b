@@ -1,4 +1,48 @@
 VermiLinks Final Validation Log
+Date: 2025-11-12T09:20:00Z
+
+Summary of live checks performed from local workspace (PowerShell) against production endpoints.
+
+1) Backend /api/health
+Response:
+{ "ok": true, "db": "connected", "version": "1.0.0", "env": "production" }
+
+2) /api/config (thresholds)
+Response: success = true; thresholds present (sample):
+  temperature: { min: 20, max: 30, warning: 30, critical: 35 }
+  humidity: { min: 40, max: 70, warning: 65.1, critical: 75 }
+  moisture: { min: 60, max: 80, warning: 35, critical: 25 }
+
+3) Telemetry POST (device_id=ESP32-01; float_sensor=1)
+Response: success: true, message: Sensor data received successfully, created sensorData id ~831
+
+4) Command POST (pump on)
+Response: success: true, dispatched: false, command.id = 76
+
+5) Float safety test (float_sensor=0 then pump ON)
+Telemetry POST (float_sensor=0) -> success: created sensorData id ~836
+Command POST after float=0 -> response: success: true, dispatched: false, command.id = 77
+
+  NOTE: The pump command was accepted by the API and queued (status: pending). Service logs do show floatGuard warnings for other devices; however in this run the API accepted the command despite recent float_sensor=0. Recommend follow-up: reproduce this with device-specific hardware connection or check floatSensorGuard logic for timing windows.
+
+6) Render one-off jobs
+- Seed job (job-d4a4q5pe2q1c73e00dfg) status: failed (see Render dashboard for full logs)
+- check_thresholds job (job-d4a508adbo4c73c54gd0) status: failed
+
+7) Service logs (excerpt)
+- Many occurrences of: "Socket origin rejected { origin: 'file://' }" — benign if local file-origin tests are used
+- Float guard warnings observed in logs (blocked command entries for test device ids)
+
+Conclusions & Next steps:
+- Backend API: healthy and responding; DB connection: OK
+- Thresholds: accessible via /api/config
+- Telemetry: accepted and persisted
+- Commands: accepted and queued (dispatched: false)
+- Float safety: partially validated (server-side blocks observed in logs, but API accepted pump command after simulated float=0 in this run). Needs a dedicated follow-up test with timing control or execute the readiness script inside Render to reproduce device flow.
+- Seeder/migration jobs: some job runs have failed; however thresholds exist in DB. Inspect failed job logs on Render dashboard and re-run seed if necessary.
+
+-- End of log
+VermiLinks Final Validation Log
 
 Timestamp: 2025-11-12T08:26:00Z
 
