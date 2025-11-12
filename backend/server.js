@@ -176,7 +176,31 @@ io.on('connection', async (socket) => {
 });
 
 // WebSocket setup for real-time data
-const wss = new WebSocket.Server({ server });
+const normalizeDeviceWsPath = (value) => {
+  if (!value || value === '*') {
+    return '/';
+  }
+  return value.startsWith('/') ? value : `/${value}`;
+};
+
+const deviceWsPath = normalizeDeviceWsPath(process.env.DEVICE_WS_PATH);
+logger.info('Device WebSocket path configured', { deviceWsPath });
+const wss = new WebSocket.Server({ noServer: true });
+
+server.on('upgrade', (request, socket, head) => {
+  const requestPath = (request.url || '/').split('?')[0];
+  const isDeviceSocket = deviceWsPath === '/'
+    ? requestPath === '/' || requestPath === ''
+    : requestPath === deviceWsPath;
+
+  if (!isDeviceSocket) {
+    return;
+  }
+
+  wss.handleUpgrade(request, socket, head, (ws) => {
+    wss.emit('connection', ws, request);
+  });
+});
 
 // Store WebSocket connections
 global.wsConnections = new Set();
@@ -185,8 +209,9 @@ global.deviceSockets = new Map();
 
 deviceCommandQueue.startCommandRetryLoop();
 
-wss.on('connection', (ws) => {
-  logger.info('New WebSocket connection established');
+wss.on('connection', (ws, request) => {
+  const requestPath = (request && request.url) ? request.url.split('?')[0] : 'unknown';
+  logger.info('New WebSocket connection established', { path: requestPath || '/' });
   global.wsConnections.add(ws);
   // allow ws clients (ESP32) to register with a deviceId by sending a JSON message:
   // { type: 'register', deviceId: 'esp32-1' }
@@ -407,7 +432,8 @@ function onBound(boundPort) {
   if ((process.env.NODE_ENV || 'development') !== 'test') {
     logger.info('Server running', { port: boundPort });
     logger.info('Health check endpoint ready', { url: `http://localhost:${boundPort}/api/health` });
-    logger.info('WebSocket server running', { url: `ws://localhost:${boundPort}` });
+  const deviceWsLogPath = deviceWsPath === '/' ? '' : deviceWsPath;
+  logger.info('WebSocket server running', { url: `ws://localhost:${boundPort}${deviceWsLogPath}` });
     try {
       const addr = server.address();
       logger.debug('Server process info', { pid: process.pid, address: addr });
