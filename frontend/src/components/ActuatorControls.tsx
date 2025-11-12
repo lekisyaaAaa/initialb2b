@@ -769,7 +769,9 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
     }
   }, []);
 
-  const socketOffline = socketState !== 'connected';
+  // Consider socket online based on actual connection boolean; don't block
+  // controls during transient "connecting" states.
+  const socketOffline = !socketConnected;
   const deviceOffline = !deviceOnline;
 
   return (
@@ -862,9 +864,13 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
             const modeClasses = card.mode === 'manual'
               ? 'text-amber-600 dark:text-amber-300'
               : 'text-emerald-600 dark:text-emerald-300';
-            const hasInFlightCommand = card.commandStatus === 'pending' || card.commandStatus === 'dispatched';
+            // Only block while a command is pending; once dispatched, allow
+            // follow-up actions (e.g., to correct a mistaken toggle).
+            const hasInFlightCommand = card.commandStatus === 'pending';
             const hasActuatorRecord = Boolean(card.actuatorId || linkedActuator?.id);
-            const baseCommandDisabled = card.pending || card.modePending || socketOffline || hasInFlightCommand;
+            // Allow queuing commands even if socket is offline — backend will
+            // queue to device and execute on reconnect.
+            const baseCommandDisabled = card.pending || card.modePending || hasInFlightCommand;
             const manualUnavailable = card.mode !== 'manual';
             const disabledOn = baseCommandDisabled || card.status === 'on' || manualUnavailable || systemLocked;
             const disabledOff = baseCommandDisabled || card.status === 'off' || manualUnavailable;
@@ -932,7 +938,6 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
                     <button
                       type="button"
                       disabled={
-                        !socketConnected ||
                         card.mode === 'auto' ||
                         !(card.actuatorId || linkedActuator?.id) ||
                         card.modePending ||
@@ -946,7 +951,6 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
                     <button
                       type="button"
                       disabled={
-                        !socketConnected ||
                         card.mode === 'manual' ||
                         !(card.actuatorId || linkedActuator?.id) ||
                         card.modePending ||

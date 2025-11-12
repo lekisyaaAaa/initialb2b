@@ -219,6 +219,12 @@ const Dashboard: React.FC = () => {
   };
 
   const groupedAlerts = useMemo(() => {
+    // Do not surface historical alerts on the public/user dashboard when
+    // there are no live sensors connected. This avoids confusing users with
+    // stale data while hardware is offline.
+    if (!isConnected || safeLatestSensorData.length === 0) {
+      return [] as Array<{ severity: string; items: Alert[] }>;
+    }
     if (recentAlerts.length === 0) {
       return [] as Array<{ severity: string; items: Alert[] }>;
     }
@@ -628,26 +634,28 @@ const Dashboard: React.FC = () => {
                           <AlertTriangle className="w-5 h-5 mr-2 text-coffee-600 dark:text-gray-200" />
                           Active Alerts
                         </h3>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={handleRefreshAlerts}
-                            className="inline-flex items-center gap-2 rounded-full border border-coffee-200 px-3 py-1.5 text-xs font-medium text-coffee-700 transition-colors hover:border-coffee-300 hover:text-coffee-900 dark:border-gray-700 dark:text-gray-100 dark:hover:border-gray-600"
-                            disabled={alertsBusy}
-                          >
-                            {alertsBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                            <span>Refresh</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={handleClearAlerts}
-                            className="inline-flex items-center gap-2 rounded-full border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:border-red-300 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-800 dark:text-red-300 dark:hover:border-red-700"
-                            disabled={alertsBusy || !hasAlerts}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                            <span>Clear All</span>
-                          </button>
-                        </div>
+                        {isAdmin && (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleRefreshAlerts}
+                              className="inline-flex items-center gap-2 rounded-full border border-coffee-200 px-3 py-1.5 text-xs font-medium text-coffee-700 transition-colors hover:border-coffee-300 hover:text-coffee-900 dark:border-gray-700 dark:text-gray-100 dark:hover:border-gray-600"
+                              disabled={alertsBusy}
+                            >
+                              {alertsBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                              <span>Refresh</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleClearAlerts}
+                              className="inline-flex items-center gap-2 rounded-full border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:border-red-300 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-800 dark:text-red-300 dark:hover:border-red-700"
+                              disabled={alertsBusy || !hasAlerts}
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span>Clear All</span>
+                            </button>
+                          </div>
+                        )}
                       </div>
                       <p className="mt-2 text-xs text-coffee-500 dark:text-gray-300">
                         {unresolvedAlerts.length} unresolved alert{unresolvedAlerts.length === 1 ? '' : 's'}
