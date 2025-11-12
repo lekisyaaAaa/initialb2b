@@ -677,6 +677,9 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
         pending: false,
         commandStatus: dispatched ? 'dispatched' : 'pending',
         lastUpdated: new Date().toISOString(),
+        message: !deviceOnline
+          ? 'Device offline — command queued and will execute once hardware reconnects.'
+          : null,
       }));
       setError(null);
     } catch (err: any) {
@@ -703,7 +706,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
         });
       }
     }
-  }, [lockoutReason, setError, systemLocked, updateControlCard, updateLockoutState]);
+  }, [deviceOnline, lockoutReason, setError, systemLocked, updateControlCard, updateLockoutState]);
 
   const handleControlModeSwitch = useCallback(async (key: ActuatorKey, nextMode: 'auto' | 'manual') => {
     updateControlCard(key, (card) => ({ ...card, modePending: true, message: null }));
@@ -761,7 +764,8 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
     }
   }, []);
 
-  const realtimeUnavailable = socketState !== 'connected' || !deviceOnline;
+  const socketOffline = socketState !== 'connected';
+  const deviceOffline = !deviceOnline;
 
   return (
     <section className={`${className} bg-white dark:bg-gray-900/80 border border-gray-100 dark:border-gray-800 rounded-xl shadow p-6`}>
@@ -855,7 +859,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
               : 'text-emerald-600 dark:text-emerald-300';
             const hasInFlightCommand = card.commandStatus === 'pending' || card.commandStatus === 'dispatched';
             const hasActuatorRecord = Boolean(card.actuatorId || linkedActuator?.id);
-            const baseCommandDisabled = card.pending || card.modePending || realtimeUnavailable || hasInFlightCommand;
+            const baseCommandDisabled = card.pending || card.modePending || socketOffline || hasInFlightCommand;
             const manualUnavailable = card.mode !== 'manual';
             const disabledOn = baseCommandDisabled || card.status === 'on' || manualUnavailable || systemLocked;
             const disabledOff = baseCommandDisabled || card.status === 'off' || manualUnavailable;
@@ -979,15 +983,21 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
         </div>
       )}
 
-      {realtimeUnavailable && (
+      {socketOffline && (
         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-900/20 px-4 py-3 text-sm text-amber-700 dark:text-amber-200">
-          Realtime control disabled — {
-            socketState !== 'connected'
-              ? `socket connection is offline${socketMeta.lastError ? ` (${socketMeta.lastError})` : ''}`
-              : 'no devices are currently online'
-          }.
+          Realtime control disabled — socket connection is offline
+          {socketMeta.lastError ? ` (${socketMeta.lastError})` : ''}.
           {socketMeta.host && (
             <span className="block text-xs text-amber-600 dark:text-amber-300 mt-1">Last attempted host: {socketMeta.host}</span>
+          )}
+        </div>
+      )}
+
+      {!socketOffline && deviceOffline && (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-900/20 px-4 py-3 text-sm text-amber-700 dark:text-amber-200">
+          No devices are currently online — commands will remain queued and run automatically once hardware reconnects.
+          {socketMeta.host && (
+            <span className="block text-xs text-amber-600 dark:text-amber-300 mt-1">Socket host: {socketMeta.host}</span>
           )}
         </div>
       )}
