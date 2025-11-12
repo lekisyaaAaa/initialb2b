@@ -220,6 +220,22 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       if (!payload) return;
       const sample = Array.isArray(payload) ? payload[0] : payload;
       if (!sample || typeof sample !== 'object') return;
+
+      // Apply the same connectivity heuristics we use for REST polling.
+      const deviceOnline = (sample as any)?.deviceOnline;
+      const deviceStatus = ((sample as any)?.deviceStatus || (sample as any)?.status || '').toString().toLowerCase();
+      const isStale = (sample as any)?.isStale;
+      const connected = (typeof deviceOnline === 'boolean' && deviceOnline === true)
+        || deviceStatus === 'online'
+        || isStale === false;
+
+      if (!connected) {
+        // Ignore stale/offline telemetry so the UI doesn't show phantom data
+        // when only the ESP32 is present without sensors.
+        setIsConnected(false);
+        return;
+      }
+
       setLatestSensorData([sample as SensorData]);
       setIsConnected(true);
       setLastFetchAt(new Date().toISOString());
