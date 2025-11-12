@@ -625,10 +625,12 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
 
       const socket = io(host, {
         path: '/socket.io',
-        transports: ['websocket', 'polling'],
-        withCredentials: false,
-        reconnection: false,
-        timeout: 5000,
+        // Prefer websocket transport and enable reconnection/credentials for production
+        transports: ['websocket'],
+        withCredentials: true,
+        reconnection: true,
+        reconnectionAttempts: 5,
+        timeout: 20000,
       });
 
       socketRef.current = socket;

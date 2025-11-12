@@ -28,3 +28,10 @@
 #define SOLENOID_PIN_1 25
 #define SOLENOID_PIN_2 26
 #define SOLENOID_PIN_3 27
+
+// RS485 / Modbus configuration (change pins to match your wiring)
+#define RS485_RX_PIN 17
+#define RS485_TX_PIN 18
+#define RS485_DE_PIN 4
+#define RS485_BAUD 9600
+#define RS485_MODBUS_ID 1

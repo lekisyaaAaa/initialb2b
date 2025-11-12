@@ -9,6 +9,8 @@
 #include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+// Modbus/RS485
+#include <ModbusMaster.h>
 
 #include "config.h"
 
@@ -56,10 +58,55 @@ int readFloatSensor();
 int readSoilMoisture();
 float readTemperature();
 float readHumidity();
-// RS485 helper stubs (implement RS485 reads or link to driver library)
-float getTemperatureRS485() { return NAN; }
-float getHumidityRS485() { return NAN; }
-int getMoistureRS485() { return -1; }
+// RS485 / Modbus support
+ModbusMaster node;
+// Helper: drive DE/RE for RS485 transceiver
+void setTransmitEnable(bool tx) {
+  digitalWrite(RS485_DE_PIN, tx ? HIGH : LOW);
+}
+
+float getTemperatureRS485() {
+  // Example Modbus register read (adjust register addresses for your sensor)
+  // Returns NAN on failure
+  static const uint16_t REG_TEMP = 0x0000; // placeholder
+  setTransmitEnable(true);
+  delay(2);
+  uint8_t result = node.readInputRegisters(REG_TEMP, 1);
+  setTransmitEnable(false);
+  if (result != node.ku8MBSuccess) {
+    return NAN;
+  }
+  const uint16_t raw = node.getResponseBuffer(0);
+  // Example: raw is temperature * 100
+  return ((float)raw) / 100.0f;
+}
+
+float getHumidityRS485() {
+  static const uint16_t REG_HUM = 0x0001; // placeholder
+  setTransmitEnable(true);
+  delay(2);
+  uint8_t result = node.readInputRegisters(REG_HUM, 1);
+  setTransmitEnable(false);
+  if (result != node.ku8MBSuccess) {
+    return NAN;
+  }
+  const uint16_t raw = node.getResponseBuffer(0);
+  return ((float)raw) / 100.0f;
+}
+
+int getMoistureRS485() {
+  static const uint16_t REG_SOIL = 0x0002; // placeholder
+  setTransmitEnable(true);
+  delay(2);
+  uint8_t result = node.readInputRegisters(REG_SOIL, 1);
+  setTransmitEnable(false);
+  if (result != node.ku8MBSuccess) {
+    return -1;
+  }
+  const uint16_t raw = node.getResponseBuffer(0);
+  // Assume raw is 0..100
+  return (int)raw;
+}
 void syncThresholds();
 
 void setup() {
@@ -68,6 +115,9 @@ void setup() {
   randomSeed(esp_random());
 
   pinMode(FLOAT_SENSOR_PIN, INPUT_PULLUP);
+  // RS485 DE/RE control
+  pinMode(RS485_DE_PIN, OUTPUT);
+  digitalWrite(RS485_DE_PIN, LOW);
   pinMode(SOLENOID_PIN_1, OUTPUT);
   pinMode(SOLENOID_PIN_2, OUTPUT);
   pinMode(SOLENOID_PIN_3, OUTPUT);
@@ -81,7 +131,26 @@ void setup() {
   // initial thresholds sync
   syncThresholds();
 
+  // Initialize Modbus RS485 on Serial2
+  Serial2.begin(RS485_BAUD, SERIAL_8N1, RS485_RX_PIN, RS485_TX_PIN);
+  node.begin(RS485_MODBUS_ID, Serial2);
+  node.preTransmission([]() { setTransmitEnable(true); });
+  node.postTransmission([]() { setTransmitEnable(false); });
+
   Serial.println("[SYSTEM] VermiLinks firmware started");
+#if SIMULATE_SENSORS
+  Serial.println("[SYSTEM] Simulation mode: RS485 reads will be emulated");
+#else
+  Serial.println("[SYSTEM] Real sensor mode active — RS485 reads enabled");
+#endif
+
+  // Quick RS485 probe (non-blocking) — attempt a single read to detect sensor presence
+  float t = getTemperatureRS485();
+  if (isnan(t)) {
+    Serial.println("[RS485] Temperature probe: no response (NAN)");
+  } else {
+    Serial.printf("[RS485] Temperature probe: %.2f\n", t);
+  }
 }
 
 void loop() {
