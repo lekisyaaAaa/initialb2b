@@ -35,3 +35,26 @@
 #define RS485_DE_PIN 4
 #define RS485_BAUD 9600
 #define RS485_MODBUS_ID 1
+
+/*
+RS485 module wiring (5-pin TTL side) → ESP32 mapping
+	Use a 3.3V RS485 transceiver (e.g., MAX3485/SP3485/SN65HVD series). If your module is
+	5V-only (MAX485 breakout), power at 5V and ensure RO/DI levels are 3.3V-safe or use level shifting.
+
+	Module pin        → ESP32
+	-------------------------------------------
+	RO  (Receiver Out) → RS485_RX_PIN (GPIO17)
+	DI  (Driver In)    → RS485_TX_PIN (GPIO18)
+	RE/DE (enable)     → RS485_DE_PIN (GPIO4)
+	VCC                → 3V3 (or 5V if module requires and is level-safe)
+	GND                → GND
+
+Notes:
+	- If your module breaks out RE and DE separately (6 pins), tie RE and DE together and drive both
+		from RS485_DE_PIN so the firmware can toggle TX/RX direction.
+	- Bus side (screw terminals): connect A ↔ Sensor A, B ↔ Sensor B. If no comms, swap A/B.
+	- Termination/bias: enable 120Ω termination at the two physical ends of the bus only; apply biasing
+		(pull-up on A, pull-down on B) to keep the line idle when no driver is active.
+	- Configure RS485_BAUD/Parity in firmware to match your device. RS485_MODBUS_ID must match the device's
+		Modbus address (Unit ID).
+*/

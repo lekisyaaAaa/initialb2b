@@ -14,12 +14,13 @@
 
 #include "config.h"
 
-// Hardware pin mapping (field deployment)
-#define FLOAT_SENSOR_PIN 16
-#define PUMP_PIN 5
-#define SOLENOID_PIN_1 25
-#define SOLENOID_PIN_2 26
-#define SOLENOID_PIN_3 27
+// Hardware pin mapping is defined centrally in config.h.
+// Pins in use (from config.h):
+//   FLOAT_SENSOR_PIN 16
+//   PUMP_PIN         5
+//   SOLENOID_PIN_1   25
+//   SOLENOID_PIN_2   26
+//   SOLENOID_PIN_3   27
 
 // Toggle simulation for lab testing. Set to false for production with real RS485 sensors.
 #ifndef SIMULATE_SENSORS

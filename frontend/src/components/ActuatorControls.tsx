@@ -769,6 +769,16 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
     }
   }, []);
 
+  // Treat very old "pending" statuses as stale so controls aren't blocked forever
+  // when the backend has an old, never-acked command. We'll consider a command
+  // in-flight only if its lastUpdated is recent.
+  const isRecent = useCallback((iso?: string | null, windowMs = 15000) => {
+    if (!iso) return false;
+    const t = new Date(iso).getTime();
+    if (!Number.isFinite(t)) return false;
+    return Date.now() - t < windowMs;
+  }, []);
+
   // Consider socket online based on actual connection boolean; don't block
   // controls during transient "connecting" states.
   const socketOffline = !socketConnected;
@@ -864,9 +874,9 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
             const modeClasses = card.mode === 'manual'
               ? 'text-amber-600 dark:text-amber-300'
               : 'text-emerald-600 dark:text-emerald-300';
-            // Only block while a command is pending; once dispatched, allow
-            // follow-up actions (e.g., to correct a mistaken toggle).
-            const hasInFlightCommand = card.commandStatus === 'pending';
+            // Only block while a command is actively pending; if the last
+            // pending update is stale, allow controls again.
+            const hasInFlightCommand = card.commandStatus === 'pending' && isRecent(card.lastUpdated, 15000);
             const hasActuatorRecord = Boolean(card.actuatorId || linkedActuator?.id);
             // Allow queuing commands even if socket is offline — backend will
             // queue to device and execute on reconnect.
@@ -965,7 +975,9 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
                 </div>
 
                 <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">
-                  <span className="block font-medium">Command status: {card.commandStatus}</span>
+                  <span className="block font-medium">
+                    Command status: {card.commandStatus === 'pending' && !isRecent(card.lastUpdated, 15000) ? 'pending (stale)' : card.commandStatus}
+                  </span>
                   {card.message && (
                     <span className="mt-1 block text-rose-600 dark:text-rose-300">{card.message}</span>
                   )}
