@@ -68,13 +68,15 @@ const adminAuthLimiter = rateLimit({
   },
 });
 
+const allowedSocketOrigins = [
+  'https://vermilinks-frontend.onrender.com',
+  'http://localhost:3000',
+];
+
 const io = new Server(server, {
   cors: {
-    origin: [
-      'https://vermilinks-frontend.onrender.com',
-      'http://localhost:3000',
-    ],
-    methods: ['GET', 'POST'],
+    origin: allowedSocketOrigins,
+    methods: ['GET', 'POST', 'OPTIONS'],
     credentials: true,
   },
 });
@@ -236,7 +238,18 @@ wss.on('connection', (ws) => {
 app.use(helmet());
 app.use(compression());
 
-app.use(cors({ origin: 'https://vermilinks-frontend.onrender.com', credentials: true }));
+const allowedHttpOrigins = [
+  'https://vermilinks-frontend.onrender.com',
+  'http://localhost:3000',
+];
+
+const httpCors = cors({
+  origin: allowedHttpOrigins,
+  credentials: true,
+});
+
+app.use(httpCors);
+app.options('*', httpCors);
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
