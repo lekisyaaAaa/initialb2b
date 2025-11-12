@@ -211,7 +211,7 @@ deviceCommandQueue.startCommandRetryLoop();
 
 wss.on('connection', (ws, request) => {
   const requestPath = (request && request.url) ? request.url.split('?')[0] : 'unknown';
-  logger.info('New WebSocket connection established', { path: requestPath || '/' });
+  logger.info(`New WebSocket connection established [${requestPath || '/'}]`);
   global.wsConnections.add(ws);
   // allow ws clients (ESP32) to register with a deviceId by sending a JSON message:
   // { type: 'register', deviceId: 'esp32-1' }
