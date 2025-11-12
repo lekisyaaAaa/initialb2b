@@ -119,14 +119,30 @@ async function ensurePgClient() {
   if (!config.databaseUrl) {
     throw new Error('DATABASE_URL is not configured');
   }
-  const sslRequired = !/localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(config.databaseUrl);
-  const client = new PgClient({
-    connectionString: config.databaseUrl,
-    ssl: sslRequired ? { rejectUnauthorized: false } : false,
-  });
-  await client.connect();
-  context.pgClient = client;
-  return client;
+  const sslRequired = !/localhost|127\.0\.0\.1|0\.0.0.0/i.test(config.databaseUrl);
+  const maxAttempts = Number(process.env.SYSTEM_VERIFY_DB_RETRIES || 3);
+  let attempt = 0;
+  let lastErr = null;
+  while (attempt < maxAttempts) {
+    attempt += 1;
+    try {
+      const client = new PgClient({
+        connectionString: config.databaseUrl,
+        ssl: sslRequired ? { rejectUnauthorized: false } : false,
+      });
+      await client.connect();
+      context.pgClient = client;
+      return client;
+    } catch (err) {
+      lastErr = err;
+      console.warn(`ensurePgClient: attempt ${attempt} failed: ${err && err.message ? err.message : err}`);
+      if (attempt < maxAttempts) {
+        const backoff = Math.min(500 * Math.pow(2, attempt - 1), 5000);
+        await sleep(backoff);
+      }
+    }
+  }
+  throw lastErr || new Error('Failed to connect to Postgres in ensurePgClient');
 }
 
 async function fetchOtpCode() {
@@ -660,6 +676,9 @@ async function stepFloatSensorLogic() {
     float_sensor: 0,
     timestamp: new Date().toISOString(),
   }, { timeout: config.httpTimeout });
+
+  // Allow a short window for telemetry to be persisted before issuing actuator command
+  await sleep(300);
 
   const blockedResponse = await context.http.post('/api/command', {
     device_id: config.deviceId,

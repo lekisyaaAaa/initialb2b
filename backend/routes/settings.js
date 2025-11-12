@@ -277,6 +277,7 @@ router.put('/thresholds', [auth, adminOnly], async (req, res) => {
       // ignore logging guard errors
     }
 
+    // Ensure we always return 200 even if Socket.IO emit fails upstream
     res.json({
       success: true,
       message: 'Thresholds updated successfully',

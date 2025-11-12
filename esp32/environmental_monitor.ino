@@ -12,7 +12,9 @@
 
 #include "config.h"
 
-#define FLOAT_SENSOR_PIN 5
+// Hardware pin mapping (field deployment)
+#define FLOAT_SENSOR_PIN 16
+#define PUMP_PIN 5
 #define SOLENOID_PIN_1 25
 #define SOLENOID_PIN_2 26
 #define SOLENOID_PIN_3 27
@@ -32,6 +34,8 @@ unsigned long nextTelemetryInterval = MIN_TELEMETRY_INTERVAL_MS;
 unsigned long lastCommandPollAt = 0;
 unsigned long lastWifiAttemptAt = 0;
 unsigned long nextWifiRetryDelay = WIFI_RETRY_BASE_MS;
+unsigned long lastThresholdSyncAt = 0;
+const unsigned long THRESHOLD_SYNC_INTERVAL_MS = 60000; // 60s between config syncs
 
 bool solenoidStates[3] = { false, false, false };
 
@@ -41,11 +45,13 @@ void sendTelemetry(int floatState, int soilMoisture, float temperature, float hu
 bool postJson(const String& url, const String& body, uint8_t maxAttempts = COMMAND_MAX_RETRIES);
 void handlePendingCommands(int floatState);
 void applySolenoid(int index, bool turnOn, bool fromCommand);
+void applyPump(bool turnOn);
 void disableAllSolenoids(const char* reason);
 int readFloatSensor();
 int readSoilMoisture();
 float readTemperature();
 float readHumidity();
+void syncThresholds();
 
 void setup() {
   Serial.begin(115200);
@@ -56,13 +62,17 @@ void setup() {
   pinMode(SOLENOID_PIN_1, OUTPUT);
   pinMode(SOLENOID_PIN_2, OUTPUT);
   pinMode(SOLENOID_PIN_3, OUTPUT);
+  pinMode(PUMP_PIN, OUTPUT);
+  digitalWrite(PUMP_PIN, RELAY_INACTIVE_LEVEL);
   disableAllSolenoids("boot");
 
   WiFi.mode(WIFI_STA);
   connectWiFiIfNeeded();
   scheduleNextTelemetry();
+  // initial thresholds sync
+  syncThresholds();
 
-  Serial.println("VermiLinks firmware ready");
+  Serial.println("[SYSTEM] VermiLinks firmware started");
 }
 
 void loop() {
@@ -143,9 +153,9 @@ void sendTelemetry(int floatState, int soilMoisture, float temperature, float hu
   serializeJson(doc, payload);
 
   if (postJson(SENSOR_POST_URL, payload)) {
-    Serial.printf("Telemetry sent: %s\n", payload.c_str());
+    Serial.println("[HTTP] Telemetry sent successfully!");
   } else {
-    Serial.println("Telemetry delivery failed");
+    Serial.println("[HTTP] Telemetry delivery failed");
   }
 }
 
@@ -204,6 +214,7 @@ void handlePendingCommands(int floatState) {
     return;
   }
 
+
   JsonObject command = doc["command"];
   if (command.isNull()) {
     return;
@@ -215,27 +226,45 @@ void handlePendingCommands(int floatState) {
   }
 
   JsonVariant payload = command["payload"];
+  // Support actuator name (pump) or solenoid channel
+  String actuatorName = payload.isNull() ? String("") : String(payload["actuator"] | "");
+  actuatorName.toLowerCase();
   const int solenoid = payload.isNull() ? 0 : payload["solenoid"] | payload["channel"] | 0;
   String desired = payload.isNull() ? String("") : String(payload["action"] | payload["desired"] | "");
   desired.toLowerCase();
   const bool turnOn = desired == "on";
   const bool permitted = (floatState == HIGH) || !turnOn;
 
-  if (!permitted) {
-    disableAllSolenoids("float sensor safety");
+  if (actuatorName == "pump") {
+    // Pump control: respect float safety
+    if (!permitted) {
+      applyPump(false);
+    } else {
+      applyPump(turnOn);
+    }
   } else {
-    applySolenoid(solenoid, turnOn, true);
+    // Solenoid handling (existing behavior)
+    if (!permitted) {
+      disableAllSolenoids("float sensor safety");
+    } else {
+      applySolenoid(solenoid, turnOn, true);
+    }
   }
 
   DynamicJsonDocument ack(256);
   ack["status"] = permitted ? "ok" : "error";
   if (!permitted) {
-    ack["message"] = "Float sensor LOW; solenoids disabled";
+    ack["message"] = "Float sensor LOW; actuators disabled";
   }
   JsonObject ackPayload = ack.createNestedObject("payload");
   ackPayload["device_id"] = DEVICE_ID;
-  ackPayload["solenoid"] = solenoid;
-  ackPayload["action"] = turnOn ? "on" : "off";
+  if (actuatorName == "pump") {
+    ackPayload["actuator"] = "pump";
+    ackPayload["action"] = turnOn ? "on" : "off";
+  } else {
+    ackPayload["solenoid"] = solenoid;
+    ackPayload["action"] = turnOn ? "on" : "off";
+  }
   ackPayload["float_sensor"] = floatState == HIGH ? 1 : 0;
   if (!payload.isNull() && payload.containsKey("commandRowId")) {
     ackPayload["commandRowId"] = payload["commandRowId"].as<int>();
@@ -270,12 +299,36 @@ void applySolenoid(int index, bool turnOn, bool fromCommand) {
   Serial.printf("Solenoid %d %s%s\n", index, turnOn ? "ON" : "OFF", fromCommand ? " (command)" : "");
 }
 
+void applyPump(bool turnOn) {
+  digitalWrite(PUMP_PIN, turnOn ? RELAY_ACTIVE_LEVEL : RELAY_INACTIVE_LEVEL);
+  Serial.printf("[ACTUATOR] Water Pump -> %s\n", turnOn ? "ON" : "OFF");
+}
+
 void disableAllSolenoids(const char* reason) {
   digitalWrite(SOLENOID_PIN_1, RELAY_INACTIVE_LEVEL);
   digitalWrite(SOLENOID_PIN_2, RELAY_INACTIVE_LEVEL);
   digitalWrite(SOLENOID_PIN_3, RELAY_INACTIVE_LEVEL);
   solenoidStates[0] = solenoidStates[1] = solenoidStates[2] = false;
-  Serial.printf("All solenoids OFF (%s)\n", reason ? reason : "manual");
+  Serial.printf("[SAFETY] All actuators disabled (%s)\n", reason ? reason : "manual");
+}
+
+void syncThresholds() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  WiFiClientSecure client;
+  client.setInsecure();
+  HTTPClient http;
+  if (!http.begin(client, CONFIG_URL)) {
+    Serial.println("[SYNC] HTTP begin failed");
+    return;
+  }
+  int code = http.GET();
+  if (code == 200) {
+    Serial.println("[SYNC] Thresholds fetched successfully.");
+  } else {
+    Serial.printf("[SYNC] Failed to fetch thresholds: HTTP %d\n", code);
+  }
+  http.end();
+  lastThresholdSyncAt = millis();
 }
 
 int readFloatSensor() {

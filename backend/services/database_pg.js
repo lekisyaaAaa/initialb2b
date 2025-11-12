@@ -115,15 +115,29 @@ async function ensureDatabaseSetup(options = {}) {
 }
 
 const connectDB = async () => {
-	try {
-		await sequelize.authenticate();
-		currentDialect = sequelize.getDialect();
-		logger.info(`✅ Connected to Render PostgreSQL (SSL mode: ${usesSsl ? 'require' : 'disabled'})`);
-	} catch (error) {
-		logger.error('Unable to connect to the database:', error.message);
-		logger.error('Verify DATABASE_URL and ensure the PostgreSQL service is reachable.');
-		throw error;
+	// Attempt connection with retries and exponential backoff to tolerate transient network issues
+	const maxAttempts = Number(process.env.DB_CONNECT_RETRIES || 3);
+	let attempt = 0;
+	let lastErr = null;
+	while (attempt < maxAttempts) {
+		try {
+			attempt += 1;
+			await sequelize.authenticate();
+			currentDialect = sequelize.getDialect();
+			logger.info(`✅ Connected to PostgreSQL (attempt ${attempt}) (SSL mode: ${usesSsl ? 'require' : 'disabled'})`);
+			return;
+		} catch (error) {
+			lastErr = error;
+			logger.warn(`Database connect attempt ${attempt} failed: ${error && error.message ? error.message : error}`);
+			if (attempt >= maxAttempts) break;
+			// exponential backoff
+			const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+			await new Promise((res) => setTimeout(res, backoffMs));
+		}
 	}
+	logger.error('Unable to connect to the database after retries:', lastErr && lastErr.message ? lastErr.message : lastErr);
+	logger.error('Verify DATABASE_URL and ensure the PostgreSQL service is reachable.');
+	throw lastErr || new Error('Failed to connect to database');
 };
 
 module.exports = sequelize;

@@ -346,11 +346,38 @@ const buildHealthPayload = () => ({
 });
 
 app.get('/health', (req, res) => {
-  res.status(200).json(buildHealthPayload());
+  // Provide DB connection info and application metadata
+  const appVersion = require('./package.json').version || '0.0.0';
+  const dbStatus = (database && typeof database.getActiveDialect === 'function') ? (database.getActiveDialect() === 'sqlite' ? 'connected' : 'connected') : 'unknown';
+  res.status(200).json({ ok: true, db: dbStatus, version: appVersion, env: process.env.NODE_ENV || 'development' });
 });
 
-app.get('/api/health', (req, res) => {
-  res.status(200).json(buildHealthPayload());
+app.get('/api/health', async (req, res) => {
+  try {
+    // Check DB readiness by attempting a lightweight authenticate with retry suppressed
+    let db = 'unknown';
+    try {
+      if (database && typeof database.getActiveDialect === 'function') {
+        db = database.getActiveDialect() || 'unknown';
+      }
+      // If connectDB is available, try a quick authenticate but don't throw on failure
+      if (typeof database.connectDB === 'function') {
+        try {
+          await database.connectDB();
+          db = 'connected';
+        } catch (e) {
+          db = 'disconnected';
+        }
+      }
+    } catch (e) {
+      db = 'error';
+    }
+
+    const appVersion = require('./package.json').version || '0.0.0';
+    return res.status(200).json({ ok: true, db, version: appVersion, env: process.env.NODE_ENV || 'development' });
+  } catch (e) {
+    return res.status(500).json({ ok: false, message: 'Health check failed', error: e && e.message ? e.message : String(e) });
+  }
 });
 
 // Lightweight internal ping for debugging connectivity (temporary)

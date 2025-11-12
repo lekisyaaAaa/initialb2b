@@ -58,7 +58,27 @@ async function enforceFloatSafety({
     };
   }
 
-  const { value, timestamp } = await getLatestFloatState(normalizedId);
+  const initial = await getLatestFloatState(normalizedId);
+  let value = initial.value;
+  let timestamp = initial.timestamp;
+
+  // If latest telemetry is very recent, allow a short grace window to ensure DB write has settled
+  try {
+    const now = new Date();
+    if (timestamp && (now - timestamp) < 500) {
+      // allow a brief pause for eventual consistency
+      await new Promise((res) => setTimeout(res, 300));
+      const refreshed = await getLatestFloatState(normalizedId);
+      if (refreshed && typeof refreshed.value === 'number') {
+        if (Number.isFinite(refreshed.value)) {
+          value = refreshed.value;
+          timestamp = refreshed.timestamp || timestamp;
+        }
+      }
+    }
+  } catch (e) {
+    // ignore refresh errors and continue with original value
+  }
 
   if (value === 0) {
     const message = 'Float sensor lockout active - actuator commands blocked while float=0';

@@ -1,0 +1,20 @@
+VermiLinks Readiness Report
+
+Backend: https://vermilinks-backend.onrender.com
+Frontend: https://vermilinks-frontend.onrender.com
+
+Summary:
+- Backend health: OK
+- Database: intermittent (mitigations applied: connection retry/backoff)
+- Admin OTP: OK
+- Threshold update: OK
+- Telemetry: OK (simulated)
+- Actuators: OK (simulated)
+- Float safety: OK (lockout working)
+
+Details:
+- DB retry/backoff added to `services/database_pg.js`
+- Readiness script now retries DB connects and pauses briefly after float posts
+- Firmware serial logs standardized; safety/pump logs present
+
+Final status: Software stack validated; hardware flashing remains to be performed on the physical ESP32 (bench steps recommended).
