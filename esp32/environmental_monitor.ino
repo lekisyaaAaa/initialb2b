@@ -19,6 +19,11 @@
 #define SOLENOID_PIN_2 26
 #define SOLENOID_PIN_3 27
 
+// Toggle simulation for lab testing. Set to false for production with real RS485 sensors.
+#ifndef SIMULATE_SENSORS
+#define SIMULATE_SENSORS 0
+#endif
+
 // Active-low relay boards keep valves off when the output is HIGH
 const int RELAY_ACTIVE_LEVEL = LOW;
 const int RELAY_INACTIVE_LEVEL = HIGH;
@@ -51,6 +56,10 @@ int readFloatSensor();
 int readSoilMoisture();
 float readTemperature();
 float readHumidity();
+// RS485 helper stubs (implement RS485 reads or link to driver library)
+float getTemperatureRS485() { return NAN; }
+float getHumidityRS485() { return NAN; }
+int getMoistureRS485() { return -1; }
 void syncThresholds();
 
 void setup() {
@@ -90,10 +99,10 @@ void loop() {
   }
 
   if (now - lastTelemetryAt >= nextTelemetryInterval) {
-    const int moisture = readSoilMoisture();
-    const float temperature = readTemperature();
-    const float humidity = readHumidity();
-    sendTelemetry(floatState, moisture, temperature, humidity);
+      const int moisture = readSoilMoisture();
+      const float temperature = readTemperature();
+      const float humidity = readHumidity();
+      sendTelemetry(floatState, moisture, temperature, humidity);
     lastTelemetryAt = now;
     scheduleNextTelemetry();
   }
@@ -141,22 +150,47 @@ void sendTelemetry(int floatState, int soilMoisture, float temperature, float hu
     Serial.println("Telemetry skipped: WiFi offline");
     return;
   }
-
-  DynamicJsonDocument doc(256);
+  DynamicJsonDocument doc(512);
   doc["device_id"] = DEVICE_ID;
-  doc["soil_moisture"] = soilMoisture;
-  doc["temperature"] = temperature;
-  doc["humidity"] = humidity;
+  const bool hasTemp = !isnan(temperature) && temperature > -100.0;
+  const bool hasHum = !isnan(humidity) && humidity >= 0.0 && humidity <= 100.0;
+  const bool hasSoil = (soilMoisture >= 0 && soilMoisture <= 100);
+
+  // If SIMULATE_SENSORS is enabled, allow simulated values (for lab)
+#if SIMULATE_SENSORS
+  if (hasTemp) doc["temperature"] = temperature;
+  if (hasHum) doc["humidity"] = humidity;
+  if (hasSoil) doc["soil_moisture"] = soilMoisture;
+  doc["float_sensor"] = floatState == HIGH ? 1 : 0;
+  String payloadSim;
+  serializeJson(doc, payloadSim);
+  if (!hasTemp && !hasHum && !hasSoil) {
+    Serial.println("[HTTP] Sending simulated telemetry with no real sensors attached");
+  }
+  if (postJson(SENSOR_POST_URL, payloadSim)) {
+    Serial.println("[HTTP] Telemetry sent (simulate)!");
+  } else {
+    Serial.println("[HTTP] Telemetry delivery failed (simulate)");
+  }
+#else
+  // Production mode: only send if at least one real sensor reading is present
+  if (!hasTemp && !hasHum && !hasSoil) {
+    Serial.println("[HTTP] Skipping telemetry — invalid or missing RS485 data");
+    return;
+  }
+  if (hasTemp) doc["temperature"] = temperature;
+  if (hasHum) doc["humidity"] = humidity;
+  if (hasSoil) doc["soil_moisture"] = soilMoisture;
   doc["float_sensor"] = floatState == HIGH ? 1 : 0;
 
   String payload;
   serializeJson(doc, payload);
-
   if (postJson(SENSOR_POST_URL, payload)) {
     Serial.println("[HTTP] Telemetry sent successfully!");
   } else {
     Serial.println("[HTTP] Telemetry delivery failed");
   }
+#endif
 }
 
 bool postJson(const String& url, const String& body, uint8_t maxAttempts) {
@@ -338,16 +372,27 @@ int readFloatSensor() {
 }
 
 int readSoilMoisture() {
-  const uint32_t sample = esp_random() & 0x0FFF;
-  return map(sample, 0, 0x0FFF, 35, 75);
+  // Read from RS485; fallback to RS485 helper stub
+  int v = getMoistureRS485();
+  // If SIMULATE_SENSORS enabled and no RS485, provide a dev-only value
+#if SIMULATE_SENSORS
+  if (v < 0) v = 50; // default lab value
+#endif
+  return v;
 }
 
 float readTemperature() {
-  const uint32_t sample = esp_random() & 0x03FF;
-  return 26.0f + (sample % 50) / 10.0f;
+  float t = getTemperatureRS485();
+#if SIMULATE_SENSORS
+  if (isnan(t)) t = 26.0f;
+#endif
+  return t;
 }
 
 float readHumidity() {
-  const uint32_t sample = esp_random() & 0x07FF;
-  return 55.0f + (sample % 200) / 10.0f;
+  float h = getHumidityRS485();
+#if SIMULATE_SENSORS
+  if (isnan(h)) h = 60.0f;
+#endif
+  return h;
 }

@@ -376,6 +376,12 @@ router.post('/', [
       return res.status(400).json({ success: false, message: 'Device ID is required' });
     }
 
+    // Reject simulated telemetry explicitly when flagged by device
+    if (req.body.isSimulated) {
+      // Non-error: ignore simulated data from clients
+      return res.status(204).json({ success: false, message: 'Ignored simulated telemetry' });
+    }
+
     const {
       temperature,
       humidity,
@@ -394,6 +400,17 @@ router.post('/', [
 
     const soilMoisture = req.body.soil_moisture !== undefined ? Number(req.body.soil_moisture) : moisture;
     const floatSensor = req.body.float_sensor !== undefined ? Number(req.body.float_sensor) : undefined;
+
+    // Ensure payload contains at least one real sensor reading (production policy)
+    const hasRealReading = (temperature !== undefined && temperature !== null) ||
+      (humidity !== undefined && humidity !== null) ||
+      (soilMoisture !== undefined && soilMoisture !== null) ||
+      (typeof floatSensor === 'number');
+
+    if (!hasRealReading) {
+      // Ignore empty telemetry posts (common from test clients); return 204 No Content
+      return res.status(204).json({ success: false, message: 'Ignored empty or non-sensor telemetry' });
+    }
 
     // Validate device registration and online status before accepting live sensor data
     let device = await Device.findOne({ where: { deviceId: normalizedDeviceId } });
