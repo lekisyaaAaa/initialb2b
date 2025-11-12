@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { SensorData, Alert, ApiResponse } from '../types';
 import api, { alertService, sensorService, discoverApi } from '../services/api';
+import { socket as sharedSocket } from '../socket';
 import weatherService, { type WeatherData } from '../services/weatherService';
 
 interface DataContextType {
@@ -9,6 +10,8 @@ interface DataContextType {
   isConnected: boolean;
   isLoading: boolean;
   refreshData: () => Promise<void>;
+  refreshAlerts: () => Promise<void>;
+  clearAlerts: () => Promise<void>;
   // lightweight debug info
   lastFetchCount: number;
   lastFetchAt?: string | null;
@@ -103,6 +106,33 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     return [];
   }, []);
 
+  const refreshAlerts = useCallback(async () => {
+    try {
+      const alerts = await fetchAlertsFromBackend();
+      setRecentAlerts(alerts);
+    } catch (err: any) {
+      setRecentAlerts([]);
+      setLastFetchError(err?.message || 'Failed to fetch alerts');
+      throw err;
+    }
+  }, [fetchAlertsFromBackend]);
+
+  const clearAlerts = useCallback(async () => {
+    try {
+      // Prefer new clear-all endpoint; fall back to resolve-all on failure
+      try {
+        await alertService.clearAll();
+      } catch (e) {
+        await alertService.resolveAll();
+      }
+      setLastFetchError(null);
+      await refreshAlerts();
+    } catch (err: any) {
+      setLastFetchError(err?.message || 'Failed to clear alerts');
+      throw err;
+    }
+  }, [refreshAlerts]);
+
   const refreshData = useCallback(async () => {
     if (isCurrentlyLoading.current) {
       return;
@@ -128,13 +158,9 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         setLastFetchCount(0);
       }
 
-      try {
-        const alerts = await fetchAlertsFromBackend();
-        setRecentAlerts(alerts);
-      } catch (alertsErr: any) {
-        setRecentAlerts([]);
-        setLastFetchError((alertsErr?.message as string) || 'Failed to fetch alerts');
-      }
+      await refreshAlerts().catch(() => {
+        // refreshAlerts already updates local state and error message on failure.
+      });
     } catch (error: any) {
       setIsConnected(false);
       setLastFetchAt(new Date().toISOString());
@@ -179,11 +205,41 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       isCurrentlyLoading.current = false;
       setIsLoading(false);
     }
-  }, [ensureBackendBase, fetchAlertsFromBackend, fetchSensorDataFromBackend]);
+  }, [ensureBackendBase, fetchSensorDataFromBackend, refreshAlerts]);
 
   useEffect(() => {
     refreshData();
   }, [refreshData]);
+
+  // Realtime subscriptions: telemetry and alerts
+  useEffect(() => {
+    const socket = sharedSocket;
+    if (!socket) return;
+
+    const handleTelemetry = (payload: any) => {
+      if (!payload) return;
+      const sample = Array.isArray(payload) ? payload[0] : payload;
+      if (!sample || typeof sample !== 'object') return;
+      setLatestSensorData([sample as SensorData]);
+      setIsConnected(true);
+      setLastFetchAt(new Date().toISOString());
+      setLastFetchCount(1);
+    };
+
+    const handleAlertTrigger = () => {
+      refreshAlerts().catch(() => {});
+    };
+
+    socket.on('telemetry:update', handleTelemetry);
+    socket.on('sensor_update', handleTelemetry); // backward compat
+    socket.on('alert:trigger', handleAlertTrigger);
+
+    return () => {
+      socket.off('telemetry:update', handleTelemetry);
+      socket.off('sensor_update', handleTelemetry);
+      socket.off('alert:trigger', handleAlertTrigger);
+    };
+  }, [refreshAlerts]);
 
   // Periodic data refresh with graceful failure handling
   useEffect(() => {
@@ -247,6 +303,8 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     isConnected,
     isLoading,
     refreshData,
+    refreshAlerts,
+    clearAlerts,
   lastFetchCount,
   lastFetchAt,
   lastFetchError,

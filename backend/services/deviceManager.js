@@ -29,6 +29,18 @@ async function markDeviceOnline(deviceId, metadata = {}) {
   }
   // reset offline timer
   resetOfflineTimer(deviceId);
+  // Broadcast device status via Socket.IO
+  try {
+    if (global.io && typeof global.io.emit === 'function') {
+      const payload = { deviceId, status: 'online', online: true, lastHeartbeat: device.lastHeartbeat };
+      global.io.emit('device:status', payload);
+      // legacy aliases
+      global.io.emit('device_status', payload);
+      global.io.emit('deviceHeartbeat', payload);
+    }
+  } catch (e) {
+    // ignore emit errors
+  }
   return device;
 }
 
@@ -77,6 +89,13 @@ async function markDeviceOffline(deviceId) {
     if (global.wsConnections && global.wsConnections.size) {
       const message = JSON.stringify({ type: 'device_offline', deviceId });
       global.wsConnections.forEach(ws => { try { if (ws.readyState === 1) ws.send(message); } catch (e) {} });
+    }
+  } catch (e) { /* ignore */ }
+  try {
+    if (global.io && typeof global.io.emit === 'function') {
+      const payload = { deviceId, status: 'offline', online: false, lastHeartbeat: device.lastHeartbeat };
+      global.io.emit('device:status', payload);
+      global.io.emit('device_status', payload);
     }
   } catch (e) { /* ignore */ }
   return device;

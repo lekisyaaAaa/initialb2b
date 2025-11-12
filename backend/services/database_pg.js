@@ -83,7 +83,6 @@ function loadModels() {
 	require('../models/Otp');
 	require('../models/UserSession');
 	require('../models/PasswordResetToken');
-	require('../models/SystemTest');
 }
 
 let setupPromise = null;

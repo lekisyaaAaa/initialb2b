@@ -282,6 +282,14 @@ export const alertService = {
   resolveAll: (payload?: { deviceId?: string }) =>
     api.put<ApiResponse<{ resolved: number }>>('/alerts/resolve-all', payload),
 
+  // Aggregated summary of active alerts by severity buckets
+  getSummary: () =>
+    api.get<ApiResponse<{ critical: number; warning: number; info: number }>>('/alerts/summary'),
+
+  // Clear all active alerts
+  clearAll: () =>
+    api.delete<ApiResponse<{ resolved: number }>>('/alerts/clear'),
+
   getStats: (params?: {
     period?: 'day' | 'week' | 'month';
     deviceId?: string;
@@ -319,11 +327,6 @@ export const commandService = {
     api.get<ApiResponse<any>>('/command/status', {
       params: deviceId ? { device_id: deviceId } : undefined,
     }),
-};
-
-export const systemTestService = {
-  getSnapshot: () => api.get<ApiResponse<{ latest: any[]; history: any[] }>>('/system-tests'),
-  run: () => api.post<ApiResponse<{ runId: string }>>('/system-tests/run'),
 };
 
 export const actuatorService = {

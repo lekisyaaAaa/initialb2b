@@ -213,8 +213,8 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
         ) : (
           <div className="flex flex-col items-center justify-center h-64 text-coffee-500">
             <BarChart3 className="w-12 h-12 mb-4 opacity-50" />
-            <p className="text-lg font-medium">No Data Available</p>
-            <p className="text-sm">No sensor data found for the selected time range.</p>
+            <p className="text-lg font-medium">No data available in this range.</p>
+            <p className="text-sm">Adjust the time window or verify sensor connectivity.</p>
           </div>
         )}
       </div>

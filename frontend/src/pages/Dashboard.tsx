@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { Alert } from '../types';
@@ -16,7 +16,10 @@ import {
   BarChart3,
   Activity,
   Shield,
-  ExternalLink
+  ExternalLink,
+  AlertCircle,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Link, useNavigate } from 'react-router-dom';
@@ -33,12 +36,29 @@ const formatFixed = (value: number | null | undefined, digits = 1) =>
 
 const formatInteger = (value: number | null | undefined) =>
   isFiniteNumber(value) ? value.toFixed(0) : '—';
+
+const toFiniteNumber = (value: unknown): number | null => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const ALERT_SEVERITY_ORDER: string[] = ['critical', 'high', 'medium', 'low', 'info'];
+
+const ALERT_SEVERITY_LABELS: Record<string, string> = {
+  critical: 'Critical',
+  high: 'High',
+  medium: 'Medium',
+  low: 'Low',
+  info: 'Info',
+};
 const Dashboard: React.FC = () => {
   const { user, logout, isAuthenticated } = useAuth();
-  const { latestSensorData, recentAlerts, isConnected, isLoading, refreshData, lastFetchAt } = useData();
+  const { latestSensorData, recentAlerts, isConnected, isLoading, refreshData, refreshAlerts, clearAlerts, lastFetchAt } = useData();
   const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'alerts' | 'sensors'>('overview');
   const [lastManualRefresh, setLastManualRefresh] = useState<Date | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  const [alertsBusy, setAlertsBusy] = useState(false);
+  const [alertsError, setAlertsError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   // Check if current user is admin
@@ -74,6 +94,111 @@ const Dashboard: React.FC = () => {
     return latest;
   }, [safeLatestSensorData]);
 
+  const soilMoistureReading = useMemo(() => {
+    if (!latestReadings) return null;
+    if (isFiniteNumber(latestReadings.moisture)) {
+      return latestReadings.moisture as number;
+    }
+    if (Array.isArray(latestReadings.sensorSummary)) {
+      const summaryEntry = latestReadings.sensorSummary.find((item) => item.key === 'soilMoisture' || item.key === 'moisture');
+      if (summaryEntry) {
+        if (typeof summaryEntry.value === 'number') {
+          return summaryEntry.value;
+        }
+        if (summaryEntry.value && typeof summaryEntry.value === 'object') {
+          const candidate = (summaryEntry.value as Record<string, number | null>).value ?? Object.values(summaryEntry.value)[0];
+          const parsed = toFiniteNumber(candidate ?? null);
+          if (parsed !== null) return parsed;
+        }
+      }
+    }
+    return null;
+  }, [latestReadings]);
+
+  const floatSensorReading = useMemo(() => {
+    if (!latestReadings) {
+      return { value: null as number | null, timestamp: null as string | null };
+    }
+
+    const direct = (latestReadings as any).floatSensor ?? (latestReadings as any).float_sensor;
+    const directValue = toFiniteNumber(direct);
+    const directTimestamp = (latestReadings as any).floatSensorTimestamp ?? (latestReadings as any).float_sensor_timestamp ?? null;
+    if (directValue !== null) {
+      return {
+        value: directValue,
+        timestamp: (typeof directTimestamp === 'string' && directTimestamp) || (typeof latestReadings.timestamp === 'string' ? latestReadings.timestamp : null),
+      };
+    }
+
+    if (Array.isArray(latestReadings.sensorSummary)) {
+      const summaryEntry = latestReadings.sensorSummary.find((item) => item.key === 'floatSensor' || item.key === 'float_sensor');
+      if (summaryEntry) {
+        let summarizedValue: number | null = null;
+        if (typeof summaryEntry.value === 'number') {
+          summarizedValue = toFiniteNumber(summaryEntry.value);
+        } else if (summaryEntry.value && typeof summaryEntry.value === 'object') {
+          const candidate = (summaryEntry.value as Record<string, number | null>).value ?? Object.values(summaryEntry.value)[0];
+          summarizedValue = toFiniteNumber(candidate ?? null);
+        }
+        if (summarizedValue !== null) {
+          return {
+            value: summarizedValue,
+            timestamp: summaryEntry.timestamp ?? null,
+          };
+        }
+      }
+    }
+
+    return { value: null, timestamp: null };
+  }, [latestReadings]);
+
+  const formatTimestampLabel = useCallback((value?: string | Date | null) => {
+    if (!value) return 'Not available';
+    try {
+      return format(new Date(value), 'MMM dd, yyyy HH:mm:ss');
+    } catch (error) {
+      return value.toString();
+    }
+  }, []);
+
+  const soilMoistureLabel = useMemo(() => {
+    if (soilMoistureReading === null) return 'No data';
+    return `${formatFixed(soilMoistureReading, 1)}%`;
+  }, [soilMoistureReading]);
+
+  const latestTimestampLabel = useMemo(
+    () => formatTimestampLabel(latestReadings?.timestamp ?? null),
+    [formatTimestampLabel, latestReadings?.timestamp]
+  );
+
+  const floatSensorStatus = useMemo(() => {
+    const value = floatSensorReading.value;
+    if (value === null) {
+      return {
+        label: 'Unknown',
+        description: 'Float sensor has not reported a state yet.',
+        containerClass: 'bg-gray-100 dark:bg-gray-900/40',
+        textClass: 'text-gray-600 dark:text-gray-300',
+      };
+    }
+    if (Number(value) <= 0) {
+      return {
+        label: 'LOW',
+        description: 'Float is low — feed pump commands remain locked out.',
+        containerClass: 'bg-red-50 dark:bg-red-900/20',
+        textClass: 'text-red-600 dark:text-red-300',
+      };
+    }
+    return {
+      label: 'HIGH',
+      description: 'Float is high — system may resume queue processing.',
+      containerClass: 'bg-emerald-50 dark:bg-emerald-900/20',
+      textClass: 'text-emerald-600 dark:text-emerald-300',
+    };
+  }, [floatSensorReading.value]);
+
+  const floatSensorTimestampLabel = useMemo(() => formatTimestampLabel(floatSensorReading.timestamp), [floatSensorReading.timestamp, formatTimestampLabel]);
+
   const getStatusColor = (status: string) => {
     switch (status) {
   case 'normal': return 'text-green-600 bg-green-100 dark:text-green-300 dark:bg-green-900';
@@ -93,6 +218,33 @@ const Dashboard: React.FC = () => {
     }
   };
 
+  const groupedAlerts = useMemo(() => {
+    if (recentAlerts.length === 0) {
+      return [] as Array<{ severity: string; items: Alert[] }>;
+    }
+
+    const buckets = recentAlerts.reduce((acc, alert) => {
+      const rawSeverity = (alert.severity || alert.type || 'info').toString().toLowerCase();
+      const normalized = rawSeverity === 'warning'
+        ? 'medium'
+        : (ALERT_SEVERITY_ORDER.includes(rawSeverity) ? rawSeverity : 'info');
+      if (!acc[normalized]) {
+        acc[normalized] = [];
+      }
+      acc[normalized].push(alert);
+      return acc;
+    }, {} as Record<string, Alert[]>);
+
+    const extras = Object.keys(buckets).filter((key) => !ALERT_SEVERITY_ORDER.includes(key));
+
+    return [
+      ...ALERT_SEVERITY_ORDER.map((severity) => ({ severity, items: buckets[severity] ?? [] })),
+      ...extras.map((severity) => ({ severity, items: buckets[severity] ?? [] })),
+    ].filter((group) => group.items.length > 0);
+  }, [recentAlerts]);
+
+  const hasAlerts = groupedAlerts.length > 0;
+
   const unresolvedAlerts = useMemo(() => recentAlerts.filter((alert: Alert) => !alert.isResolved), [recentAlerts]);
 
   const lastRefreshLabel = useMemo(() => {
@@ -103,12 +255,42 @@ const Dashboard: React.FC = () => {
 
   const handleRefresh = async () => {
     try {
+      setAlertsError(null);
       await refreshData();
       setLastManualRefresh(new Date());
     } catch (error) {
       // DataContext already surfaces errors; no-op here
     }
   };
+
+  const handleRefreshAlerts = useCallback(async () => {
+    setAlertsBusy(true);
+    setAlertsError(null);
+    try {
+      await refreshAlerts();
+    } catch (error: any) {
+      const message = error?.response?.data?.message || error?.message || 'Failed to refresh alerts';
+      setAlertsError(message);
+    } finally {
+      setAlertsBusy(false);
+    }
+  }, [refreshAlerts]);
+
+  const handleClearAlerts = useCallback(async () => {
+    if (recentAlerts.length === 0) {
+      return;
+    }
+    setAlertsBusy(true);
+    setAlertsError(null);
+    try {
+      await clearAlerts();
+    } catch (error: any) {
+      const message = error?.response?.data?.message || error?.message || 'Failed to clear alerts';
+      setAlertsError(message);
+    } finally {
+      setAlertsBusy(false);
+    }
+  }, [clearAlerts, recentAlerts]);
 
   // Connection badge mirrors the admin header so both roles share the same visual rhythm.
   const connectionBadge = (
@@ -297,6 +479,27 @@ const Dashboard: React.FC = () => {
                       </div>
                     </div>
 
+                    {/* Soil Moisture Card */}
+                    <div className="group relative overflow-hidden h-full">
+                      <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-emerald-500 to-emerald-400 rounded-t-2xl"></div>
+                        <div className="flex items-center mb-4">
+                          <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-emerald-100 to-emerald-50 dark:from-emerald-800 dark:to-emerald-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                            <Sprout className="h-6 w-6 text-emerald-600 dark:text-emerald-300" />
+                          </div>
+                          <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                            <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">Soil Moisture</p></div>
+                            <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">{soilMoistureLabel}</p>
+                          </div>
+                        </div>
+                        <div className="flex-1 min-h-[140px]">
+                          <p className="text-xs text-espresso-500 dark:text-gray-400 leading-relaxed">
+                            {latestReadings ? `Last update: ${latestTimestampLabel}` : 'Awaiting live data'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* pH Card */}
                     <div className="group relative overflow-hidden h-full">
                       <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
@@ -372,6 +575,30 @@ const Dashboard: React.FC = () => {
                       </div>
                     </div>
 
+                    {/* Float Sensor Card */}
+                    <div className="group relative overflow-hidden h-full">
+                      <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
+                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 to-indigo-400 rounded-t-2xl"></div>
+                        <div className="flex items-center mb-4">
+                          <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-indigo-100 to-indigo-50 dark:from-indigo-800 dark:to-indigo-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
+                            <Activity className="h-6 w-6 text-indigo-600 dark:text-indigo-300" />
+                          </div>
+                          <div className="flex flex-col justify-center flex-1 min-h-[72px]">
+                            <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">Float Sensor</p></div>
+                            <p className={`text-3xl font-bold transition-colors ${floatSensorStatus.textClass}`}>
+                              {floatSensorStatus.label}
+                            </p>
+                          </div>
+                        </div>
+                        <div className={`flex-1 min-h-[140px] rounded-xl p-4 transition-colors ${floatSensorStatus.containerClass}`}>
+                          <p className="text-xs font-medium text-espresso-700 dark:text-gray-200 leading-relaxed">
+                            {floatSensorStatus.description}
+                          </p>
+                          <p className="mt-4 text-xs text-espresso-500 dark:text-gray-400">Last update: {floatSensorTimestampLabel}</p>
+                        </div>
+                      </div>
+                    </div>
+
                     {/* Water Level Card */}
                     <div className="group relative overflow-hidden h-full">
                       <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
@@ -396,24 +623,72 @@ const Dashboard: React.FC = () => {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                   <div className="bg-white dark:bg-gray-800 rounded-xl shadow-lg border border-coffee-200 dark:border-gray-700">
                     <div className="p-6 border-b border-coffee-200 dark:border-gray-700">
-                      <h3 className="text-lg font-semibold text-coffee-900 dark:text-white flex items-center">
-                        <AlertTriangle className="w-5 h-5 mr-2 text-coffee-600 dark:text-gray-200" />
-                        Recent Alerts ({unresolvedAlerts.length} unresolved)
-                      </h3>
+                      <div className="flex flex-wrap items-center justify-between gap-4">
+                        <h3 className="text-lg font-semibold text-coffee-900 dark:text-white flex items-center">
+                          <AlertTriangle className="w-5 h-5 mr-2 text-coffee-600 dark:text-gray-200" />
+                          Active Alerts
+                        </h3>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleRefreshAlerts}
+                            className="inline-flex items-center gap-2 rounded-full border border-coffee-200 px-3 py-1.5 text-xs font-medium text-coffee-700 transition-colors hover:border-coffee-300 hover:text-coffee-900 dark:border-gray-700 dark:text-gray-100 dark:hover:border-gray-600"
+                            disabled={alertsBusy}
+                          >
+                            {alertsBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                            <span>Refresh</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleClearAlerts}
+                            className="inline-flex items-center gap-2 rounded-full border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:border-red-300 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-800 dark:text-red-300 dark:hover:border-red-700"
+                            disabled={alertsBusy || !hasAlerts}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                            <span>Clear All</span>
+                          </button>
+                        </div>
+                      </div>
+                      <p className="mt-2 text-xs text-coffee-500 dark:text-gray-300">
+                        {unresolvedAlerts.length} unresolved alert{unresolvedAlerts.length === 1 ? '' : 's'}
+                      </p>
+                      {alertsError ? (
+                        <div className="mt-3 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-200">
+                          <AlertCircle className="h-4 w-4" />
+                          <span>{alertsError}</span>
+                        </div>
+                      ) : null}
                     </div>
                     <div className="p-6">
-                      {alertSummary.length > 0 ? (
-                        <div className="space-y-3 max-h-64 overflow-y-auto">
-                          {recentAlerts.slice(0, 5).map((alert: Alert, index: number) => (
-                            <div key={alert._id || index} className="flex items-start space-x-3 p-3 rounded-lg bg-coffee-50 dark:bg-gray-800">
-                              <div className={`px-2 py-1 rounded-full text-xs font-medium ${getSeverityColor((alert.severity || 'info') as string)}`}>
-                                {(alert.severity || 'info').toString().toUpperCase()}
+                      {hasAlerts ? (
+                        <div className="space-y-4 max-h-72 overflow-y-auto pr-1">
+                          {groupedAlerts.map((group) => (
+                            <div key={group.severity} className="rounded-xl border border-coffee-200 dark:border-gray-700 bg-white dark:bg-gray-900/40 shadow-sm">
+                              <div className="flex items-center justify-between border-b border-coffee-100 dark:border-gray-800 px-4 py-3">
+                                <div className="flex items-center gap-3">
+                                  <div className={`px-3 py-1 rounded-full text-xs font-semibold ${getSeverityColor(group.severity)}`}>
+                                    {(ALERT_SEVERITY_LABELS[group.severity] || group.severity).toUpperCase()}
+                                  </div>
+                                  <span className="text-xs text-coffee-500 dark:text-gray-300">
+                                    {group.items.length} alert{group.items.length === 1 ? '' : 's'}
+                                  </span>
+                                </div>
                               </div>
-                              <div className="flex-1 min-w-0">
-                                <p className="text-sm text-coffee-900 dark:text-white font-medium">{alert.message}</p>
-                                <p className="text-xs text-coffee-600 dark:text-gray-300">
-                                  {format(new Date(alert.createdAt || Date.now()), 'MMM dd, HH:mm')} • {alert.deviceId}
-                                </p>
+                              <div className="divide-y divide-coffee-100 dark:divide-gray-800">
+                                {group.items.map((alert, index) => (
+                                  <div key={alert._id || `${group.severity}-${alert.deviceId || 'device'}-${index}`} className="px-4 py-3">
+                                    <p className="text-sm text-coffee-900 dark:text-white font-medium">
+                                      {alert.message || alert.title || 'Alert triggered'}
+                                    </p>
+                                    <div className="mt-1 text-xs text-coffee-600 dark:text-gray-300 flex flex-wrap items-center gap-3">
+                                      <span>{formatTimestampLabel(alert.createdAt || null)}</span>
+                                      {alert.deviceId ? <span>Device: {alert.deviceId}</span> : null}
+                                      <span className={alert.isResolved ? 'text-emerald-600 dark:text-emerald-300' : 'text-red-600 dark:text-red-300'}>
+                                        {alert.isResolved ? 'Resolved' : 'Active'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                ))}
                               </div>
                             </div>
                           ))}
@@ -498,6 +773,12 @@ const Dashboard: React.FC = () => {
                     <h3 className="text-lg font-semibold text-coffee-900 dark:text-white">All Alerts</h3>
                   </div>
                   <div className="p-6">
+                    {alertsError ? (
+                      <div className="mb-4 flex items-center gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs font-medium text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-200">
+                        <AlertCircle className="h-4 w-4" />
+                        <span>{alertsError}</span>
+                      </div>
+                    ) : null}
                     {recentAlerts.length > 0 ? (
                       <div className="space-y-4">
                         {recentAlerts.map((alert: Alert, index: number) => (
@@ -508,13 +789,13 @@ const Dashboard: React.FC = () => {
                                   {(alert.severity || 'info').toString().toUpperCase()}
                                 </div>
                                 <div>
-                                  <p className="text-coffee-900 dark:text-white font-medium">{alert.message}</p>
+                                  <p className="text-coffee-900 dark:text-white font-medium">{alert.message || alert.title || 'Alert triggered'}</p>
                                   <p className="text-coffee-600 dark:text-gray-300 text-sm mt-1">
-                                    {format(new Date(alert.createdAt || Date.now()), 'MMM dd, yyyy HH:mm:ss')} • Device: {alert.deviceId}
+                                    {formatTimestampLabel(alert.createdAt || null)}{alert.deviceId ? ` • Device: ${alert.deviceId}` : ''}
                                   </p>
                                   {alert.isResolved && alert.resolvedAt && (
                                     <p className="text-green-600 dark:text-green-300 text-sm mt-1">
-                                      Resolved: {format(new Date(alert.resolvedAt), 'MMM dd, yyyy HH:mm:ss')}
+                                      Resolved: {formatTimestampLabel(alert.resolvedAt)}
                                     </p>
                                   )}
                                 </div>

@@ -65,6 +65,8 @@ const broadcastSensorData = (data) => {
       global.io.emit('sensor_update', payload);
       // Support legacy clients listening on old event name.
       global.io.emit('newSensorData', payload);
+      // New standardized event name for UI clients
+      global.io.emit('telemetry:update', payload);
       if (Array.isArray(summary) && summary.length > 0) {
         global.io.emit('device_sensor_update', {
           deviceId: payload.deviceId || null,
@@ -332,6 +334,17 @@ const checkThresholds = async (sensorData) => {
           sensorData: alertData.sensorData,
         })
       );
+    }
+
+    // Notify clients that alerts were created
+    try {
+      if (persistedAlerts.length > 0 && global.io && typeof global.io.emit === 'function') {
+        const first = persistedAlerts[0] || {};
+        const devId = first.deviceId || sanitizedSensor.deviceId || plainSensor.deviceId || null;
+        global.io.emit('alert:trigger', { deviceId: devId, alerts: persistedAlerts });
+      }
+    } catch (e) {
+      // ignore emit errors
     }
 
     return persistedAlerts;

@@ -305,6 +305,72 @@ router.get('/stats', auth, async (req, res) => {
   }
 });
 
+// @route   GET /api/alerts/summary
+// @desc    Get aggregated counts by severity buckets
+// @access  Private
+router.get('/summary', auth, async (req, res) => {
+  try {
+    // Count unresolved (active) alerts and map into buckets required by frontend
+    const where = { isResolved: false };
+    const { Sequelize } = require('sequelize');
+    const db = Alert.sequelize;
+
+    // Get counts grouped by raw severity
+    const rows = await Alert.findAll({
+      attributes: ['severity', [Sequelize.fn('COUNT', Sequelize.col('id')), 'count']],
+      where,
+      group: ['severity'],
+      raw: true,
+    });
+
+    // Map raw severities to buckets: critical | warning | info
+    const bucket = { critical: 0, warning: 0, info: 0 };
+    for (const r of rows) {
+      const sev = (r.severity || '').toString().toLowerCase();
+      const count = parseInt(r.count || 0, 10) || 0;
+      if (sev === 'critical') {
+        bucket.critical += count;
+      } else if (sev === 'high' || sev === 'medium' || sev === 'warning') {
+        bucket.warning += count;
+      } else {
+        // low, info, unknown fall into info
+        bucket.info += count;
+      }
+    }
+
+    return res.json({ success: true, data: bucket });
+  } catch (error) {
+    console.error('Error building alerts summary:', error);
+    return res.status(500).json({ success: false, message: 'Error building alerts summary' });
+  }
+});
+
+// @route   DELETE /api/alerts/clear
+// @desc    Clear all active (unresolved) alerts
+// @access  Private (Admin only)
+router.delete('/clear', [auth, adminOnly], async (req, res) => {
+  try {
+    const [updated] = await Alert.update(
+      { isResolved: true, resolvedAt: new Date(), acknowledgedAt: new Date(), acknowledgedBy: (req.user && req.user.username) || 'admin' },
+      { where: { isResolved: false } }
+    );
+
+    // Broadcast a realtime update so dashboards can refresh summaries
+    try {
+      if (global.io && typeof global.io.emit === 'function') {
+        global.io.emit('alert:trigger', { action: 'clear', resolved: updated });
+      }
+    } catch (e) {
+      // ignore emit errors
+    }
+
+    return res.json({ success: true, message: 'All alerts cleared', data: { resolved: updated } });
+  } catch (error) {
+    console.error('Error clearing alerts:', error);
+    return res.status(500).json({ success: false, message: 'Error clearing alerts' });
+  }
+});
+
 // @route   PUT /api/alerts/:id/resolve
 // @desc    Resolve an alert
 // @access  Private (Admin only)

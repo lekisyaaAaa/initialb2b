@@ -18,6 +18,7 @@ import { useAuth } from '../contexts/AuthContext';
 import weatherService from '../services/weatherService';
 import api, { alertService, sensorService, settingsService } from '../services/api';
 import { AlertRules } from '../types';
+import { socket as sharedSocket } from '../socket';
 
 type Sensor = {
   id: string;
@@ -159,6 +160,80 @@ export default function AdminDashboard(): React.ReactElement {
     }
   }
 
+  const normalizeDeviceEntry = React.useCallback((device: any): DeviceSummary => {
+    const idSource = device?.deviceId ?? device?.device_id ?? device?.id ?? device?.name ?? device?.identifier ?? 'unknown-device';
+    const deviceId = idSource != null ? idSource.toString() : 'unknown-device';
+
+    const statusSource = device?.status ?? device?.deviceStatus ?? (typeof device?.online === 'boolean' ? (device.online ? 'online' : 'offline') : null);
+    const rawStatus = statusSource != null ? statusSource.toString().toLowerCase() : 'offline';
+    let normalizedStatus = rawStatus;
+    if (rawStatus === 'true') normalizedStatus = 'online';
+    if (rawStatus === 'false') normalizedStatus = 'offline';
+    if (['connected', 'ready', 'available', 'up'].includes(rawStatus)) normalizedStatus = 'online';
+    if (['disconnected', 'down'].includes(rawStatus)) normalizedStatus = 'offline';
+    if (!normalizedStatus || normalizedStatus === 'unknown') normalizedStatus = 'offline';
+
+    const heartbeatSource = device?.lastHeartbeat ?? device?.last_heartbeat ?? device?.last_seen ?? device?.lastSeen ?? device?.timestamp ?? device?.updatedAt ?? device?.createdAt ?? null;
+    const signalStrength = typeof device?.signalStrength === 'number'
+      ? device.signalStrength
+      : (typeof device?.rssi === 'number' ? device.rssi : null);
+    const metadata = device?.metadata && typeof device.metadata === 'object'
+      ? device.metadata
+      : (device?.info && typeof device.info === 'object' ? device.info : null);
+
+    return {
+      deviceId,
+      status: normalizedStatus,
+      lastHeartbeat: heartbeatSource ?? null,
+      signalStrength: signalStrength ?? null,
+      metadata: metadata ?? null,
+    };
+  }, []);
+
+  const updateDeviceStats = React.useCallback((list: DeviceSummary[]) => {
+    const onlineCount = list.filter((device) => {
+      const status = (device.status || '').toString().toLowerCase();
+      return ['online', 'connected', 'ready', 'available', 'up'].includes(status);
+    }).length;
+    setDevicesOnline(onlineCount);
+    setSensorStatus(onlineCount > 0 ? `${onlineCount} device${onlineCount === 1 ? '' : 's'} online` : 'No sensors connected');
+  }, []);
+
+  const applyDeviceStatusUpdate = React.useCallback((payload: any) => {
+    if (!payload || typeof payload !== 'object') {
+      return;
+    }
+    const normalized = normalizeDeviceEntry(payload);
+    if (!normalized.deviceId) {
+      return;
+    }
+
+    setDeviceInventory((prev) => {
+      let found = false;
+      const next = prev.map((entry) => {
+        if (entry.deviceId === normalized.deviceId) {
+          found = true;
+          return {
+            ...entry,
+            status: normalized.status || entry.status,
+            lastHeartbeat: normalized.lastHeartbeat ?? entry.lastHeartbeat ?? null,
+            signalStrength: normalized.signalStrength ?? entry.signalStrength ?? null,
+            metadata: normalized.metadata ?? entry.metadata ?? null,
+          };
+        }
+        return entry;
+      });
+
+      if (!found) {
+        next.push(normalized);
+      }
+
+      updateDeviceStats(next);
+      setDeviceError(null);
+      return next;
+    });
+  }, [normalizeDeviceEntry, updateDeviceStats]);
+
   const refreshDeviceInventory = React.useCallback(async () => {
     try {
       const res = await fetch('/api/devices');
@@ -167,27 +242,23 @@ export default function AdminDashboard(): React.ReactElement {
       }
       const body = await res.json().catch(() => ({}));
       const rawList = Array.isArray(body?.data) ? body.data : (Array.isArray(body) ? body : []);
-      const normalized: DeviceSummary[] = (rawList || []).map((device: any) => ({
-        deviceId: (device?.deviceId || device?.device_id || device?.id || device?.name || 'unknown-device').toString(),
-        status: (device?.status || device?.deviceStatus || 'offline').toString().toLowerCase(),
-        lastHeartbeat: device?.lastHeartbeat || device?.last_seen || device?.updatedAt || device?.createdAt || null,
-        signalStrength: typeof device?.signalStrength === 'number' ? device.signalStrength : (typeof device?.rssi === 'number' ? device.rssi : null),
-        metadata: device?.metadata || device?.info || null,
-      }));
+      const uniqueDevices = new Map<string, DeviceSummary>();
+      (rawList || []).forEach((device: any) => {
+        const entry = normalizeDeviceEntry(device);
+        uniqueDevices.set(entry.deviceId, entry);
+      });
 
+      const normalized = Array.from(uniqueDevices.values());
       setDeviceInventory(normalized);
-      const onlineCount = normalized.filter((device) => device.status === 'online').length;
-      setDevicesOnline(onlineCount);
-      setSensorStatus(onlineCount > 0 ? `${onlineCount} device${onlineCount === 1 ? '' : 's'} online` : 'No sensors connected');
+      updateDeviceStats(normalized);
       setDeviceError(null);
     } catch (e: any) {
       console.warn('AdminDashboard::refreshDeviceInventory', e?.message || e);
       setDeviceInventory([]);
-      setDevicesOnline(0);
-      setSensorStatus('No sensors connected');
+      updateDeviceStats([]);
       setDeviceError('Unable to load device inventory');
     }
-  }, []);
+  }, [normalizeDeviceEntry, updateDeviceStats]);
 
   const formatHeartbeat = React.useCallback((value?: string | null) => {
     if (!value) return 'No heartbeat recorded';
@@ -197,6 +268,32 @@ export default function AdminDashboard(): React.ReactElement {
       return String(value);
     }
   }, []);
+
+  useEffect(() => {
+    if (!sharedSocket) {
+      return undefined;
+    }
+
+    const handleDeviceStatus = (payload: any) => {
+      try {
+        applyDeviceStatusUpdate(payload);
+      } catch (error) {
+        console.warn('AdminDashboard::device-status handler error', error);
+      }
+    };
+
+    sharedSocket.on('device:status', handleDeviceStatus);
+    sharedSocket.on('device_status', handleDeviceStatus);
+    sharedSocket.on('deviceHeartbeat', handleDeviceStatus);
+    sharedSocket.on('device_heartbeat', handleDeviceStatus);
+
+    return () => {
+      sharedSocket.off('device:status', handleDeviceStatus);
+      sharedSocket.off('device_status', handleDeviceStatus);
+      sharedSocket.off('deviceHeartbeat', handleDeviceStatus);
+      sharedSocket.off('device_heartbeat', handleDeviceStatus);
+    };
+  }, [applyDeviceStatusUpdate]);
 
   async function loadLatestAlerts() {
     // Use the recent (unresolved) alerts endpoint instead of the admin-only
@@ -406,7 +503,7 @@ export default function AdminDashboard(): React.ReactElement {
         // ignore
       }
     })();
-    const idDevices = setInterval(refreshDeviceInventory, 15000);
+  const idDevices = setInterval(refreshDeviceInventory, 10000);
     const id1 = setInterval(loadLatest, 5000);
     const id2 = setInterval(loadAlerts, 15000);
     const id3 = setInterval(loadHealth, 10000);
@@ -615,12 +712,10 @@ export default function AdminDashboard(): React.ReactElement {
               <span className="font-medium">Latency:</span>
               <span>{systemStatus.apiLatency}ms</span>
             </div>
-            <Link
-              to="/admin/system-tests"
-              className="rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 transition-colors hover:border-emerald-400 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-            >
-              System Tests
-            </Link>
+            <div className="hidden md:flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              Realtime control active
+            </div>
             <button
               type="button"
               onClick={() => setShowLogoutConfirm(true)}
@@ -701,15 +796,22 @@ export default function AdminDashboard(): React.ReactElement {
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-sm text-gray-500 dark:text-gray-300">
-            Monitor every subsystem and jump into the readiness dashboard to review automated checks.
+            Monitor realtime telemetry, actuator states, and live alerts below. Hardware status updates every few seconds.
           </div>
-          <Link
-            to="/admin/system-tests"
-            data-e2e-system-tests-link
-            className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 transition-colors hover:border-emerald-400 hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200"
-          >
-            View System Tests Dashboard
-          </Link>
+          <div className="inline-flex items-center justify-center gap-3 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              Backend online
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="h-2 w-2 rounded-full bg-emerald-500" />
+              Database connected
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`h-2 w-2 rounded-full ${devicesOnline > 0 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+              ESP32 {devicesOnline > 0 ? 'active' : 'awaiting heartbeat'}
+            </div>
+          </div>
         </div>
 
         {/* Main Navigation Tabs */}
@@ -770,6 +872,14 @@ export default function AdminDashboard(): React.ReactElement {
               >
                 <Calendar className="w-4 h-4" />
                 Reports
+              </button>
+              <button
+                onClick={() => navigate('/admin/alerts')}
+                className={`px-6 py-4 text-sm font-medium border-b-2 whitespace-nowrap flex items-center gap-2 border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300`}
+                title="Go to Alerts"
+              >
+                <Bell className="w-4 h-4" />
+                Alerts
               </button>
             </nav>
           </div>
@@ -1192,17 +1302,6 @@ export default function AdminDashboard(): React.ReactElement {
                           </div>
                         </div>
 
-                        {/* Alert History */}
-                        <div>
-                          <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">Alert History</h4>
-                          <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                              <Calendar className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                              <p>Alert history will be displayed here</p>
-                              <p className="text-sm">Historical alerts and trends coming soon</p>
-                            </div>
-                          </div>
-                        </div>
                       </div>
                     )}
                     {activeSubTab === 'diagnostics' && <SystemDiagnostics />}

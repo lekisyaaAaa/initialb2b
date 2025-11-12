@@ -101,6 +101,20 @@ router.post(
 
       if (result.error) {
         if (result.statusCode === 423) {
+          // Broadcast float lockout event
+          try {
+            if (global.io && typeof global.io.emit === 'function') {
+              const act = sanitizeActuator(result.actuator);
+              global.io.emit('floatLockout', {
+                deviceId: controlOptions.deviceId || null,
+                actuator: act?.key || act?.name || null,
+                message: result.error,
+                floatSensor: typeof result.floatSensor === 'number' ? result.floatSensor : null,
+                floatSensorTimestamp: result.floatSensorTimestamp || null,
+                timestamp: new Date().toISOString(),
+              });
+            }
+          } catch (e) { /* ignore */ }
           return res.status(423).json({
             success: false,
             message: result.error,
@@ -170,6 +184,19 @@ router.post('/:id/toggle', [auth, adminOnly], async (req, res) => {
 
     if (result.error) {
       if (result.statusCode === 423) {
+        try {
+          if (global.io && typeof global.io.emit === 'function') {
+            const act = sanitizeActuator(result.actuator);
+            global.io.emit('floatLockout', {
+              deviceId: null,
+              actuator: act?.key || act?.name || null,
+              message: result.error,
+              floatSensor: typeof result.floatSensor === 'number' ? result.floatSensor : null,
+              floatSensorTimestamp: result.floatSensorTimestamp || null,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        } catch (e) { /* ignore */ }
         return res.status(423).json({
           success: false,
           message: result.error,

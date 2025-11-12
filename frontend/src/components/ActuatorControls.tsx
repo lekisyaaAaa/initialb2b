@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, Settings2, WifiOff } from 'lucide-react';
-import { io, Socket } from 'socket.io-client';
+import { Socket } from 'socket.io-client';
 import { actuatorService, commandService, sensorService } from '../services/api';
 import { createSocket, SOCKET_URL } from '../socket';
 import { Actuator } from '../types';

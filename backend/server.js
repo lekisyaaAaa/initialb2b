@@ -49,8 +49,6 @@ const notificationRoutes = require('./routes/notifications');
 const actuatorControlRoutes = require('./routes/actuatorControl');
 const deviceCommandRoutes = require('./routes/deviceCommands');
 const commandRoutes = require('./routes/command');
-const systemTestRoutes = require('./routes/systemTests');
-const systemTestService = require('./services/systemTestService');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -86,18 +84,6 @@ const io = new Server(server, {
 });
 
 global.io = io;
-
-const systemTestNamespace = io.of('/system-tests');
-systemTestService.setSystemTestNamespace(systemTestNamespace);
-systemTestNamespace.on('connection', async (socket) => {
-  logger.info('System test dashboard connected', { socketId: socket.id });
-  try {
-    const snapshot = await systemTestService.getDashboardSnapshot();
-    socket.emit('systemTestSnapshot', snapshot);
-  } catch (error) {
-    logger.warn('Failed to send system test snapshot', error && error.message ? error.message : error);
-  }
-});
 
 io.on('connection', async (socket) => {
   logger.info('✅ Socket.IO client connected', { socketId: socket.id });
@@ -413,7 +399,6 @@ app.use('/api/actuators', actuatorRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/device-commands', deviceCommandRoutes);
 app.use('/api/command', commandRoutes);
-app.use('/api/system-tests', systemTestRoutes);
 // Admin authentication + management routes
 const adminAuthRoutes = require('./routes/adminAuth');
 app.use('/api/admin', adminAuthRoutes);
@@ -520,6 +505,8 @@ function onBound(boundPort) {
     } catch (e) {
       logger.error('Self-check setup failed:', e && e.message ? e.message : e);
     }
+
+    logger.info('✅ Backend boot complete — realtime control active');
   }
 }
 

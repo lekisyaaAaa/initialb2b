@@ -28,6 +28,8 @@ export interface SensorData {
   phosphorus?: number;
   potassium?: number;
   waterLevel?: number;
+  floatSensor?: number | null;
+  floatSensorTimestamp?: string | null;
   timestamp?: string | Date;
   status?: 'normal' | 'warning' | 'critical' | string;
   batteryLevel?: number;
@@ -63,6 +65,7 @@ export interface DeviceSensorSummary {
 
 export interface Alert {
   _id: string;
+  title?: string;
   type?: string;
   severity?: 'low' | 'medium' | 'high' | 'critical' | string;
   message?: string;
@@ -242,28 +245,3 @@ export interface DevicePort {
   known?: boolean;
 }
 
-export type SystemTestStatus = 'pending' | 'running' | 'ok' | 'warn' | 'failed' | 'error';
-
-export interface SystemTestRecord {
-  id?: number;
-  runId: string | null;
-  section: string;
-  status: SystemTestStatus;
-  details?: string | null;
-  timestamp?: string | null;
-  metadata?: Record<string, any> | null;
-  durationMs?: number | null;
-}
-
-export interface SystemTestRun {
-  runId: string;
-  startedAt: string | null;
-  completedAt: string | null;
-  overallStatus: SystemTestStatus;
-  entries: SystemTestRecord[];
-}
-
-export interface SystemTestSnapshot {
-  latest: SystemTestRecord[];
-  history: SystemTestRun[];
-}
