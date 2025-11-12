@@ -32,6 +32,10 @@ const {
   scheduleAutomaticControl,
   markDeviceAck,
 } = require('./services/actuatorService');
+const {
+  markDeviceOnline,
+  resetOfflineTimer,
+} = require('./services/deviceManager');
 const deviceCommandQueue = require('./services/deviceCommandQueue');
 
 // Import routes
@@ -218,10 +222,40 @@ wss.on('connection', (ws, request) => {
   ws.on('message', (raw) => {
     try {
       const msg = typeof raw === 'string' ? JSON.parse(raw) : JSON.parse(raw.toString());
-      if (msg && msg.type === 'register' && msg.deviceId) {
+      if (!msg || typeof msg !== 'object') {
+        return;
+      }
+
+      const typeValue = msg.type ? String(msg.type).toLowerCase() : '';
+      const candidateDeviceId = msg.deviceId || msg.device_id || msg.hardwareId || msg.hardware_id;
+      const resolvedDeviceId = candidateDeviceId ? String(candidateDeviceId).trim() : (ws.deviceId || null);
+
+      const ensureOnline = async (deviceId, extraMetadata = {}) => {
+        if (!deviceId) {
+          return;
+        }
+        try {
+          await markDeviceOnline(deviceId, {
+            ...extraMetadata,
+            via: 'native-ws',
+            lastWsEvent: new Date().toISOString(),
+          });
+        } catch (error) {
+          logger.warn('Failed to mark device online via native WebSocket', {
+            deviceId,
+            error: error && error.message ? error.message : error,
+          });
+        }
+      };
+
+      if (typeValue === 'register' && resolvedDeviceId) {
         ws.deviceId = msg.deviceId;
         global.deviceSockets.set(msg.deviceId, ws);
         logger.debug('WebSocket client registered', { deviceId: msg.deviceId });
+        ensureOnline(msg.deviceId, {
+          firmware: msg.firmware || null,
+          metadata: msg.metadata || null,
+        });
         // When a device registers, immediately send the current thresholds so device can sync
         (async () => {
           try {
@@ -237,6 +271,18 @@ wss.on('connection', (ws, request) => {
             logger.warn('Failed to send thresholds to device on register', err && err.message ? err.message : err);
           }
         })();
+        return;
+      }
+
+      if (typeValue === 'heartbeat' && resolvedDeviceId) {
+        ensureOnline(resolvedDeviceId, {
+          heartbeatTimestamp: msg.timestamp || new Date().toISOString(),
+        });
+        return;
+      }
+
+      if (resolvedDeviceId) {
+        ensureOnline(resolvedDeviceId, { messageType: typeValue || 'unknown' });
       }
     } catch (e) {
       // ignore non-JSON or unexpected messages
@@ -250,6 +296,11 @@ wss.on('connection', (ws, request) => {
     global.wsConnections.delete(ws);
     if (ws && ws.deviceId && global.deviceSockets.get(ws.deviceId) === ws) {
       global.deviceSockets.delete(ws.deviceId);
+      try {
+        resetOfflineTimer(ws.deviceId);
+      } catch (timerError) {
+        logger.warn('Failed to reset offline timer on WS close', timerError && timerError.message ? timerError.message : timerError);
+      }
     }
   });
   

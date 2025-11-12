@@ -190,6 +190,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
     reason: null,
     source: null,
   });
+  const lockoutStateRef = useRef(lockoutState);
 
   const updateLockoutState = useCallback((update: FloatLockoutUpdate) => {
     setLockoutState((prev) => {
@@ -238,6 +239,10 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
 
   const [systemLocked, setSystemLocked] = useState(lockoutState.active);
   const lockoutReason = lockoutState.reason;
+
+  useEffect(() => {
+    lockoutStateRef.current = lockoutState;
+  }, [lockoutState]);
 
   const updateControlCard = useCallback((key: ActuatorKey, updater: (card: ControlCardState) => ControlCardState) => {
     setControlCards((prev) => prev.map((card) => (card.key === key ? updater(card) : card)));
@@ -331,14 +336,14 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
   }, [loadActuators]);
 
   const registerSocketHandlers = useCallback((socket: Socket) => {
-  socket.on('connect', () => setSocketConnected(true));
-  socket.on('disconnect', () => setSocketConnected(false));
-  socket.on('floatLockout', () => setSystemLocked(true));
-  socket.on('floatLockoutCleared', () => setSystemLocked(false));
+    socket.on('connect', () => setSocketConnected(true));
+    socket.on('disconnect', () => setSocketConnected(false));
+    socket.on('floatLockout', () => setSystemLocked(true));
+    socket.on('floatLockoutCleared', () => setSystemLocked(false));
 
-  // Initial state sync
-  setSocketConnected(socket.connected);
-  setSystemLocked(lockoutState.active);
+    // Initial state sync
+    setSocketConnected(socket.connected);
+    setSystemLocked(lockoutStateRef.current.active);
     const handleSnapshot = (snapshot: any) => {
       if (Array.isArray(snapshot)) {
         const sanitized = snapshot.map(sanitizeActuator).filter(Boolean) as Actuator[];
@@ -495,7 +500,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
       socket.off('float_lockout', handleFloatLockout);
       socket.off('float_lockout_cleared', handleFloatLockoutCleared);
     };
-  }, [applyActuatorUpdate, sanitizeActuator, updateControlCard, updateLockoutState, lockoutState]);
+  }, [applyActuatorUpdate, sanitizeActuator, updateControlCard, updateLockoutState]);
 
   const handleManualReconnect = useCallback(() => {
     setSocketMeta((prev) => ({ ...prev, lastError: undefined }));
