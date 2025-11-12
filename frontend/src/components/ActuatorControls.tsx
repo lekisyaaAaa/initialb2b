@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw, Settings2, WifiOff } from 'lucide-react';
 import { io, Socket } from 'socket.io-client';
-import { actuatorService, API_BASE_URL, commandService, sensorService } from '../services/api';
+import { actuatorService, commandService, sensorService } from '../services/api';
+import { createSocket, SOCKET_URL } from '../socket';
 import { Actuator } from '../types';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -244,27 +245,6 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
   const [reconnectVersion, setReconnectVersion] = useState(0);
   const socketRef = useRef<Socket | null>(null);
   const { logout } = useAuth();
-
-  const socketUrl = useMemo(() => API_BASE_URL.replace(/\/+$/, ''), []);
-  const socketHosts = useMemo(() => {
-    const candidates = new Set<string>();
-    if (socketUrl) {
-      candidates.add(socketUrl.replace(/\/+$/, ''));
-    }
-    if (typeof process !== 'undefined') {
-      const envSocket = process.env.REACT_APP_SOCKET_URL || process.env.REACT_APP_WS_URL;
-      if (envSocket) {
-        const envUrl = envSocket.toString().trim();
-        if (envUrl) {
-          candidates.add(envUrl.replace(/\/+$/, ''));
-        }
-      }
-    }
-    if (typeof window !== 'undefined' && window.location && window.location.origin) {
-      candidates.add(window.location.origin.replace(/\/+$/, ''));
-    }
-    return Array.from(candidates);
-  }, [socketUrl]);
 
   const sanitizeActuator = useCallback((value: any): Actuator | null => {
     if (!value || typeof value !== 'object') return null;
@@ -596,44 +576,14 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
   useEffect(() => {
     let cancelled = false;
     let cleanupHandlers: (() => void) | null = null;
-    let attempt = 0;
+    let attempts = 1;
 
-    const disconnectActive = () => {
-      if (cleanupHandlers) {
-        cleanupHandlers();
-        cleanupHandlers = null;
-      }
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
-      }
-    };
-
-    const tryNextHost = () => {
-      if (cancelled) return;
-      disconnectActive();
-
-      if (attempt >= socketHosts.length) {
-        setSocketState('disconnected');
-        setSocketMeta((prev) => ({ ...prev, lastError: prev.lastError || 'No reachable socket endpoint', attempts: attempt }));
-        return;
-      }
-
-      const host = socketHosts[attempt++];
-      setSocketState('connecting');
-      setSocketMeta({ host, lastError: undefined, attempts: attempt });
-
-      const socket = io(host, {
-        path: '/socket.io',
-        // Prefer websocket transport and enable reconnection/credentials for production
-        transports: ['websocket'],
-        withCredentials: true,
-        reconnection: true,
-        reconnectionAttempts: 5,
-        timeout: 20000,
-      });
-
+    const connect = () => {
+      const socket = createSocket();
       socketRef.current = socket;
+      setSocketState(socket.connected ? 'connected' : 'connecting');
+      setSocketMeta({ host: SOCKET_URL, lastError: undefined, attempts });
+
       const detachHandlers = registerSocketHandlers(socket);
       cleanupHandlers = () => {
         detachHandlers();
@@ -650,7 +600,7 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
           return;
         }
         setSocketState('connected');
-        setSocketMeta({ host, lastError: undefined, attempts: attempt });
+        setSocketMeta({ host: SOCKET_URL, lastError: undefined, attempts });
         fetchActuators().catch(() => null);
         loadCommandStatus().catch(() => null);
         loadFloatSensorSnapshot().catch(() => null);
@@ -661,15 +611,13 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
           return;
         }
         const message = err?.message || 'Socket connection failed';
+        attempts += 1;
         setSocketState('disconnected');
-        setSocketMeta({ host, lastError: message, attempts: attempt });
-        cleanupHandlers?.();
-        cleanupHandlers = null;
-        setTimeout(tryNextHost, 250);
+        setSocketMeta({ host: SOCKET_URL, lastError: message, attempts });
       };
 
-      socket.once('connect_error', onFailure);
-      socket.once('error', onFailure);
+      socket.on('connect_error', onFailure);
+      socket.on('error', onFailure);
       socket.on('disconnect', (reason) => {
         if (cancelled) {
           return;
@@ -678,25 +626,20 @@ const ActuatorControls: React.FC<Props> = ({ className = '', deviceOnline = true
           return;
         }
         setSocketState('disconnected');
-        setSocketMeta((prev) => ({ ...prev, lastError: reason }));
+        setSocketMeta((prev) => ({ host: SOCKET_URL, lastError: reason, attempts: prev.attempts + 1 }));
       });
     };
 
-    if (socketHosts.length === 0) {
-      setSocketState('disconnected');
-      setSocketMeta({ host: undefined, lastError: 'No socket candidates available', attempts: 0 });
-      return () => {
-        cancelled = true;
-      };
-    }
-
-    tryNextHost();
+    connect();
 
     return () => {
       cancelled = true;
-      disconnectActive();
+      if (cleanupHandlers) {
+        cleanupHandlers();
+        cleanupHandlers = null;
+      }
     };
-  }, [fetchActuators, loadCommandStatus, loadFloatSensorSnapshot, registerSocketHandlers, socketHosts, reconnectVersion]);
+  }, [fetchActuators, loadCommandStatus, loadFloatSensorSnapshot, registerSocketHandlers, reconnectVersion]);
 
   useEffect(() => {
     loadCommandStatus();

@@ -5,7 +5,7 @@ const helmet = require('helmet');
 const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const WebSocket = require('ws');
-const { Server: SocketIOServer } = require('socket.io');
+const { Server } = require('socket.io');
 const http = require('http');
 const path = require('path');
 const envFile = (process.env.NODE_ENV || '').toLowerCase() === 'test' ? '.env.test' : '.env';
@@ -68,83 +68,15 @@ const adminAuthLimiter = rateLimit({
   },
 });
 
-const isProductionEnv = (process.env.NODE_ENV || 'development') === 'production';
-const normalizeOrigin = (origin) => {
-  if (!origin || typeof origin !== 'string' || origin.trim() === '') {
-    return '';
-  }
-  try {
-    // Only attempt to parse if origin looks like a valid URL
-    if (/^https?:\/\//i.test(origin.trim())) {
-      return new URL(origin.trim()).origin;
-    }
-    return origin.replace(/\/$/, '');
-  } catch (error) {
-    return origin.replace(/\/$/, '');
-  }
-};
-
-const rawCorsOrigins = (process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-
-const allowedCorsOrigins = rawCorsOrigins.map(normalizeOrigin).filter(Boolean);
-const allowAllHttpOrigins = !isProductionEnv || allowedCorsOrigins.length === 0;
-
-const rawSocketOrigins = (process.env.SOCKETIO_CORS_ORIGINS || '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
-
-const allowedSocketOrigins = (rawSocketOrigins.length > 0 ? rawSocketOrigins : rawCorsOrigins)
-  .map(normalizeOrigin)
-  .filter(Boolean);
-const allowAllSocketOrigins = !isProductionEnv || allowedSocketOrigins.length === 0;
-
-const isOriginPermitted = (origin, list, allowAll) => {
-  if (!origin) {
-    return true;
-  }
-  if (allowAll) {
-    return true;
-  }
-  const normalized = normalizeOrigin(origin);
-  return list.includes(normalized);
-};
-
-const corsOptions = {
-  origin: (origin, callback) => {
-    if (isOriginPermitted(origin, allowedCorsOrigins, allowAllHttpOrigins)) {
-      return callback(null, true);
-    }
-    logger.warn('CORS origin rejected', { origin });
-    return callback(new Error('Not allowed by CORS'));
-  },
-  credentials: true,
-};
-
-if (isProductionEnv && allowedCorsOrigins.length === 0) {
-  logger.warn('CORS_ORIGINS not set; allowing all origins in production');
-}
-
-if (isProductionEnv && allowedSocketOrigins.length === 0) {
-  logger.warn('SOCKETIO_CORS_ORIGINS not set; allowing all socket origins in production');
-}
-
-const io = new SocketIOServer(server, {
+const io = new Server(server, {
   cors: {
-    origin: (origin, callback) => {
-      if (isOriginPermitted(origin, allowedSocketOrigins, allowAllSocketOrigins)) {
-        return callback(null, true);
-      }
-      logger.warn('Socket origin rejected', { origin });
-      return callback(new Error('Socket origin not allowed'));
-    },
+    origin: [
+      'https://vermilinks-frontend.onrender.com',
+      'http://localhost:3000',
+    ],
+    methods: ['GET', 'POST'],
     credentials: true,
   },
-  serveClient: false,
-  transports: ['websocket', 'polling'],
 });
 
 global.io = io;
@@ -162,7 +94,7 @@ systemTestNamespace.on('connection', async (socket) => {
 });
 
 io.on('connection', async (socket) => {
-  logger.info('Socket.IO client connected', { socketId: socket.id });
+  logger.info('✅ Socket.IO client connected', { socketId: socket.id });
 
   const handshakeDeviceId = (() => {
     const authId = socket.handshake && socket.handshake.auth ? socket.handshake.auth.deviceId : null;
@@ -234,10 +166,10 @@ io.on('connection', async (socket) => {
   socket.on('command:ok', (payload) => handleAckEvent(payload, true));
   socket.on('command:error', (payload) => handleAckEvent(payload, false));
 
-  socket.on('disconnect', () => {
+  socket.on('disconnect', (reason) => {
     const hardwareId = socket.data && socket.data.hardwareId ? socket.data.hardwareId : null;
     deviceCommandQueue.deregisterSocket(hardwareId, socket);
-    logger.info('Socket.IO client disconnected', { socketId: socket.id, hardwareId });
+    logger.info('❌ Socket.IO client disconnected', { socketId: socket.id, hardwareId, reason });
   });
 });
 
@@ -304,7 +236,7 @@ wss.on('connection', (ws) => {
 app.use(helmet());
 app.use(compression());
 
-app.use(cors(corsOptions));
+app.use(cors({ origin: 'https://vermilinks-frontend.onrender.com', credentials: true }));
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
