@@ -18,8 +18,6 @@ import {
   Shield,
   ExternalLink,
   AlertCircle,
-  Trash2,
-  Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Link, useNavigate } from 'react-router-dom';
@@ -247,7 +245,7 @@ const Dashboard: React.FC = () => {
       ...ALERT_SEVERITY_ORDER.map((severity) => ({ severity, items: buckets[severity] ?? [] })),
       ...extras.map((severity) => ({ severity, items: buckets[severity] ?? [] })),
     ].filter((group) => group.items.length > 0);
-  }, [recentAlerts]);
+  }, [recentAlerts, isConnected, safeLatestSensorData.length]);
 
   const hasAlerts = groupedAlerts.length > 0;
 
@@ -269,34 +267,10 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const handleRefreshAlerts = useCallback(async () => {
-    setAlertsBusy(true);
-    setAlertsError(null);
-    try {
-      await refreshAlerts();
-    } catch (error: any) {
-      const message = error?.response?.data?.message || error?.message || 'Failed to refresh alerts';
-      setAlertsError(message);
-    } finally {
-      setAlertsBusy(false);
-    }
-  }, [refreshAlerts]);
+  // Note: alert refresh/clear actions moved to Admin dashboard only
+  const handleRefreshAlerts = useCallback(async () => {}, []);
 
-  const handleClearAlerts = useCallback(async () => {
-    if (recentAlerts.length === 0) {
-      return;
-    }
-    setAlertsBusy(true);
-    setAlertsError(null);
-    try {
-      await clearAlerts();
-    } catch (error: any) {
-      const message = error?.response?.data?.message || error?.message || 'Failed to clear alerts';
-      setAlertsError(message);
-    } finally {
-      setAlertsBusy(false);
-    }
-  }, [clearAlerts, recentAlerts]);
+  const handleClearAlerts = useCallback(async () => {}, []);
 
   // Connection badge mirrors the admin header so both roles share the same visual rhythm.
   const connectionBadge = (
@@ -634,28 +608,8 @@ const Dashboard: React.FC = () => {
                           <AlertTriangle className="w-5 h-5 mr-2 text-coffee-600 dark:text-gray-200" />
                           Active Alerts
                         </h3>
-                        {isAdmin && (
-                          <div className="flex items-center gap-2">
-                            <button
-                              type="button"
-                              onClick={handleRefreshAlerts}
-                              className="inline-flex items-center gap-2 rounded-full border border-coffee-200 px-3 py-1.5 text-xs font-medium text-coffee-700 transition-colors hover:border-coffee-300 hover:text-coffee-900 dark:border-gray-700 dark:text-gray-100 dark:hover:border-gray-600"
-                              disabled={alertsBusy}
-                            >
-                              {alertsBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                              <span>Refresh</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleClearAlerts}
-                              className="inline-flex items-center gap-2 rounded-full border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 transition-colors hover:border-red-300 hover:text-red-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-red-800 dark:text-red-300 dark:hover:border-red-700"
-                              disabled={alertsBusy || !hasAlerts}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              <span>Clear All</span>
-                            </button>
-                          </div>
-                        )}
+                        {/* Intentionally no admin/user actions here. All alert management
+                            lives under the Admin dashboard. */}
                       </div>
                       <p className="mt-2 text-xs text-coffee-500 dark:text-gray-300">
                         {unresolvedAlerts.length} unresolved alert{unresolvedAlerts.length === 1 ? '' : 's'}
