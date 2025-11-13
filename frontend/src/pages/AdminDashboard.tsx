@@ -9,7 +9,7 @@ import SensorCard from '../components/SensorCard';
 import AlertsPanel from '../components/AlertsPanel';
 import DarkModeToggle from '../components/DarkModeToggle';
 import HeaderFrame from '../components/layout/HeaderFrame';
-import ActuatorControls from '../components/ActuatorControls';
+import SensorSummaryPanel from '../components/SensorSummaryPanel';
 import { DeviceManagement } from '../components/DeviceManagement';
 import { ThresholdConfiguration } from '../components/ThresholdConfiguration';
 import { AlertsManagement } from '../components/AlertsManagement';
@@ -116,7 +116,6 @@ export default function AdminDashboard(): React.ReactElement {
   const [reminders, setReminders] = useState<Array<any>>([]);
   const [remindersLoading, setRemindersLoading] = useState(false);
   const [sensorStatus, setSensorStatus] = useState<string>('Checking...');
-  const [actuatorLogs, setActuatorLogs] = useState<any[]>([]);
   const [latestAlerts, setLatestAlerts] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [alertRules, setAlertRules] = useState<AlertRules>({ ...DEFAULT_ALERT_RULES });
@@ -146,17 +145,6 @@ export default function AdminDashboard(): React.ReactElement {
       setReminders([]);
     } finally {
       setRemindersLoading(false);
-    }
-  }
-
-  async function loadActuatorLogs() {
-    try {
-      const res = await fetch('/api/actuators/logs?limit=200');
-      if (!res.ok) return setActuatorLogs([]);
-      const body = await res.json().catch(() => ({}));
-      setActuatorLogs(body.logs || []);
-    } catch (e) {
-      setActuatorLogs([]);
     }
   }
 
@@ -796,7 +784,7 @@ export default function AdminDashboard(): React.ReactElement {
 
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="text-sm text-gray-500 dark:text-gray-300">
-            Monitor realtime telemetry, actuator states, and live alerts below. Hardware status updates every few seconds.
+            Monitor realtime telemetry, sensor trends, and live alerts below. Hardware status updates every few seconds.
           </div>
           <div className="inline-flex items-center justify-center gap-3 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
             <div className="flex items-center gap-2">
@@ -1089,8 +1077,7 @@ export default function AdminDashboard(): React.ReactElement {
                     </div>
                   )}
                 </div>
-
-                <ActuatorControls deviceOnline={devicesOnline > 0} />
+                <SensorSummaryPanel className="mt-6" />
 
                 {/* Sub-tabs for monitoring */}
                 <div className="bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 rounded-lg shadow">
@@ -1451,7 +1438,6 @@ export default function AdminDashboard(): React.ReactElement {
                           <button
                             title="Export as CSV"
                             onClick={async () => {
-                              await loadActuatorLogs();
                               const rows = sensorHistory.map(s => ({
                                 timestamp: (s as any).timestamp || new Date().toISOString(),
                                 deviceId: s.deviceId || '',

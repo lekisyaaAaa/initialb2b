@@ -73,6 +73,7 @@ export interface Alert {
   sensorData?: Partial<SensorData>;
   isResolved?: boolean;
   createdAt?: string | Date;
+  updatedAt?: string | Date;
   resolvedAt?: string | Date;
   acknowledgedBy?: string;
   acknowledgedAt?: string | Date;
@@ -216,18 +217,6 @@ export interface AlertStats {
     total: number;
   }>;
   period: string;
-}
-
-export interface Actuator {
-  id: number;
-  name: string;
-  type?: string;
-  key?: string | null;
-  status: boolean;
-  mode: 'manual' | 'auto';
-  lastUpdated: string;
-  deviceAck?: boolean;
-  deviceAckMessage?: string | null;
 }
 
 export type DevicePortStatus = 'active' | 'inactive' | 'unknown' | string;

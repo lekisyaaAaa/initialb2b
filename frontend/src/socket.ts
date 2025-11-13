@@ -1,17 +1,40 @@
-import { io, ManagerOptions, SocketOptions } from 'socket.io-client';
+import { io, ManagerOptions, Socket, SocketOptions } from 'socket.io-client';
 
-const SOCKET_URL = 'https://vermilinks-backend.onrender.com';
+let socketRef: Socket | null = null;
 
-const SOCKET_OPTIONS: Partial<ManagerOptions & SocketOptions> = {
+const defaultUrl = process.env.REACT_APP_WS_URL || 'https://vermilinks-backend.onrender.com';
+export const SOCKET_URL = defaultUrl;
+
+const baseOptions: Partial<ManagerOptions & SocketOptions> = {
   transports: ['websocket'],
-  reconnection: true,
-  reconnectionAttempts: Infinity,
-  reconnectionDelay: 2000,
   withCredentials: true,
+  reconnection: true,
+  reconnectionAttempts: 5,
   timeout: 20000,
-  path: '/socket.io',
 };
 
-export const createSocket = () => io(SOCKET_URL, SOCKET_OPTIONS);
-export const socket = createSocket();
-export { SOCKET_URL, SOCKET_OPTIONS };
+export function createSocket(url: string = defaultUrl, options: Partial<ManagerOptions & SocketOptions> = {}) {
+  if (socketRef && socketRef.connected) {
+    return socketRef;
+  }
+
+  const mergedOptions = { ...baseOptions, ...options };
+  socketRef = io(url, mergedOptions);
+  return socketRef;
+}
+
+export function getSocket() {
+  if (!socketRef) {
+    return createSocket();
+  }
+  return socketRef;
+}
+
+export function disconnectSocket() {
+  if (socketRef) {
+    socketRef.disconnect();
+    socketRef = null;
+  }
+}
+
+export const socket = getSocket();

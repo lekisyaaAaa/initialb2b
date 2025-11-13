@@ -12,13 +12,14 @@ import WaterLevelChart from './WaterLevelChart';
 import MultiSensorChart from './MultiSensorChart';
 import { useData } from '../../contexts/DataContext';
 
-// Small debug component to show last fetch info from DataContext
+// Lightweight diagnostic banner so we can surface connection state next to charts.
 const DebugInfo: React.FC = () => {
-  const { lastFetchCount, lastFetchAt, isLoading } = useData();
+  const { lastFetchAt, isLoading, isConnected, latestTelemetry } = useData();
+  const lastTimestamp = lastFetchAt || latestTelemetry?.timestamp || null;
   return (
-    <div className="flex items-center space-x-3">
-      <span>{isLoading ? 'Fetching...' : `Last fetch: ${lastFetchCount} readings`}</span>
-      {lastFetchAt && <span className="opacity-80">{new Date(lastFetchAt).toLocaleTimeString()}</span>}
+    <div className="flex items-center space-x-3 text-xs">
+      <span>{isLoading ? 'Fetching…' : isConnected ? 'Live telemetry' : 'Offline'}</span>
+      {lastTimestamp ? <span className="opacity-80">{new Date(lastTimestamp).toLocaleTimeString()}</span> : null}
     </div>
   );
 };

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import React, { useState, useEffect } from 'react';
-import { Leaf, AlertTriangle, Thermometer, Droplets, Sprout, Battery, Activity, RefreshCw, TrendingUp, ArrowRight, Bell } from 'lucide-react';
+import { Leaf, AlertTriangle, Thermometer, Droplets, Sprout, Battery, Activity, TrendingUp, ArrowRight, Bell } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import DarkModeToggle from '../components/DarkModeToggle';
@@ -78,10 +78,9 @@ const sampleSensorData = [
 ];
 
 const PublicDashboard: React.FC = () => {
-  const { latestSensorData, isConnected, refreshData } = useData();
+  const { latestSensorData, isConnected } = useData();
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'alerts' | 'sensors'>('overview');
-  const [isLoading, setIsLoading] = useState(false);
   const [alerts, setAlerts] = useState<any[]>([]);
   const [notificationMessage, setNotificationMessage] = useState<string | null>(null);
   const [showNotification, setShowNotification] = useState(false);
@@ -149,12 +148,6 @@ const PublicDashboard: React.FC = () => {
       });
     }
   }, [latestSensorData, user]);
-
-  const handleRefresh = async () => {
-    setIsLoading(true);
-    await refreshData();
-    setIsLoading(false);
-  };
 
   const getStatusColor = (status: string) => {
     switch (status) {

@@ -18,11 +18,11 @@ const tourSteps: Step[] = [
   {
     element: '#admin-access-btn',
     title: 'Admin Access',
-    intro: 'Access the admin panel to manage actuators, settings, and system controls.',
+    intro: 'Access the admin panel to review sensors, adjust thresholds, and manage system controls.',
   },
   {
     title: 'Getting Started',
-    intro: 'Welcome to BeanToBin! This environmental monitoring system helps you track sensors, manage actuators, and monitor your data in real-time.',
+    intro: 'Welcome to BeanToBin! This environmental monitoring system helps you track sensors, tune alerting, and monitor your data in real-time.',
   },
 ];
 

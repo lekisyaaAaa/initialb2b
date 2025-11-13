@@ -6,7 +6,7 @@ import { Download, Search } from 'lucide-react';
 
 type LogEntry = {
   id: string;
-  type: 'sensor' | 'actuator' | 'login' | 'alert';
+  type: 'sensor' | 'login' | 'alert';
   message: string;
   timestamp: string;
   details?: any;
@@ -45,10 +45,6 @@ export default function LogsPage() {
       const sensorRes = await fetch('/api/sensors?limit=100');
       const sensorData = sensorRes.ok ? await sensorRes.json() : [];
 
-      // Load actuator logs
-      const actuatorRes = await fetch('/api/actuators/logs?limit=100');
-      const actuatorData = actuatorRes.ok ? await actuatorRes.json() : { logs: [] };
-
       // Load alerts
       const alertRes = await fetch('/api/alerts?limit=100');
       const alertData = alertRes.ok ? await alertRes.json() : [];
@@ -63,17 +59,6 @@ export default function LogsPage() {
           message: `Sensor reading: ${sensor.deviceId}`,
           timestamp: sensor.lastSeen || sensor.timestamp,
           details: sensor,
-        });
-      });
-
-      // Process actuator logs
-      actuatorData.logs.forEach((log: any) => {
-        allLogs.push({
-          id: `actuator-${log.id}`,
-          type: 'actuator',
-          message: `Actuator ${log.actuator} ${log.state ? 'ON' : 'OFF'}: ${log.reason}`,
-          timestamp: log.timestamp,
-          details: log,
         });
       });
 
@@ -170,7 +155,6 @@ export default function LogsPage() {
             >
               <option value="all">All Types</option>
               <option value="sensor">Sensor</option>
-              <option value="actuator">Actuator</option>
               <option value="alert">Alert</option>
               <option value="login">Login</option>
             </select>
@@ -187,7 +171,6 @@ export default function LogsPage() {
                       <div className="flex items-center gap-2 mb-1">
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
                           log.type === 'sensor' ? 'bg-blue-100 text-blue-800' :
-                          log.type === 'actuator' ? 'bg-green-100 text-green-800' :
                           log.type === 'alert' ? 'bg-red-100 text-red-800' :
                           'bg-gray-100 text-gray-800'
                         }`}>

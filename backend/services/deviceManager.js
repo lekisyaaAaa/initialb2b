@@ -5,6 +5,10 @@ const { ensureDatabaseSetup } = require('../services/database_pg');
 
 const schemaReady = ensureDatabaseSetup({ force: (process.env.NODE_ENV || 'development') === 'test' });
 
+function resolveIo() {
+  return global.io && typeof global.io.emit === 'function' ? global.io : null;
+}
+
 async function ensureReady() {
   if (schemaReady && typeof schemaReady.then === 'function') {
     await schemaReady;
@@ -31,12 +35,13 @@ async function markDeviceOnline(deviceId, metadata = {}) {
   resetOfflineTimer(deviceId);
   // Broadcast device status via Socket.IO
   try {
-    if (global.io && typeof global.io.emit === 'function') {
+    const io = resolveIo();
+    if (io) {
       const payload = { deviceId, status: 'online', online: true, lastHeartbeat: device.lastHeartbeat };
-      global.io.emit('device:status', payload);
+      io.emit('device:status', payload);
       // legacy aliases
-      global.io.emit('device_status', payload);
-      global.io.emit('deviceHeartbeat', payload);
+      io.emit('device_status', payload);
+      io.emit('deviceHeartbeat', payload);
     }
   } catch (e) {
     // ignore emit errors
@@ -92,10 +97,11 @@ async function markDeviceOffline(deviceId) {
     }
   } catch (e) { /* ignore */ }
   try {
-    if (global.io && typeof global.io.emit === 'function') {
+    const io = resolveIo();
+    if (io) {
       const payload = { deviceId, status: 'offline', online: false, lastHeartbeat: device.lastHeartbeat };
-      global.io.emit('device:status', payload);
-      global.io.emit('device_status', payload);
+      io.emit('device:status', payload);
+      io.emit('device_status', payload);
     }
   } catch (e) { /* ignore */ }
   return device;

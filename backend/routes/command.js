@@ -17,6 +17,16 @@ const VALID_ACTUATORS = new Map([
   ['solenoid3', { label: 'Solenoid Valve 3', solenoidIndex: 3 }],
 ]);
 
+function resolveIo(req) {
+  if (req && req.app && typeof req.app.get === 'function') {
+    const instance = req.app.get('io');
+    if (instance) {
+      return instance;
+    }
+  }
+  return global.io;
+}
+
 const ACTUATOR_SUMMARY_KEYS = Array.from(VALID_ACTUATORS.keys());
 
 function normalizeActuator(value) {
@@ -93,6 +103,21 @@ router.post(
       });
 
       if (!safety.allowed) {
+        try {
+          const io = resolveIo(req);
+          if (io) {
+            io.emit('floatLockout', {
+              deviceId,
+              actuator: actuatorKey,
+              message: safety.message || 'Float sensor lockout active',
+              floatSensor: typeof safety.floatState === 'number' ? safety.floatState : null,
+              floatSensorTimestamp: safety.timestamp || null,
+              timestamp: new Date().toISOString(),
+            });
+          }
+        } catch (emitError) {
+          console.warn('command: failed to emit floatLockout', emitError && emitError.message ? emitError.message : emitError);
+        }
         return res.status(safety.statusCode || 423).json({
           success: false,
           message: safety.message || 'Float sensor lockout active',
@@ -136,15 +161,24 @@ router.post(
       const payload = toApiPayload(command);
 
       try {
-        if (global.io) {
+        const io = resolveIo(req);
+        if (io) {
           const summary = {
             ...payload,
             status: dispatched ? 'dispatched' : 'pending',
           };
-          global.io.emit('actuator_command_update', summary);
-          global.io.emit('solenoid_command_update', summary);
-          global.io.to(`device:${deviceId}`).emit('actuator_command_update', summary);
-          global.io.to(`device:${deviceId}`).emit('solenoid_command_update', summary);
+          io.emit('actuator_command_update', summary);
+          io.emit('solenoid_command_update', summary);
+          io.to(`device:${deviceId}`).emit('actuator_command_update', summary);
+          io.to(`device:${deviceId}`).emit('solenoid_command_update', summary);
+          io.emit('device_command_created', {
+            deviceId,
+            commandId: payload.id,
+            actuator: payload.actuator,
+            desiredState: action,
+            queuedAt: payload.createdAt || new Date().toISOString(),
+            dispatched,
+          });
         }
       } catch (socketError) {
         // logging handled by queue service; keep route focused

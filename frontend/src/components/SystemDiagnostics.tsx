@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Activity, AlertTriangle, Database, Radio, RefreshCw, Server, Wifi } from 'lucide-react';
 import api, { alertService, deviceService, sensorService } from '../services/api';
-import { socket as sharedSocket } from '../socket';
+import { getSocket } from '../socket';
 
 type ServiceStatus = 'online' | 'offline' | 'degraded' | 'unknown' | 'connected' | 'ok' | 'warning' | 'pending' | 'initializing' | 'starting' | 'stale' | 'success' | string;
 
@@ -303,10 +303,10 @@ export const SystemDiagnostics: React.FC = () => {
         alertService.getRecentAlerts(1).catch(() => null),
       ]);
 
-      const summary = (summaryResp?.data?.data || {}) as { critical?: number; warning?: number; info?: number };
-      const critical = Number(summary.critical || 0);
-      const warning = Number(summary.warning || 0);
-      const info = Number(summary.info || 0);
+      const summary = (summaryResp || {}) as { critical?: number; warning?: number; info?: number };
+      const critical = Number(summary?.critical ?? 0);
+      const warning = Number(summary?.warning ?? 0);
+      const info = Number(summary?.info ?? 0);
       const activeTotal = critical + warning + info;
 
       let lastAlertAt: string | null = null;
@@ -398,7 +398,7 @@ export const SystemDiagnostics: React.FC = () => {
   }, [fetchDiagnostics]);
 
   useEffect(() => {
-    const socket = sharedSocket;
+    const socket = getSocket();
     if (!socket) {
       return;
     }
@@ -459,11 +459,10 @@ export const SystemDiagnostics: React.FC = () => {
     const handleAlertTrigger = async () => {
       // Refresh alert summary quickly when an alert fires or clears
       try {
-        const resp = await alertService.getSummary();
-        const data = (resp?.data?.data || {}) as { critical?: number; warning?: number; info?: number };
-        const critical = Number(data.critical || 0);
-        const warning = Number(data.warning || 0);
-        const info = Number(data.info || 0);
+        const summary = await alertService.getSummary();
+        const critical = Number(summary?.critical ?? 0);
+        const warning = Number(summary?.warning ?? 0);
+        const info = Number(summary?.info ?? 0);
         const activeTotal = critical + warning + info;
         setDiagnostics(prev => ({
           ...prev,

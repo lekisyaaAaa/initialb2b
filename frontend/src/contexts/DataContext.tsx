@@ -1,21 +1,67 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
-import { SensorData, Alert, ApiResponse } from '../types';
-import api, { alertService, sensorService, discoverApi } from '../services/api';
-import { socket as sharedSocket } from '../socket';
-import weatherService, { type WeatherData } from '../services/weatherService';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import { Alert, SensorData } from '../types';
+import api, {
+  alertService,
+  deviceService,
+  discoverApi,
+  sensorService,
+} from '../services/api';
+import { getSocket } from '../socket';
+
+interface DeviceStatusInfo {
+  deviceId: string;
+  online: boolean;
+  status: string;
+  lastHeartbeat: string | null;
+  updatedAt: string | null;
+}
+
+interface AlertBuckets {
+  critical: Alert[];
+  warning: Alert[];
+  info: Alert[];
+}
+
+interface AlertSummary {
+  critical: number;
+  warning: number;
+  info: number;
+  lastAlertAt: string | null;
+}
+
+interface FloatLockoutState {
+  active: boolean;
+  deviceId: string | null;
+  message: string | null;
+  floatSensor: number | null;
+  updatedAt: string | null;
+}
 
 interface DataContextType {
+  latestTelemetry: SensorData | null;
   latestSensorData: SensorData[];
+  deviceStatuses: Record<string, DeviceStatusInfo>;
   recentAlerts: Alert[];
+  groupedAlerts: AlertBuckets;
+  alertSummary: AlertSummary;
+  floatLockoutState: FloatLockoutState | null;
   isConnected: boolean;
   isLoading: boolean;
-  refreshData: () => Promise<void>;
+  lastFetchAt: string | null;
+  lastFetchError: string | null;
+  refreshTelemetry: () => Promise<void>;
+  refreshSensors: () => Promise<void>;
   refreshAlerts: () => Promise<void>;
   clearAlerts: () => Promise<void>;
-  // lightweight debug info
-  lastFetchCount: number;
-  lastFetchAt?: string | null;
-  lastFetchError?: string | null;
   clearLastFetchError: () => void;
 }
 
@@ -25,7 +71,41 @@ interface DataProviderProps {
   children: ReactNode;
 }
 
-const ENABLE_WEATHER_FALLBACK = process.env.REACT_APP_ENABLE_WEATHER_FALLBACK === 'true';
+const normalizeSeverityToBucket = (severity?: string | null): keyof AlertBuckets => {
+  const value = (severity || '').toString().toLowerCase();
+  if (value === 'critical') return 'critical';
+  if (value === 'high' || value === 'warning' || value === 'medium') return 'warning';
+  return 'info';
+};
+
+const bucketizeAlerts = (alerts: Alert[]): AlertBuckets => {
+  const buckets: AlertBuckets = { critical: [], warning: [], info: [] };
+  alerts.forEach((alert) => {
+    const bucket = normalizeSeverityToBucket(alert?.severity || alert?.type);
+    buckets[bucket].push(alert);
+  });
+  return buckets;
+};
+
+const computeSummaryFromBuckets = (buckets: AlertBuckets): AlertSummary => {
+  const allAlerts = [...buckets.critical, ...buckets.warning, ...buckets.info];
+  const lastAlertAt = allAlerts
+    .map((alert) => alert?.createdAt || alert?.updatedAt || null)
+    .filter(Boolean)
+    .map((value) => new Date(value as string).getTime())
+    .reduce<number | null>((acc, ts) => {
+      if (!Number.isFinite(ts)) return acc;
+      if (acc === null) return ts as number;
+      return ts > acc ? ts : acc;
+    }, null);
+
+  return {
+    critical: buckets.critical.length,
+    warning: buckets.warning.length,
+    info: buckets.info.length,
+    lastAlertAt: lastAlertAt ? new Date(lastAlertAt).toISOString() : null,
+  };
+};
 
 const backendBaseFromApi = () => {
   const current = api.defaults.baseURL || '';
@@ -34,14 +114,17 @@ const backendBaseFromApi = () => {
 };
 
 export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
+  const [latestTelemetry, setLatestTelemetry] = useState<SensorData | null>(null);
   const [latestSensorData, setLatestSensorData] = useState<SensorData[]>([]);
+  const [deviceStatuses, setDeviceStatuses] = useState<Record<string, DeviceStatusInfo>>({});
   const [recentAlerts, setRecentAlerts] = useState<Alert[]>([]);
+  const [groupedAlerts, setGroupedAlerts] = useState<AlertBuckets>({ critical: [], warning: [], info: [] });
+  const [alertSummary, setAlertSummary] = useState<AlertSummary>({ critical: 0, warning: 0, info: 0, lastAlertAt: null });
+  const [floatLockoutState, setFloatLockoutState] = useState<FloatLockoutState | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [lastFetchCount, setLastFetchCount] = useState(0);
   const [lastFetchAt, setLastFetchAt] = useState<string | null>(null);
   const [lastFetchError, setLastFetchError] = useState<string | null>(null);
-  const isCurrentlyLoading = useRef(false);
   const backendBaseRef = useRef<string>('');
 
   const ensureBackendBase = useCallback(async () => {
@@ -59,276 +142,294 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         return backendBaseRef.current;
       }
     } catch (e) {
-      // ignore discovery errors
+      // discovery best-effort only
     }
     return '';
   }, []);
 
-  const fetchSensorDataFromBackend = useCallback(async (): Promise<{ readings: SensorData[]; connected: boolean }> => {
-  const response = await sensorService.getLatestData();
-  const root = (response?.data ?? {}) as (ApiResponse<SensorData | SensorData[] | null> & { status?: string });
-    const payload = root?.data;
-    const status = (root?.status || '').toString().toLowerCase();
-
-    let readings: SensorData[] = [];
-    if (Array.isArray(payload)) {
-      readings = payload as SensorData[];
-    } else if (payload && typeof payload === 'object') {
-      readings = [payload as SensorData];
-    }
-
-    const anyConnected = readings.some((reading) => {
-      const deviceOnline = (reading as any)?.deviceOnline;
-      const deviceStatus = (reading as any)?.deviceStatus;
-      const isStale = (reading as any)?.isStale;
-      if (typeof deviceOnline === 'boolean') {
-        return deviceOnline;
-      }
-      if (typeof deviceStatus === 'string') {
-        return deviceStatus.toLowerCase() === 'online';
-      }
-      return isStale === false;
+  const mergeDeviceStatus = useCallback((update: Partial<DeviceStatusInfo> & { deviceId: string }) => {
+    let computed: Record<string, DeviceStatusInfo> = {};
+    setDeviceStatuses((prev) => {
+      const existing = prev[update.deviceId];
+      const next: DeviceStatusInfo = {
+        deviceId: update.deviceId,
+        online: update.online ?? existing?.online ?? false,
+        status: update.status || existing?.status || (update.online ? 'online' : 'offline'),
+        lastHeartbeat: update.lastHeartbeat ?? existing?.lastHeartbeat ?? null,
+        updatedAt: update.updatedAt ?? new Date().toISOString(),
+      };
+      computed = { ...prev, [update.deviceId]: next };
+      return computed;
     });
-
-    const connected = status === 'online' || anyConnected;
-
-    if (!connected) {
-      return { readings: [], connected: false };
+    if (Object.keys(computed).length > 0) {
+      const anyOnline = Object.values(computed).some((state) => state.online);
+      setIsConnected(anyOnline);
+    } else if (!latestTelemetry) {
+      setIsConnected(false);
     }
-
-    return { readings, connected };
-  }, []);
-
-  const fetchAlertsFromBackend = useCallback(async (): Promise<Alert[]> => {
-    const response = await alertService.getRecentAlerts(5);
-    const payload = response?.data?.data;
-    if (Array.isArray(payload)) return payload as Alert[];
-    return [];
-  }, []);
+  }, [latestTelemetry]);
 
   const refreshAlerts = useCallback(async () => {
     try {
-      const alerts = await fetchAlertsFromBackend();
-      setRecentAlerts(alerts);
-    } catch (err: any) {
+      const [recentResponse, summaryResponse] = await Promise.all([
+        alertService.getRecentAlerts(20).catch(() => ({ data: { data: [] } })),
+        alertService.getSummary().catch(() => ({ critical: 0, warning: 0, info: 0, lastAlertAt: null })),
+      ]);
+
+      const recentPayload = (recentResponse?.data?.data ?? []) as Alert[];
+      const sortedAlerts = [...recentPayload].sort((a, b) => {
+        const aTs = new Date(a?.createdAt || a?.updatedAt || 0).getTime();
+        const bTs = new Date(b?.createdAt || b?.updatedAt || 0).getTime();
+        return bTs - aTs;
+      });
+
+      const buckets = bucketizeAlerts(sortedAlerts);
+      let summary: AlertSummary;
+      if ('critical' in summaryResponse && 'warning' in summaryResponse && 'info' in summaryResponse) {
+        const summaryCandidate = summaryResponse as Partial<AlertSummary> & { critical?: number; warning?: number; info?: number };
+        summary = {
+          critical: Number(summaryCandidate.critical ?? 0),
+          warning: Number(summaryCandidate.warning ?? 0),
+          info: Number(summaryCandidate.info ?? 0),
+          lastAlertAt: typeof summaryCandidate.lastAlertAt !== 'undefined'
+            ? summaryCandidate.lastAlertAt ?? computeSummaryFromBuckets(buckets).lastAlertAt
+            : computeSummaryFromBuckets(buckets).lastAlertAt,
+        };
+      } else {
+        summary = computeSummaryFromBuckets(buckets);
+      }
+
+      setRecentAlerts(sortedAlerts);
+      setGroupedAlerts(buckets);
+      setAlertSummary(summary);
+    } catch (error: any) {
       setRecentAlerts([]);
-      setLastFetchError(err?.message || 'Failed to fetch alerts');
-      throw err;
+      setGroupedAlerts({ critical: [], warning: [], info: [] });
+      setAlertSummary({ critical: 0, warning: 0, info: 0, lastAlertAt: null });
+      setLastFetchError(error?.message || 'Unable to load alerts');
+      throw error;
     }
-  }, [fetchAlertsFromBackend]);
+  }, []);
 
   const clearAlerts = useCallback(async () => {
     try {
-      // Prefer new clear-all endpoint; fall back to resolve-all on failure
-      try {
-        await alertService.clearAll();
-      } catch (e) {
-        await alertService.resolveAll();
-      }
-      setLastFetchError(null);
+      await alertService.clearAll();
       await refreshAlerts();
-    } catch (err: any) {
-      setLastFetchError(err?.message || 'Failed to clear alerts');
-      throw err;
+    } catch (error: any) {
+      setLastFetchError(error?.message || 'Unable to clear alerts');
+      throw error;
     }
   }, [refreshAlerts]);
 
-  const refreshData = useCallback(async () => {
-    if (isCurrentlyLoading.current) {
+  const handleTelemetryPayload = useCallback((raw: any, options?: { updateLatestList?: boolean }) => {
+    if (!raw) return;
+    const sample = Array.isArray(raw) ? raw[0] : raw;
+    if (!sample || typeof sample !== 'object') return;
+
+    const deviceId = (sample as any).deviceId || (sample as any).device_id || 'unknown-device';
+    const normalized: SensorData = {
+      ...(sample as SensorData),
+      deviceId,
+    };
+
+    setLatestTelemetry(normalized);
+    if (options?.updateLatestList !== false) {
+      setLatestSensorData((prev) => {
+        const filtered = Array.isArray(prev)
+          ? prev.filter((reading) => (reading?.deviceId || '') !== deviceId)
+          : [];
+        return [...filtered, normalized];
+      });
+    }
+    setLastFetchAt(new Date().toISOString());
+    setLastFetchError(null);
+
+    const online = Boolean((sample as any)?.deviceOnline ?? ((sample as any)?.deviceStatus || '').toString().toLowerCase() === 'online');
+    const heartbeat = (sample as any)?.timestamp || (sample as any)?.receivedAt || null;
+    mergeDeviceStatus({
+      deviceId,
+      online,
+      status: online ? 'online' : 'offline',
+      lastHeartbeat: heartbeat ? new Date(heartbeat).toISOString() : null,
+      updatedAt: new Date().toISOString(),
+    });
+    return normalized;
+  }, [mergeDeviceStatus]);
+
+  const refreshTelemetry = useCallback(async () => {
+    setIsLoading(true);
+    setLastFetchError(null);
+    try {
+      await ensureBackendBase();
+      const response = await sensorService.getLatestData();
+      const root = response?.data;
+      const payload = (root?.data ?? root ?? null) as SensorData | SensorData[] | null;
+      const readings: SensorData[] = Array.isArray(payload)
+        ? payload as SensorData[]
+        : payload && typeof payload === 'object'
+          ? [payload as SensorData]
+          : [];
+
+      if (readings.length > 0) {
+        handleTelemetryPayload(readings[0], { updateLatestList: false });
+        setLatestSensorData(readings);
+      } else {
+        setLatestTelemetry(null);
+        setLatestSensorData([]);
+        setIsConnected(false);
+      }
+    } catch (error: any) {
+      setLastFetchError(error?.message || 'Unable to load telemetry');
+      setLatestTelemetry(null);
+      setLatestSensorData([]);
+      setIsConnected(false);
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
+  }, [ensureBackendBase, handleTelemetryPayload]);
+
+  const refreshSensors = useCallback(async () => {
+    await refreshTelemetry();
+  }, [refreshTelemetry]);
+
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      try {
+        await ensureBackendBase();
+        await Promise.all([
+          refreshTelemetry().catch(() => null),
+          refreshAlerts().catch(() => null),
+          (async () => {
+            const resp = await deviceService.list().catch(() => null);
+            const devices = (resp?.data?.data ?? resp?.data ?? []) as any[];
+            devices.forEach((device) => {
+              const deviceId = (device?.deviceId || device?.device_id || '').toString();
+              if (!deviceId) return;
+              if (!isMounted) return;
+              mergeDeviceStatus({
+                deviceId,
+                online: Boolean(device?.status === 'online' || device?.online === true),
+                status: (device?.status || (device?.online ? 'online' : 'offline')) || 'offline',
+                lastHeartbeat: device?.lastHeartbeat ? new Date(device.lastHeartbeat).toISOString() : null,
+                updatedAt: device?.updatedAt ? new Date(device.updatedAt).toISOString() : new Date().toISOString(),
+              });
+            });
+          })(),
+        ]);
+      } catch (error: any) {
+        setLastFetchError(error?.message || 'Initialization failed');
+      }
+    })();
+    return () => {
+      isMounted = false;
+    };
+  }, [ensureBackendBase, mergeDeviceStatus, refreshAlerts, refreshTelemetry]);
+
+  useEffect(() => {
+    const socket = getSocket();
+    if (!socket) {
       return;
     }
 
-    isCurrentlyLoading.current = true;
-    setIsLoading(true);
-    setLastFetchError(null);
+    const telemetryHandler = (payload: any) => handleTelemetryPayload(payload);
 
-    try {
-      await ensureBackendBase();
-
-      const { readings: backendSensorData, connected } = await fetchSensorDataFromBackend();
-
-      setIsConnected(connected);
-      setLastFetchAt(new Date().toISOString());
-
-      if (connected && backendSensorData.length > 0) {
-        setLatestSensorData(backendSensorData);
-        setLastFetchCount(backendSensorData.length);
-      } else {
-        setLatestSensorData([]);
-        setLastFetchCount(0);
-      }
-
-      await refreshAlerts().catch(() => {
-        // refreshAlerts already updates local state and error message on failure.
+    const deviceStatusHandler = (payload: any) => {
+      if (!payload || typeof payload !== 'object') return;
+      const deviceId = (payload.deviceId || payload.device_id || payload.id || '').toString();
+      if (!deviceId) return;
+      mergeDeviceStatus({
+        deviceId,
+        online: Boolean(payload.online ?? (payload.status || '').toString().toLowerCase() === 'online'),
+        status: (payload.status || (payload.online ? 'online' : 'offline')) || 'offline',
+        lastHeartbeat: payload.lastHeartbeat ? new Date(payload.lastHeartbeat).toISOString() : null,
+        updatedAt: new Date().toISOString(),
       });
-    } catch (error: any) {
-      setIsConnected(false);
-      setLastFetchAt(new Date().toISOString());
+    };
 
-      if (ENABLE_WEATHER_FALLBACK) {
-        try {
-          const weatherData: WeatherData[] = await weatherService.getAllLocationsWeather();
-          const synthesized = weatherData.map((weather) => ({
-            _id: `weather_${weather.deviceId}_${Date.now()}`,
-            deviceId: weather.deviceId,
-            temperature: weather.temperature,
-            humidity: weather.humidity,
-            moisture: weather.moisture,
-            ph: weather.ph,
-            ec: weather.ec,
-            nitrogen: weather.nitrogen,
-            phosphorus: weather.phosphorus,
-            potassium: weather.potassium,
-            waterLevel: weather.waterLevel,
-            timestamp: weather.timestamp,
-            status: weather.status,
-            batteryLevel: weather.batteryLevel,
-            signalStrength: weather.signalStrength,
-          }));
-          setLatestSensorData(synthesized);
-          setRecentAlerts([]);
-          setLastFetchCount(synthesized.length);
-          setLastFetchError('Backend unreachable. Showing fallback weather data.');
-        } catch (fallbackError: any) {
-          setLatestSensorData([]);
-          setRecentAlerts([]);
-          setLastFetchCount(0);
-          setLastFetchError(fallbackError?.message || error?.message || 'Unable to reach backend');
-        }
-      } else {
-    setLatestSensorData([]);
-    setRecentAlerts([]);
-    setLastFetchCount(0);
-    setLastFetchError(error?.message || 'Unable to reach backend');
-      }
-    } finally {
-      isCurrentlyLoading.current = false;
-      setIsLoading(false);
-    }
-  }, [ensureBackendBase, fetchSensorDataFromBackend, refreshAlerts]);
-
-  useEffect(() => {
-    refreshData();
-  }, [refreshData]);
-
-  // Realtime subscriptions: telemetry and alerts
-  useEffect(() => {
-    const socket = sharedSocket;
-    if (!socket) return;
-
-    const handleTelemetry = (payload: any) => {
-      if (!payload) return;
-      const sample = Array.isArray(payload) ? payload[0] : payload;
-      if (!sample || typeof sample !== 'object') return;
-
-      // Apply the same connectivity heuristics we use for REST polling.
-      const deviceOnline = (sample as any)?.deviceOnline;
-      const deviceStatus = ((sample as any)?.deviceStatus || (sample as any)?.status || '').toString().toLowerCase();
-      const isStale = (sample as any)?.isStale;
-      const connected = (typeof deviceOnline === 'boolean' && deviceOnline === true)
-        || deviceStatus === 'online'
-        || isStale === false;
-
-      if (!connected) {
-        // Ignore stale/offline telemetry so the UI doesn't show phantom data
-        // when only the ESP32 is present without sensors.
-        setIsConnected(false);
+    const floatLockoutHandler = (payload: any) => {
+      if (!payload || typeof payload !== 'object') return;
+      const action = (payload.action || payload.type || '').toString().toLowerCase();
+      if (action === 'clear' || action === 'cleared') {
+        setFloatLockoutState({
+          active: false,
+          deviceId: payload.deviceId ?? null,
+          message: null,
+          floatSensor: typeof payload.floatSensor === 'number' ? payload.floatSensor : null,
+          updatedAt: new Date().toISOString(),
+        });
         return;
       }
-
-      setLatestSensorData([sample as SensorData]);
-      setIsConnected(true);
-      setLastFetchAt(new Date().toISOString());
-      setLastFetchCount(1);
+      setFloatLockoutState({
+        active: true,
+        deviceId: payload.deviceId ?? null,
+        message: payload.message || 'Float sensor lockout active',
+        floatSensor: typeof payload.floatSensor === 'number' ? payload.floatSensor : null,
+        updatedAt: new Date().toISOString(),
+      });
     };
 
-    const handleAlertTrigger = () => {
-      refreshAlerts().catch(() => {});
+    const alertsTriggerHandler = () => {
+      refreshAlerts().catch(() => null);
     };
 
-    socket.on('telemetry:update', handleTelemetry);
-    socket.on('sensor_update', handleTelemetry); // backward compat
-    socket.on('alert:trigger', handleAlertTrigger);
+    socket.on('telemetry:update', telemetryHandler);
+    socket.on('sensor_update', telemetryHandler);
+    socket.on('device:status', deviceStatusHandler);
+    socket.on('device_status', deviceStatusHandler);
+    socket.on('floatLockout', floatLockoutHandler);
+    socket.on('floatLockoutCleared', floatLockoutHandler);
+    socket.on('alert:trigger', alertsTriggerHandler);
 
     return () => {
-      socket.off('telemetry:update', handleTelemetry);
-      socket.off('sensor_update', handleTelemetry);
-      socket.off('alert:trigger', handleAlertTrigger);
+      socket.off('telemetry:update', telemetryHandler);
+      socket.off('sensor_update', telemetryHandler);
+      socket.off('device:status', deviceStatusHandler);
+      socket.off('device_status', deviceStatusHandler);
+      socket.off('floatLockout', floatLockoutHandler);
+      socket.off('floatLockoutCleared', floatLockoutHandler);
+      socket.off('alert:trigger', alertsTriggerHandler);
     };
-  }, [refreshAlerts]);
+  }, [handleTelemetryPayload, mergeDeviceStatus, refreshAlerts]);
 
-  // Periodic data refresh with graceful failure handling
-  useEffect(() => {
-    let intervalId: NodeJS.Timeout;
-    let consecutiveFailures = 0;
-    const maxConsecutiveFailures = 5;
-    const baseInterval = 5000; // 5 seconds
-    const maxInterval = 60000; // 1 minute max backoff
-
-    const pollData = async () => {
-      try {
-        // Only poll if we have a valid token (user is logged in)
-        const token = localStorage.getItem('token');
-        if (!token) {
-          return;
-        }
-
-        await refreshData();
-        consecutiveFailures = 0; // Reset on success
-
-        // Schedule next poll
-        intervalId = setTimeout(pollData, baseInterval);
-
-      } catch (error: any) {
-        consecutiveFailures++;
-        console.warn(`DataContext: Poll failed (${consecutiveFailures}/${maxConsecutiveFailures})`, error.message);
-
-        // If too many consecutive failures, increase interval (exponential backoff)
-        if (consecutiveFailures >= maxConsecutiveFailures) {
-          const backoffInterval = Math.min(baseInterval * Math.pow(2, consecutiveFailures - maxConsecutiveFailures), maxInterval);
-          intervalId = setTimeout(pollData, backoffInterval);
-        } else {
-          // Retry sooner for initial failures
-          intervalId = setTimeout(pollData, baseInterval);
-        }
-
-        // If network error, mark as disconnected
-        if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND' || error.code === 'ETIMEDOUT') {
-          setIsConnected(false);
-        }
-      }
-    };
-
-    // Start polling after a brief delay
-    const startPolling = () => {
-      intervalId = setTimeout(pollData, 2000);
-    };
-
-    startPolling();
-
-    return () => {
-      if (intervalId) {
-        clearTimeout(intervalId);
-      }
-    };
-  }, [refreshData]); // include refreshData to satisfy hook dependency
-
-  const value: DataContextType = {
+  const contextValue = useMemo<DataContextType>(() => ({
+    latestTelemetry,
     latestSensorData,
+    deviceStatuses,
     recentAlerts,
+    groupedAlerts,
+    alertSummary,
+    floatLockoutState,
     isConnected,
     isLoading,
-    refreshData,
+    lastFetchAt,
+    lastFetchError,
+    refreshTelemetry,
+    refreshSensors,
     refreshAlerts,
     clearAlerts,
-  lastFetchCount,
-  lastFetchAt,
-  lastFetchError,
-  clearLastFetchError: () => setLastFetchError(null),
-  };
+    clearLastFetchError: () => setLastFetchError(null),
+  }), [
+    latestTelemetry,
+    latestSensorData,
+    deviceStatuses,
+    recentAlerts,
+    groupedAlerts,
+    alertSummary,
+    floatLockoutState,
+    isConnected,
+    isLoading,
+    lastFetchAt,
+    lastFetchError,
+    refreshTelemetry,
+    refreshSensors,
+    refreshAlerts,
+    clearAlerts,
+  ]);
 
   return (
-    <DataContext.Provider value={value}>
+    <DataContext.Provider value={contextValue}>
       {children}
     </DataContext.Provider>
   );
@@ -336,7 +437,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
 export const useData = (): DataContextType => {
   const context = useContext(DataContext);
-  if (context === undefined) {
+  if (!context) {
     throw new Error('useData must be used within a DataProvider');
   }
   return context;

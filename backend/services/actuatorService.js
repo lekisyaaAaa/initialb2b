@@ -6,6 +6,10 @@ const sequelize = require('./database_pg');
 const deviceCommandQueue = require('./deviceCommandQueue');
 const { enforceFloatSafety } = require('./floatSensorGuard');
 
+function resolveIo() {
+  return global.io && typeof global.io.emit === 'function' ? global.io : null;
+}
+
 function normalizeName(value = '') {
   return value.trim().toLowerCase();
 }
@@ -269,6 +273,21 @@ async function updateActuatorStatus(actuator, status, options = {}) {
     });
 
     if (!safety.allowed) {
+      try {
+        const io = resolveIo();
+        if (io) {
+          io.emit('floatLockout', {
+            deviceId: hardwareId || null,
+            actuator: actuatorKeyFromName(actuator.name) || actuator.name,
+            message: safety.message || 'Float sensor lockout active',
+            floatSensor: typeof safety.floatState === 'number' ? safety.floatState : null,
+            floatSensorTimestamp: safety.timestamp || null,
+            timestamp: new Date().toISOString(),
+          });
+        }
+      } catch (emitError) {
+        console.warn('actuatorService: failed to emit floatLockout', emitError && emitError.message ? emitError.message : emitError);
+      }
       return {
         changed: false,
         actuator,
@@ -300,6 +319,24 @@ async function updateActuatorStatus(actuator, status, options = {}) {
         desiredState: desired,
         context: commandContext,
       });
+      if (queueResult && queueResult.command) {
+        try {
+          const io = resolveIo();
+          if (io) {
+            const commandRow = queueResult.command.get ? queueResult.command.get({ plain: true }) : queueResult.command;
+            io.emit('device_command_created', {
+              deviceId: hardwareId,
+              commandId: commandRow.id,
+              actuator: commandRow.payload && commandRow.payload.actuatorKey ? commandRow.payload.actuatorKey : actuatorKeyFromName(actuator.name),
+              desiredState: desired ? 'on' : 'off',
+              queuedAt: commandRow.requested_at || new Date().toISOString(),
+              dispatched: queueResult.dispatched === true,
+            });
+          }
+        } catch (emitError) {
+          console.warn('actuatorService: failed to emit device_command_created', emitError && emitError.message ? emitError.message : emitError);
+        }
+      }
     } catch (queueError) {
       console.warn('actuatorService: failed to queue actuator command:', queueError && queueError.message ? queueError.message : queueError);
     }

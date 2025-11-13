@@ -1,5 +1,7 @@
 const express = require('express');
 const { body, query, validationResult } = require('express-validator');
+const { Op } = require('sequelize');
+const NodeCache = require('node-cache');
 const SensorData = require('../models/SensorData');
 const Alert = require('../models/Alert');
 const Settings = require('../models/Settings');
@@ -25,9 +27,20 @@ const STALE_SENSOR_MAX_AGE_MS = Math.max(
 );
 
 const router = express.Router();
+const sensorCache = new NodeCache({ stdTTL: 5, checkperiod: 2 });
 
 // Broadcast data to connected clients (native WebSocket + Socket.IO)
-const broadcastSensorData = (data) => {
+const resolveIo = (app) => {
+  if (app && typeof app.get === 'function') {
+    const ioInstance = app.get('io');
+    if (ioInstance) {
+      return ioInstance;
+    }
+  }
+  return global.io;
+};
+
+const broadcastSensorData = (data, ioInstance) => {
   const payload = sanitizeSensorPayload(data, data && data.alerts ? data.alerts : []);
   const summary = buildSensorSummary(payload);
   payload.sensorSummary = summary;
@@ -60,15 +73,16 @@ const broadcastSensorData = (data) => {
     });
   }
 
-  if (global.io && typeof global.io.emit === 'function') {
+  const io = ioInstance || global.io;
+  if (io && typeof io.emit === 'function') {
     try {
-      global.io.emit('sensor_update', payload);
+      io.emit('sensor_update', payload);
       // Support legacy clients listening on old event name.
-      global.io.emit('newSensorData', payload);
+      io.emit('newSensorData', payload);
       // New standardized event name for UI clients
-      global.io.emit('telemetry:update', payload);
+      io.emit('telemetry:update', payload);
       if (Array.isArray(summary) && summary.length > 0) {
-        global.io.emit('device_sensor_update', {
+        io.emit('device_sensor_update', {
           deviceId: payload.deviceId || null,
           sensors: summary,
           timestamp: payload.timestamp,
@@ -84,7 +98,7 @@ const broadcastSensorData = (data) => {
 };
 
 // Helper function to check thresholds and create alerts
-const checkThresholds = async (sensorData) => {
+const checkThresholds = async (sensorData, ioInstance) => {
   try {
     const plainSensor = toPlainObject(sensorData) || {};
 
@@ -338,10 +352,11 @@ const checkThresholds = async (sensorData) => {
 
     // Notify clients that alerts were created
     try {
-      if (persistedAlerts.length > 0 && global.io && typeof global.io.emit === 'function') {
+      const io = ioInstance || global.io;
+      if (persistedAlerts.length > 0 && io && typeof io.emit === 'function') {
         const first = persistedAlerts[0] || {};
         const devId = first.deviceId || sanitizedSensor.deviceId || plainSensor.deviceId || null;
-        global.io.emit('alert:trigger', { deviceId: devId, alerts: persistedAlerts });
+        io.emit('alert:trigger', { deviceId: devId, alerts: persistedAlerts });
       }
     } catch (e) {
       // ignore emit errors
@@ -451,6 +466,8 @@ router.post('/', [
       return res.status(400).json({ success: false, message: 'Stale reading - rejected' });
     }
 
+    const io = resolveIo(req.app);
+
     // Create sensor data (Sequelize-compatible)
     const sensorData = await SensorData.create({
       deviceId: normalizedDeviceId,
@@ -484,9 +501,9 @@ router.post('/', [
   // Fire-and-forget alerts and broadcast
     (async () => {
       try {
-        const alerts = await checkThresholds(sensorData);
+        const alerts = await checkThresholds(sensorData, io);
         try {
-          broadcastSensorData({ ...plain, alerts: alerts.length > 0 ? alerts : undefined });
+          broadcastSensorData({ ...plain, alerts: alerts.length > 0 ? alerts : undefined }, io);
         } catch (e) {
           console.warn('Broadcast failed (async):', e && e.message ? e.message : e);
         }
@@ -549,6 +566,8 @@ router.post('/batch', [
     const savedData = [];
     let totalAlerts = 0;
 
+    const io = resolveIo(req.app);
+
     for (const item of data) {
       const sensorData = await SensorData.create({
         deviceId,
@@ -561,7 +580,7 @@ router.post('/batch', [
         isOfflineData: true
       });
 
-      const alerts = await checkThresholds(sensorData);
+      const alerts = await checkThresholds(sensorData, io);
       totalAlerts += alerts.length;
       
       savedData.push(sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : sensorData);
@@ -570,7 +589,10 @@ router.post('/batch', [
     // Broadcast latest data to WebSocket clients
     if (savedData.length > 0) {
       const latestData = savedData[savedData.length - 1];
-      broadcastSensorData(latestData.toObject());
+      const latestPayload = latestData && typeof latestData.toObject === 'function'
+        ? latestData.toObject()
+        : latestData;
+      broadcastSensorData(latestPayload, io);
     }
 
     res.status(201).json({
@@ -592,172 +614,70 @@ router.post('/batch', [
 });
 
 // @route   GET /api/sensors/latest
-// @desc    Get latest sensor readings
-// @access  Public/Private
-router.get('/latest', optionalAuth, async (req, res) => {
+// @desc    Get latest sensor reading (cached 5s)
+// @access  Public
+router.get('/latest', async (req, res) => {
   try {
-    const { deviceId } = req.query;
-    
-    let query = {};
+    const deviceId = (req.query.device_id || req.query.deviceId || '').toString().trim();
+    const cacheKey = deviceId ? `latest:${deviceId}` : 'latest:all';
+    const cached = sensorCache.get(cacheKey);
+    if (cached !== undefined) {
+      return res.json({ ok: true, data: cached });
+    }
+
+    const where = {};
     if (deviceId) {
-      query.deviceId = deviceId;
+      where.deviceId = deviceId;
     }
 
-    // Support both Sequelize and Mongoose-style models. Prefer Sequelize when available.
-    let latestData = null;
-    try {
-      if (SensorData && SensorData.sequelize && typeof SensorData.findOne === 'function') {
-        // Build Sequelize where clause
-        const { Op } = SensorData.sequelize;
-        const where = {};
-        if (deviceId) where.deviceId = deviceId;
-        latestData = await SensorData.findOne({ where, order: [['timestamp', 'DESC']] });
-        if (latestData && typeof latestData.get === 'function') latestData = latestData.get({ plain: true });
-      } else {
-        // If model isn't Sequelize, return empty data for stability
-        latestData = null;
-      }
-    } catch (e) {
-      console.warn('Error querying latest sensor data:', e && e.message ? e.message : e);
-      latestData = null;
-    }
-
-    const now = Date.now();
-
-    if (!latestData) {
-      return res.json({ success: true, data: null, systemStatus: 'online', databaseStatus: 'connected', status: 'offline' });
-    }
-
-    const candidateDeviceId = deviceId || latestData.deviceId;
-    let deviceRecord = null;
-
-    if (candidateDeviceId && Device && typeof Device.findOne === 'function') {
-      try {
-        deviceRecord = await Device.findOne({ where: { deviceId: candidateDeviceId } });
-      } catch (deviceErr) {
-        console.warn('Failed to load device while resolving latest sensor data:', deviceErr && deviceErr.message ? deviceErr.message : deviceErr);
-      }
-    }
-
-    const timestampMs = latestData.timestamp ? new Date(latestData.timestamp).getTime() : NaN;
-    const timestampFresh = Number.isFinite(timestampMs) && (now - timestampMs) <= STALE_SENSOR_MAX_AGE_MS;
-
-    let deviceFresh = false;
-    if (deviceRecord) {
-      const heartbeatMs = deviceRecord.lastHeartbeat ? new Date(deviceRecord.lastHeartbeat).getTime() : NaN;
-      const heartbeatFresh = Number.isFinite(heartbeatMs) && (now - heartbeatMs) <= DEVICE_STATUS_TIMEOUT_MS;
-      deviceFresh = deviceRecord.status === 'online' && heartbeatFresh;
-      latestData.deviceStatus = deviceRecord.status;
-      latestData.deviceLastHeartbeat = deviceRecord.lastHeartbeat || null;
-    }
-
-    const sanitizedLatest = sanitizeSensorPayload(latestData, latestData.alerts || []);
-    sanitizedLatest.deviceId = sanitizedLatest.deviceId || candidateDeviceId || null;
-    sanitizedLatest.deviceStatus = deviceRecord ? deviceRecord.status : (deviceFresh ? 'online' : 'offline');
-    sanitizedLatest.deviceLastHeartbeat = deviceRecord && deviceRecord.lastHeartbeat ? ensureIsoString(deviceRecord.lastHeartbeat) : null;
-    sanitizedLatest.deviceOnline = deviceFresh;
-    sanitizedLatest.isStale = !timestampFresh;
-    sanitizedLatest.sampleAgeMs = Number.isFinite(timestampMs) ? now - timestampMs : null;
-    sanitizedLatest.sensorSummary = buildSensorSummary(sanitizedLatest);
-    sanitizedLatest.lastSeen = sanitizedLatest.timestamp;
-
-    res.json({
-      success: true,
-      status: sanitizedLatest.deviceOnline ? 'online' : 'offline',
-      systemStatus: sanitizedLatest.deviceOnline ? 'online' : (sanitizedLatest.isStale ? 'stale' : 'offline'),
-      databaseStatus: 'connected',
-      data: sanitizedLatest,
-    });
-
+    const latest = await SensorData.findOne({ where, order: [['timestamp', 'DESC']], raw: true });
+    const payload = latest ? sanitizeSensorPayload(latest, []) : null;
+    sensorCache.set(cacheKey, payload || null);
+    return res.json({ ok: true, data: payload || null });
   } catch (error) {
-    console.error('Error fetching latest sensor data:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching sensor data'
-    });
+    console.error('GET /api/sensors/latest err', error);
+    return res.status(500).json({ ok: false, error: 'server_error' });
   }
 });
 
-// @route   GET /api/sensors/history
-// @desc    Get historical sensor data
-// @access  Private
-router.get('/history', auth, [
+// @route   GET /api/sensors
+// @desc    Get paginated sensor readings (newest first)
+// @access  Public
+router.get('/', [
   query('limit').optional().isInt({ min: 1, max: 1000 }).withMessage('Limit must be between 1 and 1000'),
-  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
-  query('deviceId').optional().notEmpty().withMessage('Device ID cannot be empty'),
-  query('startDate').optional().isISO8601().withMessage('Invalid start date format'),
-  query('endDate').optional().isISO8601().withMessage('Invalid end date format')
+  query('since').optional().isISO8601().withMessage('since must be ISO-8601 timestamp'),
+  query('device_id').optional().isString().trim().notEmpty().withMessage('device_id must be a non-empty string'),
+  query('deviceId').optional().isString().trim().notEmpty().withMessage('deviceId must be a non-empty string'),
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        message: 'Validation failed',
-        errors: errors.array()
-      });
+      return res.status(400).json({ ok: false, errors: errors.array(), error: 'validation_failed' });
     }
 
-    const {
-      limit = 100,
-      page = 1,
-      deviceId,
-      startDate,
-      endDate
-    } = req.query;
+    const limit = Math.min(1000, parseInt(req.query.limit, 10) || 100);
+    const deviceId = (req.query.device_id || req.query.deviceId || '').toString().trim() || null;
+    const since = req.query.since ? new Date(req.query.since) : null;
 
-    // Build query
-    // Build Sequelize-friendly where clause
-    const { Op } = SensorData.sequelize || {};
-    let query = {};
-    if (deviceId) query.deviceId = deviceId;
-    if (startDate || endDate) {
-      query.timestamp = {};
-      if (startDate) query.timestamp[Op.gte] = new Date(startDate);
-      if (endDate) query.timestamp[Op.lte] = new Date(endDate);
+    const where = {};
+    if (deviceId) {
+      where.deviceId = deviceId;
+    }
+    if (!Number.isNaN(since?.getTime())) {
+      where.timestamp = { [Op.gt]: since };
     }
 
-    // Calculate pagination
-    const skip = (parseInt(page) - 1) * parseInt(limit);
-
-    // Get data with pagination
-    // Support Sequelize and Mongoose
-    let data = [];
-    let total = 0;
-    try {
-      if (SensorData && SensorData.sequelize && typeof SensorData.findAll === 'function') {
-        data = await SensorData.findAll({ where: query, order: [['timestamp', 'DESC']], offset: skip, limit: parseInt(limit), raw: true });
-        total = await SensorData.count({ where: query });
-      } else {
-        // Non-Sequelize fallback: return empty result for stability
-        data = [];
-        total = 0;
-      }
-    } catch (e) {
-      console.warn('Error fetching sensor history:', e && e.message ? e.message : e);
-      data = [];
-      total = 0;
-    }
-
-    res.json({
-      success: true,
-      data: {
-        sensorData: data,
-        pagination: {
-          current: parseInt(page),
-          limit: parseInt(limit),
-          total,
-          pages: Math.ceil(total / parseInt(limit))
-        }
-      }
+    const rows = await SensorData.findAll({
+      where,
+      order: [['timestamp', 'DESC']],
+      limit,
+      raw: true,
     });
 
+    return res.json({ ok: true, data: rows.map((row) => sanitizeSensorPayload(row, [])) });
   } catch (error) {
-    console.error('Error fetching sensor history:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching sensor history'
-    });
+    console.error('GET /api/sensors err', error);
+    return res.status(500).json({ ok: false, error: 'server_error' });
   }
 });
 

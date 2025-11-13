@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { alertService } from '../../services/api';
-import { socket as sharedSocket } from '../../socket';
+import { getSocket } from '../../socket';
 import type { Alert } from '../../types';
 
 const severityLabel = (sev?: string) => (sev || '').toString().toLowerCase();
@@ -22,7 +22,7 @@ export default function Alerts() {
       ]);
 
       const activeList = Array.isArray(activeRes?.data?.data) ? (activeRes!.data!.data as Alert[]) : [];
-      const s = (summaryRes?.data?.data || { critical: 0, warning: 0, info: 0 }) as { critical: number; warning: number; info: number };
+      const s = (summaryRes || { critical: 0, warning: 0, info: 0 }) as { critical: number; warning: number; info: number };
 
       setAlerts(activeList);
       setSummary({
@@ -56,7 +56,7 @@ export default function Alerts() {
     loadAlerts();
     const interval = window.setInterval(loadAlerts, 10000);
 
-    const socket = sharedSocket;
+    const socket = getSocket();
     const onTrigger = () => loadAlerts();
     socket.on('alert:trigger', onTrigger);
 

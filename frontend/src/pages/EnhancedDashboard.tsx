@@ -29,7 +29,7 @@ import AlertSummaryChart from '../components/charts/AlertSummaryChart';
 import DarkModeToggle from '../components/DarkModeToggle';
 
 const EnhancedDashboard: React.FC = () => {
-  const { latestSensorData, recentAlerts, isConnected, isLoading, refreshData } = useData();
+  const { latestSensorData, recentAlerts, isConnected, isLoading, refreshSensors } = useData();
   const { user, logout, isAuthenticated } = useAuth();
   const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'alerts' | 'sensors'>('overview');
   
@@ -166,7 +166,7 @@ const EnhancedDashboard: React.FC = () => {
 
               {/* Refresh Button */}
               <button
-                onClick={refreshData}
+                onClick={refreshSensors}
                 disabled={isLoading}
                 className="p-2 text-coffee-400 dark:text-gray-400 hover:text-coffee-600 dark:hover:text-gray-200 disabled:opacity-50 transition-colors"
               >

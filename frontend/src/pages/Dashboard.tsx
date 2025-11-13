@@ -51,11 +51,20 @@ const ALERT_SEVERITY_LABELS: Record<string, string> = {
 };
 const Dashboard: React.FC = () => {
   const { user, logout, isAuthenticated } = useAuth();
-  const { latestSensorData, recentAlerts, isConnected, isLoading, refreshData, refreshAlerts, clearAlerts, lastFetchAt } = useData();
+  const {
+    latestSensorData,
+    recentAlerts,
+    groupedAlerts: groupedAlertsFromContext,
+    alertSummary: alertSummaryFromContext,
+    floatLockoutState,
+    isConnected,
+    isLoading,
+    refreshSensors,
+    lastFetchAt,
+  } = useData();
   const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'alerts' | 'sensors'>('overview');
   const [lastManualRefresh, setLastManualRefresh] = useState<Date | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-  const [alertsBusy, setAlertsBusy] = useState(false);
   const [alertsError, setAlertsError] = useState<string | null>(null);
   const navigate = useNavigate();
 
@@ -65,7 +74,7 @@ const Dashboard: React.FC = () => {
   const safeLatestSensorData = useMemo(() => latestSensorData, [latestSensorData]);
 
   // Calculate alert summary for pie chart
-  const alertSummary = useMemo(() => {
+  const alertSummaryData = useMemo(() => {
     const summary = recentAlerts.reduce((acc: Record<string, number>, alert: Alert) => {
       const sev = (alert.severity || 'unknown').toString();
       acc[sev] = (acc[sev] || 0) + 1;
@@ -171,6 +180,15 @@ const Dashboard: React.FC = () => {
 
   const floatSensorStatus = useMemo(() => {
     const value = floatSensorReading.value;
+    const lockoutActive = floatLockoutState?.active === true;
+    if (lockoutActive) {
+      return {
+        label: 'LOCKOUT',
+        description: floatLockoutState?.message || 'Float lockout active — pump commands paused.',
+        containerClass: 'bg-red-50 dark:bg-red-900/20',
+        textClass: 'text-red-600 dark:text-red-300',
+      };
+    }
     if (value === null) {
       return {
         label: 'Unknown',
@@ -193,9 +211,12 @@ const Dashboard: React.FC = () => {
       containerClass: 'bg-emerald-50 dark:bg-emerald-900/20',
       textClass: 'text-emerald-600 dark:text-emerald-300',
     };
-  }, [floatSensorReading.value]);
+  }, [floatSensorReading.value, floatLockoutState]);
 
-  const floatSensorTimestampLabel = useMemo(() => formatTimestampLabel(floatSensorReading.timestamp), [floatSensorReading.timestamp, formatTimestampLabel]);
+  const floatSensorTimestampLabel = useMemo(
+    () => formatTimestampLabel(floatLockoutState?.updatedAt || floatSensorReading.timestamp),
+    [floatLockoutState?.updatedAt, floatSensorReading.timestamp, formatTimestampLabel]
+  );
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -217,60 +238,85 @@ const Dashboard: React.FC = () => {
   };
 
   const groupedAlerts = useMemo(() => {
-    // Do not surface historical alerts on the public/user dashboard when
-    // there are no live sensors connected. This avoids confusing users with
-    // stale data while hardware is offline.
     if (!isConnected || safeLatestSensorData.length === 0) {
       return [] as Array<{ severity: string; items: Alert[] }>;
     }
-    if (recentAlerts.length === 0) {
-      return [] as Array<{ severity: string; items: Alert[] }>;
-    }
 
-    const buckets = recentAlerts.reduce((acc, alert) => {
+    const sourceBuckets = groupedAlertsFromContext ?? { critical: [], warning: [], info: [] };
+    const severityBuckets: Record<string, Alert[]> = {};
+
+    const assignToBucket = (alert: Alert) => {
       const rawSeverity = (alert.severity || alert.type || 'info').toString().toLowerCase();
       const normalized = rawSeverity === 'warning'
         ? 'medium'
-        : (ALERT_SEVERITY_ORDER.includes(rawSeverity) ? rawSeverity : 'info');
-      if (!acc[normalized]) {
-        acc[normalized] = [];
+        : ALERT_SEVERITY_ORDER.includes(rawSeverity)
+          ? rawSeverity
+          : rawSeverity === 'notice'
+            ? 'info'
+            : 'info';
+      if (!severityBuckets[normalized]) {
+        severityBuckets[normalized] = [];
       }
-      acc[normalized].push(alert);
-      return acc;
-    }, {} as Record<string, Alert[]>);
+      severityBuckets[normalized].push(alert);
+    };
 
-    const extras = Object.keys(buckets).filter((key) => !ALERT_SEVERITY_ORDER.includes(key));
+    [...sourceBuckets.critical, ...sourceBuckets.warning, ...sourceBuckets.info].forEach(assignToBucket);
+
+    if (recentAlerts.length > 0 && (sourceBuckets.critical.length + sourceBuckets.warning.length + sourceBuckets.info.length) === 0) {
+      recentAlerts.forEach(assignToBucket);
+    }
+
+    const orderedBuckets = ALERT_SEVERITY_ORDER.reduce<Record<string, Alert[]>>((acc, key) => {
+      if (key === 'critical') {
+        acc[key] = sourceBuckets.critical;
+      } else if (key === 'high' || key === 'medium' || key === 'low') {
+        const bucket = sourceBuckets.warning.filter((alert) => {
+          const severity = (alert.severity || alert.type || '').toString().toLowerCase();
+          if (key === 'high') return severity === 'high';
+          if (key === 'medium') return severity === 'medium' || severity === 'warning';
+          if (key === 'low') return severity === 'low';
+          return false;
+        });
+        acc[key] = bucket;
+      } else {
+        acc[key] = sourceBuckets.info;
+      }
+      return acc;
+    }, {});
+
+    const extras = Object.keys(severityBuckets).filter((key) => !ALERT_SEVERITY_ORDER.includes(key));
 
     return [
-      ...ALERT_SEVERITY_ORDER.map((severity) => ({ severity, items: buckets[severity] ?? [] })),
-      ...extras.map((severity) => ({ severity, items: buckets[severity] ?? [] })),
+      ...ALERT_SEVERITY_ORDER.map((severity) => {
+        const primary = orderedBuckets[severity] ?? [];
+        const fallback = severityBuckets[severity] ?? [];
+        const items = primary.length > 0 ? primary : fallback;
+        return { severity, items };
+      }),
+      ...extras.map((severity) => ({ severity, items: severityBuckets[severity] ?? [] })),
     ].filter((group) => group.items.length > 0);
-  }, [recentAlerts, isConnected, safeLatestSensorData.length]);
+  }, [groupedAlertsFromContext, isConnected, recentAlerts, safeLatestSensorData.length]);
 
   const hasAlerts = groupedAlerts.length > 0;
 
   const unresolvedAlerts = useMemo(() => recentAlerts.filter((alert: Alert) => !alert.isResolved), [recentAlerts]);
 
   const lastRefreshLabel = useMemo(() => {
-    const source = lastManualRefresh ?? (lastFetchAt ? new Date(lastFetchAt) : null);
+    const fallbackAlert = alertSummaryFromContext?.lastAlertAt ? new Date(alertSummaryFromContext.lastAlertAt) : null;
+    const source = lastManualRefresh ?? (lastFetchAt ? new Date(lastFetchAt) : fallbackAlert);
     if (!source) return 'Never';
     return format(source, 'MMM dd, yyyy \u2022 HH:mm:ss');
-  }, [lastFetchAt, lastManualRefresh]);
+  }, [alertSummaryFromContext?.lastAlertAt, lastFetchAt, lastManualRefresh]);
 
   const handleRefresh = async () => {
     try {
       setAlertsError(null);
-      await refreshData();
+      await refreshSensors();
       setLastManualRefresh(new Date());
     } catch (error) {
       // DataContext already surfaces errors; no-op here
     }
   };
-
-  // Note: alert refresh/clear actions moved to Admin dashboard only
-  const handleRefreshAlerts = useCallback(async () => {}, []);
-
-  const handleClearAlerts = useCallback(async () => {}, []);
 
   // Connection badge mirrors the admin header so both roles share the same visual rhythm.
   const connectionBadge = (
@@ -666,8 +712,8 @@ const Dashboard: React.FC = () => {
                       <h3 className="text-lg font-semibold text-coffee-900 dark:text-white">Alert Distribution</h3>
                     </div>
                     <div className="p-6">
-                      {alertSummary.length > 0 ? (
-                        <AlertSummaryChart alerts={alertSummary} height={250} />
+                      {alertSummaryData.length > 0 ? (
+                        <AlertSummaryChart alerts={alertSummaryData} height={250} />
                       ) : (
                         <div className="flex items-center justify-center h-64 text-coffee-500">
                           <div className="text-center">

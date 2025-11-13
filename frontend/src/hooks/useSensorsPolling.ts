@@ -1,0 +1,190 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { sensorService } from '../services/api';
+import { SensorData } from '../types';
+
+export type PollingStatus = 'idle' | 'loading' | 'success' | 'error';
+
+export interface SensorsPollingOptions {
+  intervalMs?: number;
+  maxIntervalMs?: number;
+  cacheTtlMs?: number;
+  immediate?: boolean;
+  deviceId?: string;
+}
+
+export interface SensorsPollingState {
+  data: SensorData[];
+  latest: SensorData | null;
+  status: PollingStatus;
+  error: string | null;
+  isPolling: boolean;
+  lastUpdated: number | null;
+  refresh: () => Promise<void>;
+}
+
+const normalizeReading = (input: SensorData): SensorData => {
+  const deviceId = (input?.deviceId ?? (input as any)?.device_id ?? 'unknown-device').toString();
+  let timestamp = input.timestamp;
+  if (timestamp && typeof timestamp === 'string') {
+    const parsed = Date.parse(timestamp);
+    if (!Number.isNaN(parsed)) {
+      timestamp = new Date(parsed).toISOString();
+    }
+  }
+  return {
+    ...input,
+    deviceId,
+    timestamp,
+  };
+};
+
+export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsPollingState => {
+  const {
+    intervalMs: intervalOption,
+    maxIntervalMs: maxIntervalOption,
+    cacheTtlMs: cacheTtlOption,
+    immediate = true,
+    deviceId,
+  } = options;
+
+  const intervalMs = Math.max(1500, intervalOption ?? 5000);
+  const maxIntervalMs = Math.max(intervalMs, maxIntervalOption ?? 60000);
+  const cacheTtlMs = Math.max(0, cacheTtlOption ?? Math.min(intervalMs * 0.6, 4000));
+
+  const [data, setData] = useState<SensorData[]>([]);
+  const [latest, setLatest] = useState<SensorData | null>(null);
+  const [status, setStatus] = useState<PollingStatus>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [isPolling, setIsPolling] = useState<boolean>(false);
+  const [lastUpdated, setLastUpdated] = useState<number | null>(null);
+
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const backoffRef = useRef<number>(intervalMs);
+  const cacheRef = useRef<{ timestamp: number; payload: SensorData[]; latest: SensorData | null } | null>(null);
+  const isMountedRef = useRef<boolean>(true);
+
+  const fetchSensorsRef = useRef<(force: boolean) => Promise<void>>(async () => undefined);
+
+  const scheduleNext = useCallback((delay: number) => {
+    if (!isMountedRef.current) {
+      return;
+    }
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+    }
+    timerRef.current = setTimeout(() => {
+      void fetchSensorsRef.current(false);
+    }, delay);
+  }, []);
+
+  const applyPayload = useCallback((payload: SensorData[]) => {
+    const normalized = payload.map(normalizeReading);
+    const latestReading = normalized.length > 0 ? normalized[0] : null;
+    cacheRef.current = {
+      timestamp: Date.now(),
+      payload: normalized,
+      latest: latestReading,
+    };
+    setData(normalized);
+    setLatest(latestReading);
+    setLastUpdated(Date.now());
+    setError(null);
+    setStatus('success');
+  }, []);
+
+  const fetchSensors = useCallback(async (force: boolean) => {
+    if (!isMountedRef.current) {
+      return;
+    }
+
+    const now = Date.now();
+    const cache = cacheRef.current;
+    if (!force && cache && now - cache.timestamp <= cacheTtlMs) {
+      setData(cache.payload);
+      setLatest(cache.latest);
+      setLastUpdated(cache.timestamp);
+      setStatus('success');
+      setError(null);
+      scheduleNext(intervalMs);
+      return;
+    }
+
+    setIsPolling(true);
+    setStatus((prev) => (prev === 'success' && !force ? prev : 'loading'));
+
+    try {
+      const response = await sensorService.getLatestData(deviceId);
+      const root = response?.data;
+      const payload = (root?.data ?? root ?? null) as SensorData | SensorData[] | null;
+      const readings = Array.isArray(payload)
+        ? payload.filter(Boolean) as SensorData[]
+        : payload && typeof payload === 'object'
+          ? [payload as SensorData]
+          : [];
+
+      applyPayload(readings);
+      backoffRef.current = intervalMs;
+    } catch (err: any) {
+      const message = err?.response?.data?.message || err?.message || 'Unable to load sensors';
+      setError(message);
+      setStatus('error');
+      const nextDelay = Math.min(backoffRef.current * 2, maxIntervalMs);
+      backoffRef.current = Math.max(intervalMs, nextDelay);
+    } finally {
+      setIsPolling(false);
+      if (isMountedRef.current) {
+        scheduleNext(backoffRef.current);
+      }
+    }
+  }, [applyPayload, cacheTtlMs, deviceId, intervalMs, maxIntervalMs, scheduleNext]);
+
+  useEffect(() => {
+    fetchSensorsRef.current = fetchSensors;
+  }, [fetchSensors]);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    backoffRef.current = intervalMs;
+    cacheRef.current = null;
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+
+    if (immediate) {
+      void fetchSensors(true);
+    } else {
+      scheduleNext(intervalMs);
+    }
+
+    return () => {
+      isMountedRef.current = false;
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, [fetchSensors, immediate, intervalMs, scheduleNext]);
+
+  useEffect(() => {
+    cacheRef.current = null;
+  }, [deviceId]);
+
+  const refresh = useCallback(async () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+    backoffRef.current = intervalMs;
+    await fetchSensors(true);
+  }, [fetchSensors, intervalMs]);
+
+  return {
+    data,
+    latest,
+    status,
+    error,
+    isPolling,
+    lastUpdated,
+    refresh,
+  };
+};

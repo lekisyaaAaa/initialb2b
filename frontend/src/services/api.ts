@@ -8,7 +8,6 @@ import {
   AlertRules,
   SensorStats,
   AlertStats,
-  Actuator,
   NotificationItem,
   DeviceSensorSummary,
 } from '../types';
@@ -283,12 +282,16 @@ export const alertService = {
     api.put<ApiResponse<{ resolved: number }>>('/alerts/resolve-all', payload),
 
   // Aggregated summary of active alerts by severity buckets
-  getSummary: () =>
-    api.get<ApiResponse<{ critical: number; warning: number; info: number }>>('/alerts/summary'),
+  getSummary: async () => {
+    const response = await api.get<{ critical: number; warning: number; info: number }>('/alerts/summary');
+    return response.data;
+  },
 
   // Clear all active alerts
-  clearAll: () =>
-    api.delete<ApiResponse<{ resolved: number }>>('/alerts/clear'),
+  clearAll: async () => {
+    const response = await api.delete<{ ok: boolean; resolved: number }>('/alerts/clear');
+    return response.data;
+  },
 
   getStats: (params?: {
     period?: 'day' | 'week' | 'month';
@@ -318,25 +321,6 @@ export const deviceService = {
   list: () => api.get<ApiResponse<any[]>>('/devices'),
   getSensors: (deviceId: string, params?: { limit?: number }) =>
     api.get<ApiResponse<DeviceSensorSummary>>(`/devices/${encodeURIComponent(deviceId)}/sensors`, { params }),
-};
-
-export const commandService = {
-  queue: (payload: { device_id: string; actuator: 'pump' | 'solenoid1' | 'solenoid2' | 'solenoid3'; action: 'on' | 'off' }) =>
-    api.post<ApiResponse<any>>('/command', payload),
-  status: (deviceId: string) =>
-    api.get<ApiResponse<any>>('/command/status', {
-      params: deviceId ? { device_id: deviceId } : undefined,
-    }),
-};
-
-export const actuatorService = {
-  list: () => api.get<ApiResponse<Actuator[]>>('/actuators'),
-  toggle: (id: number) => api.post<ApiResponse<Actuator>>(`/actuators/${id}/toggle`),
-  setMode: (id: number, mode: 'manual' | 'auto') =>
-    api.post<ApiResponse<Actuator>>(`/actuators/${id}/mode`, { mode }),
-  runAutoControl: () => api.post<ApiResponse<any>>('/actuators/auto-control'),
-  getLogs: (params?: { page?: number; limit?: number; deviceId?: string; actuatorType?: string }) =>
-    api.get('/actuators/logs', { params }),
 };
 
 export const settingsService = {

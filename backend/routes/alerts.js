@@ -338,7 +338,7 @@ router.get('/summary', auth, async (req, res) => {
       }
     }
 
-    return res.json({ success: true, data: bucket });
+    return res.json(bucket);
   } catch (error) {
     console.error('Error building alerts summary:', error);
     return res.status(500).json({ success: false, message: 'Error building alerts summary' });
@@ -357,14 +357,15 @@ router.delete('/clear', [auth, adminOnly], async (req, res) => {
 
     // Broadcast a realtime update so dashboards can refresh summaries
     try {
-      if (global.io && typeof global.io.emit === 'function') {
-        global.io.emit('alert:trigger', { action: 'clear', resolved: updated });
+      const io = (req.app && typeof req.app.get === 'function') ? req.app.get('io') : global.io;
+      if (io && typeof io.emit === 'function') {
+        io.emit('alert:trigger', { type: 'cleared', resolved: updated, timestamp: new Date().toISOString() });
       }
     } catch (e) {
       // ignore emit errors
     }
 
-    return res.json({ success: true, message: 'All alerts cleared', data: { resolved: updated } });
+    return res.json({ ok: true, resolved: updated });
   } catch (error) {
     console.error('Error clearing alerts:', error);
     return res.status(500).json({ success: false, message: 'Error clearing alerts' });

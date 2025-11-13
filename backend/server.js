@@ -70,10 +70,25 @@ const adminAuthLimiter = rateLimit({
   },
 });
 
+const sensorRateLimiter = rateLimit({
+  windowMs: 1000,
+  max: parseInt(process.env.SENSORS_RATE_LIMIT_MAX || '60', 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const defaultFrontendOrigin = process.env.FRONTEND_URL || process.env.FRONTEND_ORIGIN;
+const defaultDeviceOrigin = process.env.DEVICE_SOCKET_ORIGIN || process.env.DEVICE_HTTP_ORIGIN;
 const allowedSocketOrigins = [
   'https://vermilinks-frontend.onrender.com',
   'http://localhost:3000',
 ];
+if (defaultFrontendOrigin && !allowedSocketOrigins.includes(defaultFrontendOrigin)) {
+  allowedSocketOrigins.push(defaultFrontendOrigin);
+}
+if (defaultDeviceOrigin && !allowedSocketOrigins.includes(defaultDeviceOrigin)) {
+  allowedSocketOrigins.push(defaultDeviceOrigin);
+}
 
 const io = new Server(server, {
   cors: {
@@ -81,9 +96,11 @@ const io = new Server(server, {
     methods: ['GET', 'POST', 'OPTIONS'],
     credentials: true,
   },
+  transports: ['websocket'],
 });
 
 global.io = io;
+app.set('io', io);
 
 io.on('connection', async (socket) => {
   logger.info('✅ Socket.IO client connected', { socketId: socket.id });
@@ -304,6 +321,13 @@ const allowedHttpOrigins = [
   'https://vermilinks-frontend.onrender.com',
   'http://localhost:3000',
 ];
+if (defaultFrontendOrigin && !allowedHttpOrigins.includes(defaultFrontendOrigin)) {
+  allowedHttpOrigins.push(defaultFrontendOrigin);
+}
+const deviceHttpOrigin = process.env.DEVICE_HTTP_ORIGIN || process.env.ESP32_HTTP_ORIGIN;
+if (deviceHttpOrigin && !allowedHttpOrigins.includes(deviceHttpOrigin)) {
+  allowedHttpOrigins.push(deviceHttpOrigin);
+}
 
 const httpCors = cors({
   origin: allowedHttpOrigins,
@@ -393,7 +417,7 @@ app.get('/internal/ping', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
-app.use('/api/sensors', sensorRoutes);
+app.use('/api/sensors', sensorRateLimiter, sensorRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/actuators', actuatorRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
@@ -419,7 +443,6 @@ app.use('/api/devices', devicesRoutes);
 
 // API Routes
 app.use('/api/auth', authRoutes);
-app.use('/api/sensors', sensorRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/actuators', actuatorRoutes);
