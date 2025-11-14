@@ -6,18 +6,14 @@ import { Bell, Check, Settings, Activity, Users, BarChart3, Calendar, RefreshCw 
 import SensorCharts from '../components/SensorCharts';
 import SystemHealth from '../components/SystemHealth';
 import SensorCard from '../components/SensorCard';
-import AlertsPanel from '../components/AlertsPanel';
 import DarkModeToggle from '../components/DarkModeToggle';
 import HeaderFrame from '../components/layout/HeaderFrame';
 import SensorSummaryPanel from '../components/SensorSummaryPanel';
 import { DeviceManagement } from '../components/DeviceManagement';
-import { ThresholdConfiguration } from '../components/ThresholdConfiguration';
-import { AlertsManagement } from '../components/AlertsManagement';
-import { SystemDiagnostics } from '../components/SystemDiagnostics';
 import { useAuth } from '../contexts/AuthContext';
 import weatherService from '../services/weatherService';
-import api, { alertService, sensorService, settingsService } from '../services/api';
-import { AlertRules, LatestSnapshot } from '../types';
+import api, { alertService, sensorService } from '../services/api';
+import { LatestSnapshot } from '../types';
 import { socket as sharedSocket } from '../socket';
 
 type Sensor = {
@@ -49,33 +45,6 @@ type DeviceSummary = {
 type StatusPillProps = { label: string; status: string };
 
 const SENSOR_STALE_THRESHOLD_MS = 60_000;
-
-const DEFAULT_ALERT_RULES: AlertRules = {
-  temperature: true,
-  humidity: true,
-  moisture: true,
-  ph: true,
-  system: true,
-  emailNotifications: false,
-};
-
-const alertRulesEqual = (a: AlertRules, b: AlertRules): boolean => (
-  a.temperature === b.temperature &&
-  a.humidity === b.humidity &&
-  a.moisture === b.moisture &&
-  a.ph === b.ph &&
-  a.system === b.system &&
-  a.emailNotifications === b.emailNotifications
-);
-
-const ALERT_RULE_OPTIONS: Array<{ key: keyof AlertRules; label: string }> = [
-  { key: 'temperature', label: 'Enable Temperature Alerts' },
-  { key: 'humidity', label: 'Enable Humidity Alerts' },
-  { key: 'moisture', label: 'Enable Moisture Alerts' },
-  { key: 'ph', label: 'Enable pH Alerts' },
-  { key: 'system', label: 'Enable System Alerts' },
-  { key: 'emailNotifications', label: 'Email Notifications' },
-];
 
 const StatusPill: React.FC<StatusPillProps> = ({ label, status }) => {
   const normalized = (status ?? '').toString().toLowerCase();
@@ -118,14 +87,6 @@ export default function AdminDashboard(): React.ReactElement {
   const [sensorStatus, setSensorStatus] = useState<string>('Checking...');
   const [latestAlerts, setLatestAlerts] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [alertRules, setAlertRules] = useState<AlertRules>({ ...DEFAULT_ALERT_RULES });
-  const [initialAlertRules, setInitialAlertRules] = useState<AlertRules>({ ...DEFAULT_ALERT_RULES });
-  const [alertRulesLoading, setAlertRulesLoading] = useState(false);
-  const [alertRulesSaving, setAlertRulesSaving] = useState(false);
-  const [alertRulesError, setAlertRulesError] = useState<string | null>(null);
-  const [alertRulesSuccess, setAlertRulesSuccess] = useState<string | null>(null);
-  const alertRulesDirty = useMemo(() => !alertRulesEqual(alertRules, initialAlertRules), [alertRules, initialAlertRules]);
-  const alertConfigDisabled = alertRulesLoading || alertRulesSaving;
 
   async function loadReminders() {
     setRemindersLoading(true);
@@ -523,43 +484,9 @@ export default function AdminDashboard(): React.ReactElement {
     }
   }, [devicesOnline]);
 
-  useEffect(() => {
-    let mounted = true;
+    // (User management removed) 
 
-    async function fetchAlertRules() {
-      setAlertRulesLoading(true);
-      setAlertRulesError(null);
-      setAlertRulesSuccess(null);
-      try {
-        const response = await settingsService.getAlertRules();
-        if (!mounted) return;
-        const payload = response?.data?.data;
-        const normalized = payload && typeof payload === 'object'
-          ? { ...DEFAULT_ALERT_RULES, ...payload }
-          : { ...DEFAULT_ALERT_RULES };
-        setAlertRules(normalized);
-        setInitialAlertRules(normalized);
-      } catch (err) {
-        if (!mounted) return;
-        console.warn('AdminDashboard::fetchAlertRules error', err);
-        setAlertRules({ ...DEFAULT_ALERT_RULES });
-        setAlertRulesError('Unable to load alert configuration. Defaults are in use.');
-      } finally {
-        if (mounted) {
-          setAlertRulesLoading(false);
-        }
-      }
-    }
-
-    fetchAlertRules();
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  // (User management removed) 
-
-  const filteredAlerts = useMemo(() => {
+    const filteredAlerts = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return alerts;
     return alerts.filter(a => (a.title || '').toLowerCase().includes(q) || (a.message || '').toLowerCase().includes(q));
@@ -607,40 +534,6 @@ export default function AdminDashboard(): React.ReactElement {
       // ignore errors for now
     }
   }
-
-  const handleAlertRuleToggle = (key: keyof AlertRules) => (event: React.ChangeEvent<HTMLInputElement>) => {
-    const { checked } = event.target;
-    setAlertRules((prev) => ({ ...prev, [key]: checked }));
-    setAlertRulesSuccess(null);
-    setAlertRulesError(null);
-  };
-
-  const handleRestoreDefaultAlertRules = () => {
-    setAlertRules({ ...DEFAULT_ALERT_RULES });
-    setAlertRulesError(null);
-    setAlertRulesSuccess('Defaults restored locally. Save to apply.');
-  };
-
-  const handleSaveAlertRules = async () => {
-    setAlertRulesSaving(true);
-    setAlertRulesError(null);
-    setAlertRulesSuccess(null);
-    try {
-      const response = await settingsService.updateAlertRules(alertRules);
-      const payload = response?.data?.data;
-      const normalized = payload && typeof payload === 'object'
-        ? { ...DEFAULT_ALERT_RULES, ...payload }
-        : { ...alertRules };
-      setAlertRules(normalized);
-      setInitialAlertRules(normalized);
-      setAlertRulesSuccess('Alert configuration saved.');
-    } catch (err) {
-      console.error('AdminDashboard::handleSaveAlertRules error', err);
-      setAlertRulesError('Failed to save alert configuration. Please try again.');
-    } finally {
-      setAlertRulesSaving(false);
-    }
-  };
 
   // Compute vermitea production counter from waterLevel deltas in history
   const vermiteaLiters = useMemo(() => {
@@ -726,7 +619,6 @@ export default function AdminDashboard(): React.ReactElement {
   };
 
   const [activeTab, setActiveTab] = useState<'overview' | 'devices' | 'monitoring' | 'management' | 'reports'>('overview');
-  const [activeSubTab, setActiveSubTab] = useState<'thresholds' | 'alerts' | 'diagnostics' | 'sensors'>('thresholds');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const navigate = useNavigate();
 
@@ -1015,7 +907,7 @@ export default function AdminDashboard(): React.ReactElement {
                 <div className="text-center py-8">
                   <Activity className="w-12 h-12 mx-auto mb-4 text-gray-400" />
                   <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-100 mb-2">System Monitoring</h3>
-                  <p className="text-gray-600 dark:text-gray-400">Configure thresholds, manage alerts, and monitor system diagnostics</p>
+                  <p className="text-gray-600 dark:text-gray-400">Configure thresholds and manage alerts</p>
                 </div>
 
                 <div className="bg-white dark:bg-gray-900/70 border border-gray-200 dark:border-gray-800 rounded-xl shadow p-6">
@@ -1085,221 +977,7 @@ export default function AdminDashboard(): React.ReactElement {
                 </div>
                 <SensorSummaryPanel className="mt-6" />
 
-                {/* Sub-tabs for monitoring */}
-                <div className="bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 rounded-lg shadow">
-                  <div className="border-b border-gray-200 dark:border-gray-600">
-                    <nav className="flex overflow-x-auto">
-                      <button
-                        onClick={() => setActiveSubTab('thresholds')}
-                        className={`px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap ${
-                          activeSubTab === 'thresholds'
-                            ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                        }`}
-                      >
-                        <Activity className="w-4 h-4 inline mr-2" />
-                        Thresholds
-                      </button>
-                      <button
-                        onClick={() => setActiveSubTab('alerts')}
-                        className={`px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap ${
-                          activeSubTab === 'alerts'
-                            ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                        }`}
-                      >
-                        <Bell className="w-4 h-4 inline mr-2" />
-                        Alerts
-                      </button>
-                      <button
-                        onClick={() => setActiveSubTab('diagnostics')}
-                        className={`px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap ${
-                          activeSubTab === 'diagnostics'
-                            ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                        }`}
-                      >
-                        <BarChart3 className="w-4 h-4 inline mr-2" />
-                        Diagnostics
-                      </button>
-                    </nav>
-                  </div>
-
-                  <div className="p-4 max-h-96 overflow-y-auto">
-                    {activeSubTab === 'thresholds' && <ThresholdConfiguration />}
-                    {activeSubTab === 'alerts' && (
-                      <div className="space-y-6">
-                        {/* Alert Configuration */}
-                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
-                          <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">Alert Configuration</h4>
-                          <div className="mb-4 space-y-2">
-                            {alertRulesError ? (
-                              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-800 dark:bg-red-900/30 dark:text-red-300">
-                                {alertRulesError}
-                              </div>
-                            ) : null}
-                            {alertRulesSuccess ? (
-                              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">
-                                {alertRulesSuccess}
-                              </div>
-                            ) : null}
-                            {alertRulesLoading ? (
-                              <div className="text-sm text-gray-500 dark:text-gray-300">Loading alert configuration...</div>
-                            ) : null}
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div className="space-y-3">
-                              {ALERT_RULE_OPTIONS.slice(0, 3).map((option) => (
-                                <label
-                                  key={option.key}
-                                  className={`flex items-center space-x-2 ${alertConfigDisabled ? 'opacity-70' : ''}`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    className="rounded"
-                                    checked={Boolean(alertRules[option.key])}
-                                    onChange={handleAlertRuleToggle(option.key)}
-                                    disabled={alertConfigDisabled}
-                                  />
-                                  <span className="text-sm">{option.label}</span>
-                                </label>
-                              ))}
-                            </div>
-                            <div className="space-y-3">
-                              {ALERT_RULE_OPTIONS.slice(3).map((option) => (
-                                <label
-                                  key={option.key}
-                                  className={`flex items-center space-x-2 ${alertConfigDisabled ? 'opacity-70' : ''}`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    className="rounded"
-                                    checked={Boolean(alertRules[option.key])}
-                                    onChange={handleAlertRuleToggle(option.key)}
-                                    disabled={alertConfigDisabled}
-                                  />
-                                  <span className="text-sm">{option.label}</span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="mt-4 flex flex-wrap gap-3">
-                            <button
-                              type="button"
-                              onClick={handleSaveAlertRules}
-                              disabled={!alertRulesDirty || alertRulesSaving}
-                              className={`px-4 py-2 rounded-md text-sm font-medium text-white transition-colors ${alertRulesSaving || !alertRulesDirty ? 'bg-blue-300 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700'}`}
-                            >
-                              {alertRulesSaving ? 'Saving...' : alertRulesDirty ? 'Save Configuration' : 'Saved'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={handleRestoreDefaultAlertRules}
-                              disabled={alertConfigDisabled}
-                              className={`px-4 py-2 rounded-md text-sm transition-colors ${alertConfigDisabled ? 'bg-gray-200 text-gray-500 cursor-not-allowed dark:bg-gray-700 dark:text-gray-400' : 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500'}`}
-                            >
-                              Reset to Default
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Active Alerts */}
-                        <div>
-                          <div className="flex items-center justify-between mb-4">
-                            <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Active Alerts</h4>
-                            <div className="flex gap-2">
-                              <button
-                                onClick={loadLatestAlerts}
-                                className="px-3 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded text-sm hover:bg-gray-200 dark:hover:bg-gray-600"
-                              >
-                                Refresh
-                              </button>
-                              <button className="px-3 py-1 bg-red-100 dark:bg-red-900/20 text-red-700 dark:text-red-300 rounded text-sm hover:bg-red-200 dark:hover:bg-red-800/30">
-                                Clear All
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="space-y-3 max-h-96 overflow-y-auto">
-                            {devicesOnline === 0 && (
-                              <div className="text-xs text-amber-600 dark:text-amber-300">
-                                No devices are currently online. Showing the most recent unresolved alerts for reference.
-                              </div>
-                            )}
-                            {latestAlerts.length === 0 ? (
-                              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                                <Bell className="w-12 h-12 mx-auto mb-4 opacity-50" />
-                                <p>No active alerts</p>
-                                <p className="text-sm">All systems are operating normally</p>
-                              </div>
-                            ) : (
-                              latestAlerts.map((alert: any) => {
-                                const alertId = alert.id || alert._id || alert.uuid || alert.timestamp;
-                                return (
-                                  <div key={alertId} className={`p-4 rounded-lg border ${
-                                    alert.status === 'new'
-                                      ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-700'
-                                      : 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-600'
-                                  }`}>
-                                    <div className="flex items-start justify-between">
-                                      <div className="flex-1">
-                                        <div className="flex items-center space-x-2 mb-2">
-                                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                            alert.status === 'new'
-                                              ? 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200'
-                                              : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200'
-                                          }`}>
-                                            {alert.type || 'System'}
-                                          </span>
-                                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                                            alert.severity === 'critical' ? 'bg-red-100 text-red-800' :
-                                            alert.severity === 'warning' ? 'bg-yellow-100 text-yellow-800' :
-                                            'bg-blue-100 text-blue-800'
-                                          }`}>
-                                            {alert.severity || 'info'}
-                                          </span>
-                                          {alert.status === 'new' && (
-                                            <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                                          )}
-                                        </div>
-                                        <h5 className="font-medium text-gray-800 dark:text-gray-100 mb-1">
-                                          {alert.title || alert.message?.split('.')[0] || 'Alert'}
-                                        </h5>
-                                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                                          {alert.message}
-                                        </p>
-                                        <div className="flex items-center space-x-4 text-xs text-gray-500">
-                                          <span>Created: {new Date(alert.createdAt).toLocaleString()}</span>
-                                          {alert.deviceId && <span>Device: {alert.deviceId}</span>}
-                                        </div>
-                                      </div>
-                                      <div className="flex flex-col gap-2 ml-4">
-                                        {alert.status === 'new' && (
-                                          <button
-                                            onClick={() => markAlertAsRead(alertId)}
-                                            className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700"
-                                            title="Mark as read"
-                                          >
-                                            Acknowledge
-                                          </button>
-                                        )}
-                                        <button className="px-3 py-1 bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 rounded text-xs hover:bg-gray-300 dark:hover:bg-gray-500">
-                                          Details
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })
-                            )}
-                          </div>
-                        </div>
-
-                      </div>
-                    )}
-                    {activeSubTab === 'diagnostics' && <SystemDiagnostics />}
-                  </div>
-                </div>
+                {/* Monitoring sub-panels removed per request */}
               </div>
             )}
 
@@ -1312,89 +990,69 @@ export default function AdminDashboard(): React.ReactElement {
                   <p className="text-gray-600 dark:text-gray-400">Manage sensor configurations</p>
                 </div>
 
-                {/* Sub-tabs for management */}
+                {/* Management sensors panel */}
                 <div className="bg-white/80 dark:bg-gray-800/80 border border-gray-100 dark:border-gray-700 rounded-lg shadow">
-                  <div className="border-b border-gray-200 dark:border-gray-600">
-                    <nav className="flex overflow-x-auto">
-                      <button
-                        onClick={() => setActiveSubTab('sensors')}
-                        className={`px-4 py-3 text-sm font-medium border-b-2 whitespace-nowrap ${
-                          activeSubTab === 'sensors'
-                            ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                            : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                        }`}
-                      >
-                        <Settings className="w-4 h-4 inline mr-2" />
-                        Sensors
-                      </button>
-                    </nav>
-                  </div>
-
-                  <div className="p-4 max-h-96 overflow-y-auto">
-                    {activeSubTab === 'sensors' && (
-                      <div className="space-y-4">
-                        <div className="text-center py-8">
-                          <Settings className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-                          <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">Sensor Configuration</h3>
-                          <p className="text-gray-600 dark:text-gray-400">Advanced sensor settings and calibration</p>
-                        </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                            <h4 className="font-medium text-gray-800 dark:text-gray-100 mb-2">Sensor Status</h4>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">{sensorStatus}</p>
-                            {devicesOnline === 0 && (
-                              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                                Waiting for ESP32 devices to report a heartbeat.
-                              </p>
-                            )}
-                          </div>
-                          <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                            <div className="flex items-start justify-between mb-3">
-                              <div>
-                                <h4 className="font-medium text-gray-800 dark:text-gray-100">Connected Sensors</h4>
-                                <p className="text-xs text-gray-600 dark:text-gray-400">Live device inventory reported by the backend.</p>
-                              </div>
-                              <button
-                                onClick={refreshDeviceInventory}
-                                className="px-3 py-1 text-xs rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700"
-                              >
-                                Refresh
-                              </button>
-                            </div>
-                            {deviceError && (
-                              <div className="text-xs text-rose-600 dark:text-rose-300 mb-2">{deviceError}</div>
-                            )}
-                            {deviceInventory.length === 0 ? (
-                              <p className="text-sm text-gray-600 dark:text-gray-400">No sensors detected yet.</p>
-                            ) : (
-                              <ul className="space-y-2 max-h-56 overflow-auto pr-1">
-                                {deviceInventory.map((device) => {
-                                  const online = device.status === 'online';
-                                  return (
-                                    <li key={device.deviceId} className="flex items-start justify-between gap-3 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2">
-                                      <div className="text-sm text-gray-700 dark:text-gray-200">
-                                        <div className="font-medium text-gray-900 dark:text-gray-100">{device.deviceId}</div>
-                                        <div className="text-xs text-gray-500 dark:text-gray-400">Last heartbeat: {formatHeartbeat(device.lastHeartbeat)}</div>
-                                        {device.metadata?.name && (
-                                          <div className="text-xs text-gray-500 dark:text-gray-400">Label: {device.metadata.name}</div>
-                                        )}
-                                      </div>
-                                      <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
-                                        online
-                                          ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200'
-                                          : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200'
-                                      }`}>
-                                        {online ? 'Online' : 'Offline'}
-                                      </span>
-                                    </li>
-                                  );
-                                })}
-                              </ul>
-                            )}
-                          </div>
-                        </div>
+                  <div className="p-4 max-h-96 overflow-y-auto space-y-4">
+                    <div className="text-center py-8">
+                      <Settings className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                      <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-2">Sensor Configuration</h3>
+                      <p className="text-gray-600 dark:text-gray-400">Advanced sensor settings and calibration</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <h4 className="font-medium text-gray-800 dark:text-gray-100 mb-2">Sensor Status</h4>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">{sensorStatus}</p>
+                        {devicesOnline === 0 && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Waiting for ESP32 devices to report a heartbeat.
+                          </p>
+                        )}
                       </div>
-                    )}
+                      <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div className="flex items-start justify-between mb-3">
+                          <div>
+                            <h4 className="font-medium text-gray-800 dark:text-gray-100">Connected Sensors</h4>
+                            <p className="text-xs text-gray-600 dark:text-gray-400">Live device inventory reported by the backend.</p>
+                          </div>
+                          <button
+                            onClick={refreshDeviceInventory}
+                            className="px-3 py-1 text-xs rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700"
+                          >
+                            Refresh
+                          </button>
+                        </div>
+                        {deviceError && (
+                          <div className="text-xs text-rose-600 dark:text-rose-300 mb-2">{deviceError}</div>
+                        )}
+                        {deviceInventory.length === 0 ? (
+                          <p className="text-sm text-gray-600 dark:text-gray-400">No sensors detected yet.</p>
+                        ) : (
+                          <ul className="space-y-2 max-h-56 overflow-auto pr-1">
+                            {deviceInventory.map((device) => {
+                              const online = device.status === 'online';
+                              return (
+                                <li key={device.deviceId} className="flex items-start justify-between gap-3 rounded-md border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 px-3 py-2">
+                                  <div className="text-sm text-gray-700 dark:text-gray-200">
+                                    <div className="font-medium text-gray-900 dark:text-gray-100">{device.deviceId}</div>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400">Last heartbeat: {formatHeartbeat(device.lastHeartbeat)}</div>
+                                    {device.metadata?.name && (
+                                      <div className="text-xs text-gray-500 dark:text-gray-400">Label: {device.metadata.name}</div>
+                                    )}
+                                  </div>
+                                  <span className={`text-xs px-2 py-1 rounded-full font-semibold ${
+                                    online
+                                      ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200'
+                                      : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200'
+                                  }`}>
+                                    {online ? 'Online' : 'Offline'}
+                                  </span>
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
