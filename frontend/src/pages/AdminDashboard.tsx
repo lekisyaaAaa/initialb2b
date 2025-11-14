@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
-import React, { useEffect, useMemo, useState, useRef } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
 import { Bell, Check, Settings, Activity, Users, BarChart3, Calendar, RefreshCw } from 'lucide-react';
 import SensorCharts from '../components/SensorCharts';
@@ -87,6 +87,32 @@ export default function AdminDashboard(): React.ReactElement {
   const [sensorStatus, setSensorStatus] = useState<string>('Checking...');
   const [latestAlerts, setLatestAlerts] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [alertsSummary, setAlertsSummary] = useState<{ critical: number; warning: number; info: number }>({ critical: 0, warning: 0, info: 0 });
+  const [alertsRefreshing, setAlertsRefreshing] = useState(false);
+  const [alertsClearing, setAlertsClearing] = useState(false);
+  const [alertsActionMessage, setAlertsActionMessage] = useState<string | null>(null);
+  const [alertsActionError, setAlertsActionError] = useState<string | null>(null);
+  const [acknowledgingAlertId, setAcknowledgingAlertId] = useState<string | null>(null);
+
+  const classifySeverity = useCallback((value: unknown): 'critical' | 'warning' | 'info' => {
+    const normalized = (value || '').toString().toLowerCase();
+    if (['critical', 'severe', 'fatal'].includes(normalized)) return 'critical';
+    if (['warning', 'warn', 'high', 'medium', 'alert'].includes(normalized)) return 'warning';
+    return 'info';
+  }, []);
+
+  const formatAlertTimestamp = useCallback((value: unknown) => {
+    if (!value) return 'Unknown';
+    try {
+      const date = new Date(value as any);
+      if (Number.isNaN(date.getTime())) {
+        return String(value);
+      }
+      return date.toLocaleString();
+    } catch (error) {
+      return String(value);
+    }
+  }, []);
 
   async function loadReminders() {
     setRemindersLoading(true);
@@ -244,43 +270,93 @@ export default function AdminDashboard(): React.ReactElement {
     };
   }, [applyDeviceStatusUpdate]);
 
-  async function loadLatestAlerts() {
-    // Use the recent (unresolved) alerts endpoint instead of the admin-only
-    // `/alerts/latest`. Public dashboard creates alerts via `/alerts` and
-    // `/alerts/recent` returns the unresolved alerts. This ensures the Admin
-    // dashboard shows the same active alerts as the User dashboard.
+  const loadLatestAlerts = useCallback(async (options?: { showLoader?: boolean }) => {
+    const showLoader = Boolean(options?.showLoader);
+    if (showLoader) {
+      setAlertsRefreshing(true);
+      setAlertsActionMessage(null);
+      setAlertsActionError(null);
+    }
+
     try {
       const response = await alertService.getRecentAlerts(50);
       if (response?.data?.success) {
         const alerts = Array.isArray(response.data.data) ? response.data.data : [];
         setLatestAlerts(alerts);
         setUnreadCount(alerts.filter((alert: any) => (alert.status || alert.state || '').toString() === 'new').length);
+        const summary = alerts.reduce(
+          (acc: { critical: number; warning: number; info: number }, alert: any) => {
+            const bucket = classifySeverity(alert.severity ?? alert.level ?? alert.type);
+            acc[bucket] += 1;
+            return acc;
+          },
+          { critical: 0, warning: 0, info: 0 },
+        );
+        setAlertsSummary(summary);
       } else {
         setLatestAlerts([]);
         setUnreadCount(0);
+        setAlertsSummary({ critical: 0, warning: 0, info: 0 });
       }
     } catch (error) {
       console.error('Failed to load recent alerts:', error);
       setLatestAlerts([]);
       setUnreadCount(0);
+      setAlertsSummary({ critical: 0, warning: 0, info: 0 });
+      if (showLoader) {
+        setAlertsActionError('Failed to load alerts. Try again in a moment.');
+      }
+    } finally {
+      if (showLoader) {
+        setAlertsRefreshing(false);
+      }
     }
-  }
+  }, [classifySeverity]);
 
-  async function markAlertAsRead(alertId?: string) {
+  const markAlertAsRead = useCallback(async (alertId?: string) => {
     if (!alertId) {
       return;
     }
+    setAcknowledgingAlertId(alertId);
     try {
       await alertService.markAsRead(alertId);
-      // Update local state
-      setLatestAlerts((prev) => prev.map((alert) =>
-        (alert.id === alertId || alert._id === alertId) ? { ...alert, status: 'read' } : alert
-      ));
-      setUnreadCount(prev => Math.max(0, prev - 1));
+      setAlertsActionError(null);
+      setAlertsActionMessage('Alert acknowledged.');
+      await loadLatestAlerts();
     } catch (error) {
       console.error('Failed to mark alert as read:', error);
+      setAlertsActionError('Failed to acknowledge alert.');
+    } finally {
+      setAcknowledgingAlertId(null);
     }
-  }
+  }, [loadLatestAlerts]);
+
+  const handleRefreshActiveAlerts = useCallback(() => {
+    loadLatestAlerts({ showLoader: true });
+  }, [loadLatestAlerts]);
+
+  const handleClearAllAlerts = useCallback(async () => {
+    if (alertsClearing) {
+      return;
+    }
+    setAlertsClearing(true);
+    setAlertsActionMessage(null);
+    setAlertsActionError(null);
+    try {
+      try {
+        await alertService.clearAll();
+      } catch (primaryError) {
+        await alertService.resolveAll();
+      }
+      setAlertsActionMessage('All alerts cleared.');
+      await loadLatestAlerts();
+    } catch (error) {
+      console.error('Failed to clear alerts:', error);
+      setAlertsActionError('Failed to clear alerts.');
+    } finally {
+      setAlertsClearing(false);
+    }
+  }, [alertsClearing, loadLatestAlerts]);
 
   function acknowledgeReminder(id: string) {
     setReminders(prev => prev.map(r => r.id === id ? { ...r, acknowledged: true } : r));
@@ -465,7 +541,7 @@ export default function AdminDashboard(): React.ReactElement {
     const id4 = setInterval(loadReminders, 60_000);
     const id5 = setInterval(loadLatestAlerts, 10000); // Poll for new alerts every 10 seconds
     return () => { mounted = false; clearInterval(idDevices); clearInterval(id1); clearInterval(id2); clearInterval(id3); clearInterval(id4); clearInterval(id5); };
-  }, [refreshDeviceInventory]);
+  }, [refreshDeviceInventory, loadLatestAlerts]);
 
   useEffect(() => {
     if (devicesOnline > 0) {
@@ -483,6 +559,16 @@ export default function AdminDashboard(): React.ReactElement {
       setSensorHistory([]);
     }
   }, [devicesOnline]);
+
+  useEffect(() => {
+    if (!alertsActionMessage) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      setAlertsActionMessage(null);
+    }, 5000);
+    return () => window.clearTimeout(timer);
+  }, [alertsActionMessage]);
 
     // (User management removed) 
 
@@ -573,6 +659,19 @@ export default function AdminDashboard(): React.ReactElement {
     return sensorHistory.length > 0 || filteredAlerts.length > 0 || latestAlerts.length > 0;
   }, [filteredAlerts, hasConnectedSensors, latestAlerts, sensorHistory]);
 
+  const groupedActiveAlerts = useMemo(() => {
+    const buckets: Record<'critical' | 'warning' | 'info', any[]> = {
+      critical: [],
+      warning: [],
+      info: [],
+    };
+    latestAlerts.forEach((alert) => {
+      const bucket = classifySeverity(alert?.severity ?? alert?.level ?? alert?.type);
+      buckets[bucket].push(alert);
+    });
+    return buckets;
+  }, [classifySeverity, latestAlerts]);
+
   // Portal header to document.body so it is never affected by parent transforms/scroll containers
   const AdminHeader: React.FC = () => {
     React.useEffect(() => {
@@ -621,6 +720,15 @@ export default function AdminDashboard(): React.ReactElement {
   const [activeTab, setActiveTab] = useState<'overview' | 'devices' | 'monitoring' | 'management' | 'reports'>('overview');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const requestedTab = (params.get('tab') || '').toLowerCase();
+    if (['overview', 'devices', 'monitoring', 'management', 'reports'].includes(requestedTab) && requestedTab !== activeTab) {
+      setActiveTab(requestedTab as typeof activeTab);
+    }
+  }, [activeTab, location.search]);
 
   const LogoutConfirmModal: React.FC = () => {
     if (!showLogoutConfirm) return null;
@@ -759,14 +867,7 @@ export default function AdminDashboard(): React.ReactElement {
                 <Calendar className="w-4 h-4" />
                 Reports
               </button>
-              <button
-                onClick={() => navigate('/admin/alerts')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 whitespace-nowrap flex items-center gap-2 border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300`}
-                title="Go to Alerts"
-              >
-                <Bell className="w-4 h-4" />
-                Alerts
-              </button>
+              {/* Alerts tab intentionally removed — alerts are managed inside Monitoring */}
             </nav>
           </div>
 
@@ -977,7 +1078,133 @@ export default function AdminDashboard(): React.ReactElement {
                 </div>
                 <SensorSummaryPanel className="mt-6" />
 
-                {/* Monitoring sub-panels removed per request */}
+                <div className="bg-white dark:bg-gray-900/70 border border-gray-200 dark:border-gray-800 rounded-xl shadow p-6">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                      <h4 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Active Alerts</h4>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">Latest unresolved alerts requiring attention.</p>
+                    </div>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                      <div className="flex gap-2 text-xs font-semibold">
+                        <span className="inline-flex items-center gap-1 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-rose-700 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-200">Critical: {alertsSummary.critical}</span>
+                        <span className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-700 dark:border-amber-800 dark:bg-amber-900/30 dark:text-amber-200">Warning: {alertsSummary.warning}</span>
+                        <span className="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200">Info: {alertsSummary.info}</span>
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={handleRefreshActiveAlerts}
+                          disabled={alertsRefreshing || alertsClearing}
+                          className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${alertsRefreshing || alertsClearing ? 'cursor-not-allowed border border-gray-200 bg-gray-100 text-gray-500 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400' : 'border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 dark:hover:bg-gray-700'}`}
+                        >
+                          {alertsRefreshing ? 'Refreshing…' : 'Refresh'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleClearAllAlerts}
+                          disabled={alertsClearing || latestAlerts.length === 0}
+                          className={`inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition ${alertsClearing || latestAlerts.length === 0 ? 'cursor-not-allowed border border-rose-200 bg-rose-100 text-rose-500 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300' : 'border border-rose-200 bg-rose-600 text-white hover:bg-rose-700 dark:border-rose-700'}`}
+                        >
+                          {alertsClearing ? 'Clearing…' : 'Clear All'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {alertsActionError && (
+                    <div className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:border-rose-800 dark:bg-rose-900/30 dark:text-rose-200">
+                      {alertsActionError}
+                    </div>
+                  )}
+                  {alertsActionMessage && (
+                    <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-200">
+                      {alertsActionMessage}
+                    </div>
+                  )}
+
+                  <div className="mt-6">
+                    {latestAlerts.length === 0 ? (
+                      <div className="text-center py-10 text-sm text-gray-500 dark:text-gray-400">
+                        No active alerts.
+                      </div>
+                    ) : (
+                      <div className="space-y-6">
+                        {(['critical', 'warning', 'info'] as const).map((bucket) => {
+                          const items = groupedActiveAlerts[bucket];
+                          if (!items || items.length === 0) {
+                            return null;
+                          }
+                          const bucketLabel = bucket === 'critical' ? 'Critical' : bucket === 'warning' ? 'Warning' : 'Info';
+                          const badgeTone = bucket === 'critical'
+                            ? 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200'
+                            : bucket === 'warning'
+                              ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-200'
+                              : 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-200';
+                          return (
+                            <div key={bucket}>
+                              <div className="flex items-center gap-3">
+                                <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${badgeTone}`}>
+                                  {bucketLabel}
+                                </span>
+                                <span className="text-xs text-gray-500 dark:text-gray-400">{items.length} active</span>
+                              </div>
+                              <ul className="mt-3 space-y-3">
+                                {items.map((alert: any, index: number) => {
+                                  const alertId = alert.id || alert._id || alert.uuid || alert.timestamp || `${bucket}-${index}`;
+                                  const status = (alert.status || alert.state || '').toString().toLowerCase();
+                                  const deviceLabel = alert.deviceId || alert.device || alert.sensorId;
+                                  const isAcknowledged = ['read', 'acknowledged', 'resolved', 'cleared'].includes(status);
+                                  return (
+                                    <li key={alertId} className="rounded-lg border border-gray-200 bg-white/80 px-4 py-3 dark:border-gray-700 dark:bg-gray-900/60">
+                                      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                                        <div className="space-y-2">
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <span className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-semibold ${badgeTone}`}>
+                                              {bucketLabel}
+                                            </span>
+                                            {status === 'new' && (
+                                              <span className="inline-flex h-2 w-2 rounded-full bg-blue-500" aria-hidden="true" />
+                                            )}
+                                            <span className="text-xs text-gray-500 dark:text-gray-400">{formatAlertTimestamp(alert.createdAt || alert.timestamp || alert.updatedAt)}</span>
+                                          </div>
+                                          <p className="text-sm font-medium text-gray-800 dark:text-gray-100">
+                                            {alert.title || alert.message || 'Alert triggered'}
+                                          </p>
+                                          {alert.description && (
+                                            <p className="text-xs text-gray-600 dark:text-gray-300">{alert.description}</p>
+                                          )}
+                                          {deviceLabel && (
+                                            <p className="text-xs text-gray-500 dark:text-gray-400">Device: {deviceLabel}</p>
+                                          )}
+                                        </div>
+                                        <div className="flex items-center gap-2 self-start md:self-center">
+                                          {isAcknowledged ? (
+                                            <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200">
+                                              Acknowledged
+                                            </span>
+                                          ) : (
+                                            <button
+                                              type="button"
+                                              onClick={() => markAlertAsRead(alertId)}
+                                              disabled={acknowledgingAlertId === alertId}
+                                              className={`inline-flex items-center rounded-md px-3 py-1 text-xs font-medium transition ${acknowledgingAlertId === alertId ? 'cursor-not-allowed bg-gray-200 text-gray-500 dark:bg-gray-800 dark:text-gray-400' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
+                                            >
+                                              {acknowledgingAlertId === alertId ? 'Acknowledging…' : 'Acknowledge'}
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </li>
+                                  );
+                                })}
+                              </ul>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
             )}
 
