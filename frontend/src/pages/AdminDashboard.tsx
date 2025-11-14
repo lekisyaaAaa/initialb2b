@@ -17,7 +17,7 @@ import { SystemDiagnostics } from '../components/SystemDiagnostics';
 import { useAuth } from '../contexts/AuthContext';
 import weatherService from '../services/weatherService';
 import api, { alertService, sensorService, settingsService } from '../services/api';
-import { AlertRules } from '../types';
+import { AlertRules, LatestSnapshot } from '../types';
 import { socket as sharedSocket } from '../socket';
 
 type Sensor = {
@@ -343,33 +343,44 @@ export default function AdminDashboard(): React.ReactElement {
     async function loadLatest() {
       try {
         const start = Date.now();
-        const [latestResp, healthResp] = await Promise.all([
-          sensorService.getLatestData().catch((err) => {
-            console.warn('AdminDashboard::loadLatest sensor fetch error', err);
-            throw err;
-          }),
-          api.get('/health').catch((err) => {
-            console.warn('AdminDashboard::loadLatest health fetch error', err?.message || err);
-            return null;
-          })
-        ]);
+        let latestSnapshot: LatestSnapshot | null = null;
+        try {
+          latestSnapshot = await sensorService.getLatestData();
+        } catch (err) {
+          console.warn('AdminDashboard::loadLatest sensor fetch error', err);
+          throw err;
+        }
+
+        let healthResp = null;
+        try {
+          healthResp = await api.get('/health');
+        } catch (err: any) {
+          console.warn('AdminDashboard::loadLatest health fetch error', err?.message || err);
+          healthResp = null;
+        }
 
         if (!mounted) return;
 
         const latency = Date.now() - start;
-        const payload = latestResp?.data?.data;
-        let candidateReading: Sensor | null = null;
+        const snapshot = latestSnapshot ?? null;
+        const resolvedDeviceId = snapshot ? 'vermilinks-homeassistant' : null;
 
-        if (Array.isArray(payload)) {
-          candidateReading = payload.length > 0 ? (payload[0] as Sensor) : null;
-        } else if (payload && typeof payload === 'object' && Object.keys(payload).length > 0) {
-          candidateReading = payload as Sensor;
-        }
+        const candidateReading: Sensor | null = snapshot && resolvedDeviceId
+          ? {
+              id: resolvedDeviceId,
+              name: 'VermiLinks Sensor Suite',
+              deviceId: resolvedDeviceId,
+              temperature: snapshot.temperature,
+              humidity: snapshot.humidity,
+              moisture: snapshot.soil_moisture,
+              waterLevel: snapshot.float_state,
+              lastSeen: snapshot.updated_at,
+              deviceOnline: true,
+              deviceStatus: 'online',
+            }
+          : null;
 
-  const responseStatus = (((latestResp?.data as any) || {}).status || '').toString().toLowerCase();
-        const deviceOnline = Boolean(candidateReading?.deviceOnline) || responseStatus === 'online';
-
-        if (candidateReading && deviceOnline) {
+        if (candidateReading) {
           setLatestSensor(candidateReading);
           setSensorHistory((prev) => {
             const next = [...prev.slice(-199), candidateReading as Sensor];
@@ -380,20 +391,15 @@ export default function AdminDashboard(): React.ReactElement {
           setSensorHistory([]);
         }
 
-        const statusPayload: any = latestResp?.data || {};
         const healthPayload: any = healthResp?.data || {};
 
         const primaryServerStatus =
-          statusPayload?.status ??
-          statusPayload?.systemStatus ??
           healthPayload?.status ??
-          'online';
+          (healthResp ? 'online' : 'offline');
 
         const primaryDatabaseStatus =
-          statusPayload?.databaseStatus ??
-          statusPayload?.database?.status ??
           healthPayload?.database?.status ??
-          'online';
+          (healthResp ? 'online' : 'offline');
 
         const toStatusString = (value: unknown, fallback: string) => {
           if (typeof value === 'string' && value.trim().length > 0) {

@@ -326,23 +326,9 @@ export const SystemDiagnostics: React.FC = () => {
     }
 
     try {
-      const resp = await sensorService.getLatestData();
-      const payload = resp?.data?.data;
-      const sample = Array.isArray(payload)
-        ? payload[0] as Record<string, any>
-        : payload && typeof payload === 'object'
-          ? payload as Record<string, any>
-          : null;
-
-      const deviceId = sample?.deviceId ?? sample?.device_id ?? sample?.id ?? null;
-      const timestampIso = ensureIsoString(
-        sample?.timestamp ??
-        sample?.createdAt ??
-        sample?.updatedAt ??
-        sample?.lastSeen ??
-        sample?.last_seen ??
-        sample?.receivedAt
-      );
+      const snapshot = await sensorService.getLatestData();
+      const timestampIso = ensureIsoString(snapshot?.updated_at ?? null);
+      const deviceId = snapshot ? 'vermilinks-homeassistant' : null;
 
       let ageSeconds: number | null = null;
       if (timestampIso) {

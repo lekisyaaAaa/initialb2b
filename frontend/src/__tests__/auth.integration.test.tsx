@@ -20,10 +20,20 @@ jest.mock('../services/api', () => {
       }),
     },
     sensorService: {
-      getLatestData: jest.fn(async () => ({ data: { success: true, data: [] } })),
+      getLatestData: jest.fn(async () => ({
+        temperature: 24,
+        humidity: 60,
+        soil_moisture: 42,
+        float_state: 1,
+        updated_at: new Date().toISOString(),
+      })),
     },
     alertService: {
       getRecentAlerts: jest.fn(async () => ({ data: { success: true, data: [] } })),
+    },
+    settingsService: {
+      getAlertRules: jest.fn(async () => ({ data: { success: true, data: { temperature: true, humidity: true, moisture: true, ph: true, system: true, emailNotifications: false } } })),
+      updateAlertRules: jest.fn(async () => ({ data: { success: true } })),
     },
     discoverApi: jest.fn(async () => ({ ok: false })),
   };

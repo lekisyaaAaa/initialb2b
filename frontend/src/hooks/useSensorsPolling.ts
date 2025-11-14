@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { sensorService } from '../services/api';
-import { SensorData } from '../types';
+import { SensorData, LatestSnapshot } from '../types';
 
 export type PollingStatus = 'idle' | 'loading' | 'success' | 'error';
 
@@ -113,16 +113,35 @@ export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsP
     setStatus((prev) => (prev === 'success' && !force ? prev : 'loading'));
 
     try {
-      const response = await sensorService.getLatestData(deviceId);
-      const root = response?.data;
-      const payload = (root?.data ?? root ?? null) as SensorData | SensorData[] | null;
-      const readings = Array.isArray(payload)
-        ? payload.filter(Boolean) as SensorData[]
-        : payload && typeof payload === 'object'
-          ? [payload as SensorData]
-          : [];
+      const snapshot: LatestSnapshot | null = await sensorService.getLatestData(deviceId);
+      const resolvedDeviceId = deviceId || 'vermilinks-homeassistant';
 
-      applyPayload(readings);
+      const reading: SensorData | null = snapshot
+        ? {
+            deviceId: resolvedDeviceId,
+            temperature: snapshot.temperature === null ? undefined : snapshot.temperature,
+            humidity: snapshot.humidity === null ? undefined : snapshot.humidity,
+            moisture: snapshot.soil_moisture === null ? undefined : snapshot.soil_moisture,
+            floatSensor: snapshot.float_state === null ? null : snapshot.float_state,
+            timestamp: snapshot.updated_at,
+            sensorSummary: undefined,
+            isOfflineData: false,
+            deviceOnline: true,
+          }
+        : null;
+
+      const readings = reading ? [reading] : [];
+
+      if (readings.length === 0) {
+        cacheRef.current = null;
+        setData([]);
+        setLatest(null);
+        setLastUpdated(null);
+        setStatus('idle');
+        setError(null);
+      } else {
+        applyPayload(readings);
+      }
       backoffRef.current = intervalMs;
     } catch (err: any) {
       const message = err?.response?.data?.message || err?.message || 'Unable to load sensors';

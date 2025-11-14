@@ -27,12 +27,6 @@ const connectDB = typeof sequelize.connectDB === 'function' ? sequelize.connectD
 const { ensureDatabaseSetup } = database;
 const schemaReady = ensureDatabaseSetup({ force: (process.env.NODE_ENV || 'development') === 'test' });
 const {
-  ensureDefaultActuators,
-  listActuators,
-  scheduleAutomaticControl,
-  markDeviceAck,
-} = require('./services/actuatorService');
-const {
   markDeviceOnline,
   resetOfflineTimer,
 } = require('./services/deviceManager');
@@ -43,10 +37,8 @@ const authRoutes = require('./routes/auth');
 const sensorRoutes = require('./routes/sensors');
 const alertRoutes = require('./routes/alerts');
 const settingsRoutes = require('./routes/settings');
-const actuatorRoutes = require('./routes/actuators');
 const maintenanceRoutes = require('./routes/maintenance');
 const notificationRoutes = require('./routes/notifications');
-const actuatorControlRoutes = require('./routes/actuatorControl');
 const deviceCommandRoutes = require('./routes/deviceCommands');
 const commandRoutes = require('./routes/command');
 
@@ -117,16 +109,6 @@ io.on('connection', async (socket) => {
     deviceCommandQueue.registerSocket(handshakeDeviceId, socket, metadata);
   }
 
-  try {
-    const actuators = await listActuators();
-    socket.emit('actuator_snapshot', actuators);
-    // Backward compatibility during migration
-    socket.emit('actuatorSnapshot', actuators);
-  } catch (error) {
-    socket.emit('actuator_snapshot', []);
-    socket.emit('actuatorSnapshot', []);
-  }
-
   const handleAckEvent = async (payload = {}, overrideSuccess = null) => {
     const commandId = payload.commandId || payload.id;
     if (!commandId) {
@@ -141,16 +123,12 @@ io.on('connection', async (socket) => {
     const message = payload.message || null;
 
     try {
-      const result = await deviceCommandQueue.handleCommandAck({
+      await deviceCommandQueue.handleCommandAck({
         commandId,
         success: computedSuccess,
         payload: ackPayload,
         message,
       });
-
-      if (result && result.command && result.command.payload && result.command.payload.actuator) {
-        await markDeviceAck(result.command.payload.actuator, computedSuccess, { message });
-      }
 
       if (socket.data && socket.data.hardwareId) {
         await deviceCommandQueue.dispatchPendingCommands(socket.data.hardwareId);
@@ -215,6 +193,8 @@ global.wsConnections = new Set();
 global.deviceSockets = new Map();
 
 deviceCommandQueue.startCommandRetryLoop();
+
+let homeAssistantBridgeHandle = null;
 
 wss.on('connection', (ws, request) => {
   const requestPath = (request && request.url) ? request.url.split('?')[0] : 'unknown';
@@ -419,7 +399,6 @@ app.get('/internal/ping', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/sensors', sensorRateLimiter, sensorRoutes);
 app.use('/api/settings', settingsRoutes);
-app.use('/api/actuators', actuatorRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/device-commands', deviceCommandRoutes);
 app.use('/api/command', commandRoutes);
@@ -445,9 +424,7 @@ app.use('/api/devices', devicesRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/settings', settingsRoutes);
-app.use('/api/actuators', actuatorRoutes);
 app.use('/api/notifications', notificationRoutes);
-app.use('/api/actuator', actuatorControlRoutes);
 
 // Serve frontend production build if available (useful in local dev)
 try {
@@ -564,9 +541,19 @@ function tryListen(port) {
 // Graceful shutdown
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully');
-  server.close(() => {
-    logger.info('Server closed');
-    process.exit(0);
+  const cleanupTasks = [];
+
+  if (homeAssistantBridgeHandle && typeof homeAssistantBridgeHandle.stop === 'function') {
+    cleanupTasks.push(Promise.resolve().then(() => homeAssistantBridgeHandle.stop()).catch((error) => {
+      logger.warn('Home Assistant bridge stop failed during SIGTERM', error && error.message ? error.message : error);
+    }));
+  }
+
+  Promise.all(cleanupTasks).finally(() => {
+    server.close(() => {
+      logger.info('Server closed');
+      process.exit(0);
+    });
   });
 });
 
@@ -626,25 +613,24 @@ if (process.env.RUN_POLLER === 'true' || process.env.RUN_POLLER === '1') {
   }
 }
 
+if ((process.env.NODE_ENV || 'development') !== 'test') {
+  try {
+    const homeAssistantBridge = require('./services/homeAssistantBridge');
+    homeAssistantBridgeHandle = homeAssistantBridge.start();
+  } catch (error) {
+    logger.warn('Could not start Home Assistant bridge:', error && error.message ? error.message : error);
+  }
+}
+
 module.exports = app;
 // Export the http server as a property to allow tests to close it gracefully
 module.exports.server = server;
 
 // Simple server startup for development
 if ((process.env.NODE_ENV || 'development') !== 'test') {
-  const shouldSchedule = (process.env.NODE_ENV || 'development') !== 'test';
-
   connectDB()
-    .then(async () => {
-      try {
-        await ensureDefaultActuators();
-      } catch (error) {
-        logger.warn('Server startup: unable to ensure actuators exist:', error && error.message ? error.message : error);
-      }
-
-      if (shouldSchedule) {
-        scheduleAutomaticControl();
-      }
+    .then(() => {
+      logger.info('Database connection verified during startup');
     })
     .catch((error) => {
       logger.error('Database connection failed at startup:', error && error.message ? error.message : error);

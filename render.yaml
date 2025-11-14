@@ -36,6 +36,12 @@ services:
         sync: false
       - key: SOCKETIO_CORS_ORIGINS
         sync: false
+      - key: ENABLE_HOME_ASSISTANT_BRIDGE
+        value: "false"
+      - key: ALLOW_HOME_ASSISTANT_PUSH_WITHOUT_SOCKET
+        value: "true"
+      - key: HOME_ASSISTANT_DEVICE_ID
+        value: vermilinks-homeassistant
       - key: ESP32_URL
         sync: false
       - key: ESP32_COMMAND_TIMEOUT_MS
@@ -58,6 +64,14 @@ services:
         sync: false
       - key: REACT_APP_WS_URL
         sync: false
+      - key: REACT_APP_SENSOR_POLL_INTERVAL_MS
+        value: "5000"
+      - key: REACT_APP_DUMMY_MODE
+        value: "true"
+      - key: REACT_APP_HOME_ASSISTANT_URL
+        sync: false
+      - key: REACT_APP_ENABLE_SOCKETS
+        value: "false"
 
 databases:
   - name: vermilinks-db

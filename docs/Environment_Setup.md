@@ -19,8 +19,27 @@ BeanToBin requires a fully configured environment before starting the backend se
 | `EMAIL_FROM` | `"BeanToBin <noreply@beantobin.com>"` | Display sender for outbound mail. |
 | `CORS_ORIGINS` | `https://beantobin.onrender.com,https://dashboard.beantobin.com` | Comma-separated list of allowed frontend origins for API requests. |
 | `SOCKETIO_CORS_ORIGINS` | *(optional)* | Override allowed origins for Socket.IO (defaults to `CORS_ORIGINS`). |
-| `ESP32_URL` | `http://192.168.0.50` | Base URL for issuing actuator commands to the ESP32 bridge. |
-| `ESP32_COMMAND_TIMEOUT_MS` | `5000` | Timeout (ms) applied to actuator HTTP requests sent to the ESP32. |
+| `ALLOW_HOME_ASSISTANT_PUSH_WITHOUT_SOCKET` | `true` | Accept REST snapshots from Home Assistant even when no device socket is connected. |
+| `REACT_APP_SENSOR_POLL_INTERVAL_MS` | `5000` | Frontend polling cadence (ms) for `/api/sensors/latest`. |
+| `REACT_APP_DUMMY_MODE` | `true` | Enables dummy-data messaging and hides actuator controls in the dashboard. |
+| `REACT_APP_HOME_ASSISTANT_URL` | `https://homeassistant.local:8123` | Target URL for the “Open Home Assistant” button. |
+| `REACT_APP_ENABLE_SOCKETS` | `false` | Leave disabled unless real hardware sockets are restored. |
+
+> Legacy actuator settings such as `ESP32_URL` and `ESP32_COMMAND_TIMEOUT_MS` are no longer used; keep them unset in dummy mode deployments.
+
+## Home Assistant Bridge (Optional)
+
+| Key | Example | Purpose |
+| --- | --- | --- |
+| `ENABLE_HOME_ASSISTANT_BRIDGE` | `false` | Toggle the in-process bridge that streams Home Assistant telemetry into VermiLinks. |
+| `HOME_ASSISTANT_BASE_URL` | `http://192.168.8.134:8123` | Base URL used for REST hydration and deriving the WebSocket endpoint. |
+| `HOME_ASSISTANT_WS_URL` | `ws://192.168.8.134:8123/api/websocket` | Override the derived WebSocket URL when Home Assistant is exposed via a tunnel or reverse proxy. |
+| `HOME_ASSISTANT_TOKEN` | `<long-lived-access-token>` | Home Assistant long-lived access token used for WebSocket auth and REST hydration. |
+| `HOME_ASSISTANT_SENSOR_MAP` | `{"temperature":"sensor.vermilinks_temperature"}` | JSON or comma-separated mapping of VermiLinks sensor fields to Home Assistant `entity_id`s. Supports attribute lookups. |
+| `HOME_ASSISTANT_DEVICE_ID` | `vermilinks-homeassistant` | Device identifier attached to Home Assistant readings in the VermiLinks tables. |
+| `HOME_ASSISTANT_FLUSH_DEBOUNCE_MS` | `250` | (Optional) Debounce interval before persisting combined readings, allowing multiple entity updates to coalesce. |
+| `HOME_ASSISTANT_ALLOW_INSECURE_TLS` | `false` | Set to `true` only when using self-signed certificates and you explicitly trust the Home Assistant endpoint. |
+| `ALLOW_HOME_ASSISTANT_PUSH_WITHOUT_SOCKET` | `true` | Permit Home Assistant to push snapshots over REST even if the device is not connected via WebSocket. |
 
 ## Local Development
 

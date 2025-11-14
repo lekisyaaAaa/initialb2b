@@ -51,6 +51,14 @@ export interface SensorSummaryItem {
   timestamp?: string;
 }
 
+export interface LatestSnapshot {
+  temperature: number | null;
+  humidity: number | null;
+  soil_moisture: number | null;
+  float_state: number | null;
+  updated_at: string;
+}
+
 export interface DeviceSensorSummary {
   deviceId: string;
   deviceStatus: string;

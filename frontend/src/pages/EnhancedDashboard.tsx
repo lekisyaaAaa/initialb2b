@@ -166,7 +166,7 @@ const EnhancedDashboard: React.FC = () => {
 
               {/* Refresh Button */}
               <button
-                onClick={refreshSensors}
+                onClick={() => { void refreshSensors(); }}
                 disabled={isLoading}
                 className="p-2 text-coffee-400 dark:text-gray-400 hover:text-coffee-600 dark:hover:text-gray-200 disabled:opacity-50 transition-colors"
               >

@@ -33,7 +33,7 @@ const resolveHomeAssistantUrl = (): string => {
     return candidate;
   }
 
-  return 'https://homeassistant.local:8123';
+  return 'https://yvhqbpr07mrxznxn0azgwpnynntpvvpf.ui.nabu.casa';
 };
 
 const formatValue = (item: SensorSummaryItem): string => {
@@ -175,7 +175,7 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
 
       <footer className="mt-6 flex flex-col gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200 md:flex-row md:items-center md:justify-between">
         <div>
-          Looking for actuator controls? Those are now handled exclusively through Home Assistant.
+          Looking for actuator controls? Those are now handled exclusively through VermiLinks Actuators.
         </div>
         <a
           href={homeAssistantUrl}
@@ -183,7 +183,7 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
           rel="noreferrer"
           className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
         >
-          Open Home Assistant
+          Open VermiLinks Actuators
           <ExternalLink className="h-4 w-4" />
         </a>
       </footer>

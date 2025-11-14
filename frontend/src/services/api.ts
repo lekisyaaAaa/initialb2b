@@ -10,6 +10,7 @@ import {
   AlertStats,
   NotificationItem,
   DeviceSensorSummary,
+  LatestSnapshot,
 } from '../types';
 
 // Create axios instance with base configuration
@@ -224,10 +225,20 @@ export const sensorService = {
   }) =>
     api.get<PaginatedResponse<SensorData>>('/sensors/data', { params }),
   
-  getLatestData: (deviceId?: string) =>
-    api.get<ApiResponse<SensorData | SensorData[] | null>>('/sensors/latest', {
-      params: deviceId ? { deviceId } : undefined,
-    }),
+  getLatestData: async (deviceId?: string): Promise<LatestSnapshot | null> => {
+    try {
+      const response = await api.get<LatestSnapshot>('/sensors/latest', {
+        params: deviceId ? { deviceId } : undefined,
+        validateStatus: (status) => [200, 204].includes(status),
+      });
+      if (response.status === 204) {
+        return null;
+      }
+      return response.data ?? null;
+    } catch (error) {
+      throw error;
+    }
+  },
   
   getStats: (params?: {
     deviceId?: string;

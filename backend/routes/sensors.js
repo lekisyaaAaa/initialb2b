@@ -3,18 +3,20 @@ const { body, query, validationResult } = require('express-validator');
 const { Op } = require('sequelize');
 const NodeCache = require('node-cache');
 const SensorData = require('../models/SensorData');
-const Alert = require('../models/Alert');
-const Settings = require('../models/Settings');
 const Device = require('../models/Device');
+const SensorSnapshot = require('../models/SensorSnapshot');
 const deviceManager = require('../services/deviceManager');
-const { auth, optionalAuth } = require('../middleware/auth');
+const { auth } = require('../middleware/auth');
 const {
   toPlainObject,
   ensureIsoString,
   sanitizeSensorPayload,
-  sanitizeAlertPayload,
-  buildSensorSummary,
 } = require('../utils/sensorFormatting');
+const {
+  resolveIo,
+  broadcastSensorData,
+  checkThresholds,
+} = require('../utils/sensorEvents');
 
 const DEVICE_STATUS_TIMEOUT_MS = Math.max(
   2000,
@@ -29,345 +31,160 @@ const STALE_SENSOR_MAX_AGE_MS = Math.max(
 const router = express.Router();
 const sensorCache = new NodeCache({ stdTTL: 5, checkperiod: 2 });
 
-// Broadcast data to connected clients (native WebSocket + Socket.IO)
-const resolveIo = (app) => {
-  if (app && typeof app.get === 'function') {
-    const ioInstance = app.get('io');
-    if (ioInstance) {
-      return ioInstance;
-    }
+const allowHomeAssistantBypass = (process.env.ALLOW_HOME_ASSISTANT_PUSH_WITHOUT_SOCKET || '').toString().toLowerCase() === 'true';
+const homeAssistantDeviceId = (process.env.HOME_ASSISTANT_DEVICE_ID || process.env.PRIMARY_DEVICE_ID || 'vermilinks-homeassistant').trim();
+
+const formatLatestSnapshot = (snapshot) => {
+  if (!snapshot) {
+    return null;
   }
-  return global.io;
+  const toNumber = (value) => (value === null || value === undefined ? null : Number(value));
+  const timestamp = snapshot.timestamp || snapshot.updated_at || snapshot.created_at;
+  return {
+    temperature: toNumber(snapshot.temperature),
+    humidity: toNumber(snapshot.humidity),
+    soil_moisture: toNumber(snapshot.moisture ?? snapshot.soil_moisture),
+    float_state: snapshot.floatSensor !== undefined && snapshot.floatSensor !== null
+      ? Number(snapshot.floatSensor)
+      : (snapshot.float_state !== undefined && snapshot.float_state !== null ? Number(snapshot.float_state) : null),
+    updated_at: ensureIsoString(timestamp),
+  };
 };
 
-const broadcastSensorData = (data, ioInstance) => {
-  const payload = sanitizeSensorPayload(data, data && data.alerts ? data.alerts : []);
-  const summary = buildSensorSummary(payload);
-  payload.sensorSummary = summary;
-  payload.isStale = false;
-  payload.receivedAt = ensureIsoString(new Date());
-
-  if (global.wsConnections && global.wsConnections.size > 0) {
-    const message = JSON.stringify({
-      type: 'sensor_data',
-      data: payload
-    });
-
-    global.wsConnections.forEach((ws) => {
-      if (ws.readyState === 1) {
-        try {
-          ws.send(message);
-          if (Array.isArray(summary) && summary.length > 0) {
-            ws.send(JSON.stringify({
-              type: 'device_sensor_summary',
-              deviceId: payload.deviceId || null,
-              sensors: summary,
-              timestamp: payload.timestamp,
-            }));
-          }
-        } catch (error) {
-          console.error('WebSocket send error:', error);
-          global.wsConnections.delete(ws);
-        }
-      }
-    });
+const isDuplicateSnapshot = (existing, incomingTs, toleranceMs = 1000) => {
+  if (!existing || !existing.timestamp || !incomingTs) {
+    return false;
   }
-
-  const io = ioInstance || global.io;
-  if (io && typeof io.emit === 'function') {
-    try {
-      io.emit('sensor_update', payload);
-      // Support legacy clients listening on old event name.
-      io.emit('newSensorData', payload);
-      // New standardized event name for UI clients
-      io.emit('telemetry:update', payload);
-      if (Array.isArray(summary) && summary.length > 0) {
-        io.emit('device_sensor_update', {
-          deviceId: payload.deviceId || null,
-          sensors: summary,
-          timestamp: payload.timestamp,
-          isStale: false,
-        });
-      }
-    } catch (error) {
-      console.warn('Socket.IO emit failed for sensor_update:', error && error.message ? error.message : error);
-    }
+  const existingTs = new Date(existing.timestamp).getTime();
+  const incoming = new Date(incomingTs).getTime();
+  if (Number.isNaN(existingTs) || Number.isNaN(incoming)) {
+    return false;
   }
-
-  return payload;
+  return Math.abs(existingTs - incoming) <= toleranceMs;
 };
 
-// Helper function to check thresholds and create alerts
-const checkThresholds = async (sensorData, ioInstance) => {
+// @route   POST /api/sensors/ingest-ha
+// @desc    Accept dummy telemetry pushed from Home Assistant (REST)
+// @access  Public (secured by network-level access)
+router.post('/ingest-ha', [
+  body('temperature').optional({ nullable: true }).isNumeric().withMessage('temperature must be numeric'),
+  body('humidity').optional({ nullable: true }).isNumeric().withMessage('humidity must be numeric'),
+  body('soil_moisture').optional({ nullable: true }).isNumeric().withMessage('soil_moisture must be numeric'),
+  body('moisture').optional({ nullable: true }).isNumeric().withMessage('moisture must be numeric'),
+  body('float').optional({ nullable: true }).isInt({ min: 0, max: 1 }).withMessage('float must be 0 or 1'),
+  body('float_state').optional({ nullable: true }).isInt({ min: 0, max: 1 }).withMessage('float_state must be 0 or 1'),
+  body('timestamp').optional({ nullable: true }).isISO8601().withMessage('timestamp must be ISO8601 string'),
+  body('source').optional({ nullable: true }).isString().isLength({ min: 1, max: 120 }),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ success: false, message: 'Validation failed', errors: errors.array() });
+  }
+
+  const {
+    temperature,
+    humidity,
+    soil_moisture,
+    moisture,
+    float,
+    float_state: floatStateAlternative,
+    timestamp,
+    source,
+  } = req.body;
+
+  const resolvedMoisture = soil_moisture !== undefined ? soil_moisture : moisture;
+  const resolvedFloat = float !== undefined ? float : floatStateAlternative;
+
+  const hasReading = [temperature, humidity, resolvedMoisture, resolvedFloat]
+    .some((value) => value !== null && value !== undefined);
+
+  if (!hasReading) {
+    return res.status(400).json({ success: false, message: 'At least one metric is required' });
+  }
+
+  const effectiveTimestamp = timestamp ? new Date(timestamp) : new Date();
+  if (Number.isNaN(effectiveTimestamp.getTime())) {
+    return res.status(400).json({ success: false, message: 'Invalid timestamp' });
+  }
+
   try {
-    const plainSensor = toPlainObject(sensorData) || {};
-
-    // Guard: do not generate alerts for offline/imported/simulated data.
-    if (plainSensor.isOfflineData) {
-      return [];
-    }
-
-    // Guard: ensure the reading timestamp is recent (avoid triggering alerts
-    // from stale readings). Skip alerts for data older than 15 minutes.
-    try {
-      const rawTimestamp = plainSensor.timestamp || (sensorData && sensorData.timestamp);
-      const ts = rawTimestamp ? (rawTimestamp instanceof Date ? rawTimestamp : new Date(rawTimestamp)) : null;
-      if (ts && (Date.now() - ts.getTime() > 15 * 60 * 1000)) {
-        return [];
-      }
-    } catch (error) {
-      // Ignore timestamp parsing issues and continue.
-    }
-
-    const settings = await Settings.getSettings();
-    const thresholds = (settings && settings.thresholds) || {};
-    const sanitizedSensor = sanitizeSensorPayload(plainSensor, []);
-
-    const alertsToCreate = [];
-    const pushAlert = ({ type, severity, message, threshold }) => {
-      const sensorSnapshot = JSON.parse(JSON.stringify(sanitizedSensor));
-      alertsToCreate.push({
-        type,
-        severity,
-        message,
-        threshold: threshold || null,
-        deviceId: sanitizedSensor.deviceId || null,
-        sensorData: sensorSnapshot,
-        createdAt: new Date(),
-        status: 'new',
+    const existing = await SensorSnapshot.findByPk(homeAssistantDeviceId, { raw: true });
+    if (isDuplicateSnapshot(existing, effectiveTimestamp)) {
+      return res.status(200).json({
+        success: true,
+        duplicate: true,
+        message: 'Duplicate snapshot ignored',
+        data: formatLatestSnapshot(existing),
       });
+    }
+
+    await SensorSnapshot.upsert({
+      deviceId: homeAssistantDeviceId,
+      temperature: temperature !== undefined ? Number(temperature) : null,
+      humidity: humidity !== undefined ? Number(humidity) : null,
+      moisture: resolvedMoisture !== undefined ? Number(resolvedMoisture) : null,
+      floatSensor: resolvedFloat !== undefined && resolvedFloat !== null ? Number(resolvedFloat) : null,
+      timestamp: effectiveTimestamp,
+    });
+
+    const io = resolveIo(req.app);
+
+    let sensorData = null;
+    try {
+      sensorData = await SensorData.create({
+        deviceId: homeAssistantDeviceId,
+        temperature: temperature !== undefined ? Number(temperature) : null,
+        humidity: humidity !== undefined ? Number(humidity) : null,
+        moisture: resolvedMoisture !== undefined ? Number(resolvedMoisture) : null,
+        floatSensor: resolvedFloat !== undefined && resolvedFloat !== null ? Number(resolvedFloat) : null,
+        timestamp: effectiveTimestamp,
+      });
+
+      await SensorData.destroy({
+        where: {
+          deviceId: homeAssistantDeviceId,
+          id: { [Op.ne]: sensorData.id },
+        },
+      });
+    } catch (createError) {
+      console.warn('SensorData persistence for HA ingest failed (continuing):', createError?.message || createError);
+    }
+
+    const plainPayload = {
+      deviceId: homeAssistantDeviceId,
+      temperature: temperature !== undefined ? Number(temperature) : null,
+      humidity: humidity !== undefined ? Number(humidity) : null,
+      moisture: resolvedMoisture !== undefined ? Number(resolvedMoisture) : null,
+      floatSensor: resolvedFloat !== undefined && resolvedFloat !== null ? Number(resolvedFloat) : null,
+      timestamp: effectiveTimestamp,
+      source: source || 'home_assistant',
     };
 
-    const temperatureThresholds = thresholds.temperature || {};
-    if (typeof plainSensor.temperature === 'number') {
-      const { warning, critical } = temperatureThresholds;
-      if (typeof critical === 'number' && plainSensor.temperature > critical) {
-        pushAlert({
-          type: 'temperature',
-          severity: 'critical',
-          message: `Critical temperature: ${plainSensor.temperature}°C (threshold: ${critical}°C)`,
-          threshold: { value: critical, operator: '>' },
-        });
-      } else if (typeof warning === 'number' && plainSensor.temperature > warning) {
-        pushAlert({
-          type: 'temperature',
-          severity: 'high',
-          message: `High temperature: ${plainSensor.temperature}°C (threshold: ${warning}°C)`,
-          threshold: { value: warning, operator: '>' },
-        });
-      }
+    if (sensorData) {
+      plainPayload.id = sensorData.id;
     }
 
-    const humidityThresholds = thresholds.humidity || {};
-    if (typeof plainSensor.humidity === 'number') {
-      const { warning, critical } = humidityThresholds;
-      if (typeof critical === 'number' && plainSensor.humidity > critical) {
-        pushAlert({
-          type: 'humidity',
-          severity: 'critical',
-          message: `Critical humidity: ${plainSensor.humidity}% (threshold: ${critical}%)`,
-          threshold: { value: critical, operator: '>' },
-        });
-      } else if (typeof warning === 'number' && plainSensor.humidity > warning) {
-        pushAlert({
-          type: 'humidity',
-          severity: 'high',
-          message: `High humidity: ${plainSensor.humidity}% (threshold: ${warning}%)`,
-          threshold: { value: warning, operator: '>' },
-        });
-      }
-    }
+    checkThresholds(plainPayload, io).catch(() => null);
+    broadcastSensorData(plainPayload, io);
 
-    const moistureThresholds = thresholds.moisture || {};
-    if (typeof plainSensor.moisture === 'number') {
-      const { warning, critical } = moistureThresholds;
-      if (typeof critical === 'number' && plainSensor.moisture < critical) {
-        pushAlert({
-          type: 'moisture',
-          severity: 'critical',
-          message: `Critical low moisture: ${plainSensor.moisture}% (threshold: ${critical}%)`,
-          threshold: { value: critical, operator: '<' },
-        });
-      } else if (typeof warning === 'number' && plainSensor.moisture < warning) {
-        pushAlert({
-          type: 'moisture',
-          severity: 'medium',
-          message: `Low moisture: ${plainSensor.moisture}% (threshold: ${warning}%)`,
-          threshold: { value: warning, operator: '<' },
-        });
-      }
-    }
+    sensorCache.del('latest:all');
+    sensorCache.del(`latest:${homeAssistantDeviceId}`);
 
-    const phThresholds = thresholds.ph || {};
-    if (typeof plainSensor.ph === 'number') {
-      const { minCritical, maxCritical, minWarning, maxWarning } = phThresholds;
-      if ((typeof minCritical === 'number' && plainSensor.ph < minCritical) ||
-          (typeof maxCritical === 'number' && plainSensor.ph > maxCritical)) {
-        pushAlert({
-          type: 'ph',
-          severity: 'critical',
-          message: `Critical pH level: ${plainSensor.ph} (threshold: ${minCritical}-${maxCritical})`,
-          threshold: { value: [minCritical, maxCritical], operator: 'outside' },
-        });
-      } else if ((typeof minWarning === 'number' && plainSensor.ph < minWarning) ||
-                 (typeof maxWarning === 'number' && plainSensor.ph > maxWarning)) {
-        pushAlert({
-          type: 'ph',
-          severity: 'high',
-          message: `Warning pH level: ${plainSensor.ph} (threshold: ${minWarning}-${maxWarning})`,
-          threshold: { value: [minWarning, maxWarning], operator: 'outside' },
-        });
-      }
-    }
-
-    const ecThresholds = thresholds.ec || {};
-    if (typeof plainSensor.ec === 'number') {
-      const { warning, critical } = ecThresholds;
-      if (typeof critical === 'number' && plainSensor.ec > critical) {
-        pushAlert({
-          type: 'ec',
-          severity: 'critical',
-          message: `Critical EC level: ${plainSensor.ec} mS/cm (threshold: ${critical} mS/cm)`,
-          threshold: { value: critical, operator: '>' },
-        });
-      } else if (typeof warning === 'number' && plainSensor.ec > warning) {
-        pushAlert({
-          type: 'ec',
-          severity: 'high',
-          message: `High EC level: ${plainSensor.ec} mS/cm (threshold: ${warning} mS/cm)`,
-          threshold: { value: warning, operator: '>' },
-        });
-      }
-    }
-
-    const nitrogenThresholds = thresholds.nitrogen || {};
-    if (typeof plainSensor.nitrogen === 'number') {
-      const { minWarning, minCritical } = nitrogenThresholds;
-      if (typeof minCritical === 'number' && plainSensor.nitrogen < minCritical) {
-        pushAlert({
-          type: 'nitrogen',
-          severity: 'critical',
-          message: `Critical low nitrogen: ${plainSensor.nitrogen} mg/kg (threshold: ${minCritical} mg/kg)`,
-          threshold: { value: minCritical, operator: '<' },
-        });
-      } else if (typeof minWarning === 'number' && plainSensor.nitrogen < minWarning) {
-        pushAlert({
-          type: 'nitrogen',
-          severity: 'medium',
-          message: `Low nitrogen: ${plainSensor.nitrogen} mg/kg (threshold: ${minWarning} mg/kg)`,
-          threshold: { value: minWarning, operator: '<' },
-        });
-      }
-    }
-
-    const phosphorusThresholds = thresholds.phosphorus || {};
-    if (typeof plainSensor.phosphorus === 'number') {
-      const { minWarning, minCritical } = phosphorusThresholds;
-      if (typeof minCritical === 'number' && plainSensor.phosphorus < minCritical) {
-        pushAlert({
-          type: 'phosphorus',
-          severity: 'critical',
-          message: `Critical low phosphorus: ${plainSensor.phosphorus} mg/kg (threshold: ${minCritical} mg/kg)`,
-          threshold: { value: minCritical, operator: '<' },
-        });
-      } else if (typeof minWarning === 'number' && plainSensor.phosphorus < minWarning) {
-        pushAlert({
-          type: 'phosphorus',
-          severity: 'medium',
-          message: `Low phosphorus: ${plainSensor.phosphorus} mg/kg (threshold: ${minWarning} mg/kg)`,
-          threshold: { value: minWarning, operator: '<' },
-        });
-      }
-    }
-
-    const potassiumThresholds = thresholds.potassium || {};
-    if (typeof plainSensor.potassium === 'number') {
-      const { minWarning, minCritical } = potassiumThresholds;
-      if (typeof minCritical === 'number' && plainSensor.potassium < minCritical) {
-        pushAlert({
-          type: 'potassium',
-          severity: 'critical',
-          message: `Critical low potassium: ${plainSensor.potassium} mg/kg (threshold: ${minCritical} mg/kg)`,
-          threshold: { value: minCritical, operator: '<' },
-        });
-      } else if (typeof minWarning === 'number' && plainSensor.potassium < minWarning) {
-        pushAlert({
-          type: 'potassium',
-          severity: 'medium',
-          message: `Low potassium: ${plainSensor.potassium} mg/kg (threshold: ${minWarning} mg/kg)`,
-          threshold: { value: minWarning, operator: '<' },
-        });
-      }
-    }
-
-    const waterLevelThresholds = thresholds.waterLevel || {};
-    if (plainSensor.waterLevel !== undefined) {
-      const { critical } = waterLevelThresholds;
-      if (critical !== undefined && plainSensor.waterLevel === critical) {
-        pushAlert({
-          type: 'water_level',
-          severity: 'critical',
-          message: 'Critical water level: No water detected',
-          threshold: { value: critical, operator: '==' },
-        });
-      }
-    }
-
-    const batteryThresholds = thresholds.batteryLevel || {};
-    if (typeof plainSensor.batteryLevel === 'number') {
-      const { warning, critical } = batteryThresholds;
-      if (typeof critical === 'number' && plainSensor.batteryLevel < critical) {
-        pushAlert({
-          type: 'battery_low',
-          severity: 'critical',
-          message: `Critical battery level: ${plainSensor.batteryLevel}% (threshold: ${critical}%)`,
-          threshold: { value: critical, operator: '<' },
-        });
-      } else if (typeof warning === 'number' && plainSensor.batteryLevel < warning) {
-        pushAlert({
-          type: 'battery_low',
-          severity: 'medium',
-          message: `Low battery level: ${plainSensor.batteryLevel}% (threshold: ${warning}%)`,
-          threshold: { value: warning, operator: '<' },
-        });
-      }
-    }
-
-    if (alertsToCreate.length === 0) {
-      return [];
-    }
-
-    const persistedAlerts = [];
-    for (const alertData of alertsToCreate) {
-      const created = await Alert.createAlert(alertData);
-      const createdPlain = toPlainObject(created) || {};
-      persistedAlerts.push(
-        sanitizeAlertPayload({
-          ...alertData,
-          ...createdPlain,
-          sensorData: alertData.sensorData,
-        })
-      );
-    }
-
-    // Notify clients that alerts were created
-    try {
-      const io = ioInstance || global.io;
-      if (persistedAlerts.length > 0 && io && typeof io.emit === 'function') {
-        const first = persistedAlerts[0] || {};
-        const devId = first.deviceId || sanitizedSensor.deviceId || plainSensor.deviceId || null;
-        io.emit('alert:trigger', { deviceId: devId, alerts: persistedAlerts });
-      }
-    } catch (e) {
-      // ignore emit errors
-    }
-
-    return persistedAlerts;
+    return res.status(201).json({
+      success: true,
+      data: formatLatestSnapshot({
+        temperature: plainPayload.temperature,
+        humidity: plainPayload.humidity,
+        moisture: plainPayload.moisture,
+        floatSensor: plainPayload.floatSensor,
+        timestamp: plainPayload.timestamp,
+      }),
+    });
   } catch (error) {
-    console.error('Error checking thresholds:', error);
-    return [];
+    console.error('Home Assistant ingest failed:', error);
+    return res.status(500).json({ success: false, message: 'Failed to ingest Home Assistant snapshot' });
   }
-};
+});
 
 // @route   POST /api/sensors
 // @desc    Submit sensor data (from ESP32)
@@ -395,7 +212,7 @@ router.post('/', [
       return res.status(400).json({
         success: false,
         message: 'Validation failed',
-        errors: errors.array()
+        errors: errors.array(),
       });
     }
 
@@ -445,7 +262,7 @@ router.post('/', [
     if (!device || device.status !== 'online') {
       try {
         // Auto-register devices that skipped the heartbeat flow so readings are not discarded.
-  device = await deviceManager.markDeviceOnline(normalizedDeviceId, {
+        device = await deviceManager.markDeviceOnline(normalizedDeviceId, {
           autoRegisteredAt: new Date().toISOString(),
           source: 'sensor_post_auto_register'
         });
@@ -453,14 +270,14 @@ router.post('/', [
         console.warn('Failed to auto-register device from sensor data:', error && error.message ? error.message : error);
       }
 
-      if (!device || device.status !== 'online') {
+      if ((!device || device.status !== 'online') && !allowHomeAssistantBypass) {
         // Reject data from unknown or offline devices if auto-registration still failed
         return res.status(403).json({ success: false, message: 'Device not registered or not online' });
       }
     }
 
     // Enforce recent timestamp (avoid stale readings). Accept readings no older than 5 seconds
-  const ts = timestamp ? new Date(timestamp) : new Date();
+    const ts = timestamp ? new Date(timestamp) : new Date();
     if (Math.abs(Date.now() - ts.getTime()) > 5 * 1000) {
       // If the data is older than 5s, drop it to avoid false alerts from delayed sources
       return res.status(400).json({ success: false, message: 'Stale reading - rejected' });
@@ -481,14 +298,23 @@ router.post('/', [
       potassium: potassium !== undefined ? parseFloat(potassium) : undefined,
       waterLevel: waterLevel !== undefined ? parseInt(waterLevel, 10) : (typeof floatSensor === 'number' ? floatSensor : undefined),
       floatSensor: typeof floatSensor === 'number' ? floatSensor : undefined,
-      timestamp: timestamp ? new Date(timestamp) : new Date(),
+      timestamp: ts,
       batteryLevel: batteryLevel !== undefined ? parseFloat(batteryLevel) : undefined,
       signalStrength: signalStrength !== undefined ? parseFloat(signalStrength) : undefined,
       isOfflineData
     });
 
     // Respond quickly — process alerts and broadcast asynchronously to avoid blocking or failing the request
-  const plain = sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData);
+    const plain = sensorData && typeof sensorData.get === 'function' ? sensorData.get({ plain: true }) : (sensorData && typeof sensorData.toObject === 'function' ? sensorData.toObject() : sensorData);
+
+    await SensorSnapshot.upsert({
+      deviceId: normalizedDeviceId,
+      temperature: temperature !== undefined ? parseFloat(temperature) : null,
+      humidity: humidity !== undefined ? parseFloat(humidity) : null,
+      moisture: soilMoisture !== undefined ? parseFloat(soilMoisture) : null,
+      floatSensor: typeof floatSensor === 'number' ? floatSensor : null,
+      timestamp: ts,
+    });
 
   // Fire-and-forget alerts and broadcast (only for live data). We still mark the device online via deviceManager
   const metadataUpdate = Object.assign(
@@ -622,21 +448,51 @@ router.get('/latest', async (req, res) => {
     const cacheKey = deviceId ? `latest:${deviceId}` : 'latest:all';
     const cached = sensorCache.get(cacheKey);
     if (cached !== undefined) {
-      return res.json({ ok: true, data: cached });
+      if (cached === null) {
+        return res.status(204).send();
+      }
+      return res.json(cached);
     }
 
-    const where = {};
+    let formatted = null;
+
     if (deviceId) {
-      where.deviceId = deviceId;
+      const snapshot = await SensorSnapshot.findByPk(deviceId, { raw: true });
+      if (snapshot) {
+        formatted = formatLatestSnapshot(snapshot);
+      }
+    } else {
+      const snapshot = await SensorSnapshot.findOne({ order: [['timestamp', 'DESC']], raw: true });
+      if (snapshot) {
+        formatted = formatLatestSnapshot(snapshot);
+      }
     }
 
-    const latest = await SensorData.findOne({ where, order: [['timestamp', 'DESC']], raw: true });
-    const payload = latest ? sanitizeSensorPayload(latest, []) : null;
-    sensorCache.set(cacheKey, payload || null);
-    return res.json({ ok: true, data: payload || null });
+    if (!formatted) {
+      const where = {};
+      if (deviceId) {
+        where.deviceId = deviceId;
+      }
+      const latest = await SensorData.findOne({ where, order: [['timestamp', 'DESC']], raw: true });
+      formatted = latest ? formatLatestSnapshot({
+        temperature: latest.temperature,
+        humidity: latest.humidity,
+        moisture: latest.moisture,
+        floatSensor: latest.floatSensor,
+        timestamp: latest.timestamp,
+      }) : null;
+    }
+
+    sensorCache.set(cacheKey, formatted || null);
+
+    if (!formatted) {
+      return res.status(204).send();
+    }
+
+    return res.json(formatted);
   } catch (error) {
     console.error('GET /api/sensors/latest err', error);
-    return res.status(500).json({ ok: false, error: 'server_error' });
+    return res.status(500).json({ error: 'server_error' });
   }
 });
 

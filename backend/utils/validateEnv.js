@@ -7,7 +7,6 @@ const requiredKeys = [
   'SMTP_PORT',
   'EMAIL_FROM',
   'CORS_ORIGINS',
-  'ESP32_URL',
 ];
 
 const alternateKeys = {

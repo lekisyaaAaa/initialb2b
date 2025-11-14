@@ -58,8 +58,8 @@ interface DataContextType {
   isLoading: boolean;
   lastFetchAt: string | null;
   lastFetchError: string | null;
-  refreshTelemetry: () => Promise<void>;
-  refreshSensors: () => Promise<void>;
+  refreshTelemetry: (options?: { background?: boolean }) => Promise<void>;
+  refreshSensors: (options?: { background?: boolean }) => Promise<void>;
   refreshAlerts: () => Promise<void>;
   clearAlerts: () => Promise<void>;
   clearLastFetchError: () => void;
@@ -113,6 +113,8 @@ const backendBaseFromApi = () => {
   return current.replace(/\/?api$/i, '');
 };
 
+const socketsEnabled = (process.env.REACT_APP_ENABLE_SOCKETS || '').toString().toLowerCase() === 'true';
+
 export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const [latestTelemetry, setLatestTelemetry] = useState<SensorData | null>(null);
   const [latestSensorData, setLatestSensorData] = useState<SensorData[]>([]);
@@ -126,6 +128,10 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const [lastFetchAt, setLastFetchAt] = useState<string | null>(null);
   const [lastFetchError, setLastFetchError] = useState<string | null>(null);
   const backendBaseRef = useRef<string>('');
+  const parsedPollInterval = Number(process.env.REACT_APP_SENSOR_POLL_INTERVAL_MS || '5000');
+  const pollIntervalMs = Number.isFinite(parsedPollInterval) && parsedPollInterval > 0
+    ? parsedPollInterval
+    : 5000;
 
   const ensureBackendBase = useCallback(async () => {
     if (backendBaseRef.current) return backendBaseRef.current;
@@ -256,41 +262,57 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     return normalized;
   }, [mergeDeviceStatus]);
 
-  const refreshTelemetry = useCallback(async () => {
-    setIsLoading(true);
-    setLastFetchError(null);
+  const refreshTelemetry = useCallback(async (options?: { background?: boolean }) => {
+    const background = Boolean(options?.background);
+    if (!background) {
+      setIsLoading(true);
+      setLastFetchError(null);
+    }
     try {
       await ensureBackendBase();
-      const response = await sensorService.getLatestData();
-      const root = response?.data;
-      const payload = (root?.data ?? root ?? null) as SensorData | SensorData[] | null;
-      const readings: SensorData[] = Array.isArray(payload)
-        ? payload as SensorData[]
-        : payload && typeof payload === 'object'
-          ? [payload as SensorData]
-          : [];
+      const snapshot = await sensorService.getLatestData();
+      const resolvedDeviceId = 'vermilinks-homeassistant';
+      const reading: SensorData | null = snapshot
+        ? {
+            deviceId: resolvedDeviceId,
+            temperature: snapshot.temperature === null ? undefined : snapshot.temperature,
+            humidity: snapshot.humidity === null ? undefined : snapshot.humidity,
+            moisture: snapshot.soil_moisture === null ? undefined : snapshot.soil_moisture,
+            floatSensor: snapshot.float_state === null ? null : snapshot.float_state,
+            timestamp: snapshot.updated_at,
+            isOfflineData: false,
+            deviceOnline: true,
+          }
+        : null;
 
-      if (readings.length > 0) {
-        handleTelemetryPayload(readings[0], { updateLatestList: false });
-        setLatestSensorData(readings);
-      } else {
+      if (reading) {
+        handleTelemetryPayload(reading, { updateLatestList: false });
+        setLatestSensorData([reading]);
+      } else if (!background) {
         setLatestTelemetry(null);
         setLatestSensorData([]);
         setIsConnected(false);
       }
+      if (!background) {
+        setLastFetchError(null);
+      }
     } catch (error: any) {
       setLastFetchError(error?.message || 'Unable to load telemetry');
-      setLatestTelemetry(null);
-      setLatestSensorData([]);
-      setIsConnected(false);
-      throw error;
+      if (!background) {
+        setLatestTelemetry(null);
+        setLatestSensorData([]);
+        setIsConnected(false);
+        throw error;
+      }
     } finally {
-      setIsLoading(false);
+      if (!background) {
+        setIsLoading(false);
+      }
     }
   }, [ensureBackendBase, handleTelemetryPayload]);
 
-  const refreshSensors = useCallback(async () => {
-    await refreshTelemetry();
+  const refreshSensors = useCallback(async (options?: { background?: boolean }) => {
+    await refreshTelemetry(options);
   }, [refreshTelemetry]);
 
   useEffect(() => {
@@ -328,6 +350,22 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   }, [ensureBackendBase, mergeDeviceStatus, refreshAlerts, refreshTelemetry]);
 
   useEffect(() => {
+    if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) {
+      return;
+    }
+    const timer = setInterval(() => {
+      refreshTelemetry({ background: true }).catch(() => null);
+    }, pollIntervalMs);
+    return () => {
+      clearInterval(timer);
+    };
+  }, [pollIntervalMs, refreshTelemetry]);
+
+  useEffect(() => {
+    if (!socketsEnabled) {
+      return;
+    }
+
     const socket = getSocket();
     if (!socket) {
       return;
