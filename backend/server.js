@@ -455,6 +455,21 @@ const integrationRoutes = require('./routes/integrations');
 app.use('/api/integrations', integrationRoutes);
 const deviceEventsRoutes = require('./routes/deviceEvents');
 app.use('/api/device-events', deviceEventsRoutes);
+// RS485 telemetry fallback
+try {
+  const rs485Routes = require('./routes/rs485');
+  app.use('/api/rs485', sensorRateLimiter, rs485Routes);
+} catch (e) {
+  logger && logger.warn && logger.warn('RS485 routes not available:', e && e.message ? e.message : e);
+}
+
+// Actuator override endpoints (admin)
+try {
+  const actuatorOverrides = require('./routes/actuatorOverrides');
+  app.use('/api/actuators', actuatorOverrides);
+} catch (e) {
+  logger && logger.warn && logger.warn('Actuator override routes not available:', e && e.message ? e.message : e);
+}
 
 // Serve frontend production build if available (useful in local dev)
 try {
