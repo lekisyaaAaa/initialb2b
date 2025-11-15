@@ -98,3 +98,9 @@ tmp*
 .env.local
 .env
 *.log
+
+# Local DB artifacts (untracked local dev DBs)
+/backend/*.sqlite
+/backend/dev.sqlite
+/data/
+/data/*.sqlite
