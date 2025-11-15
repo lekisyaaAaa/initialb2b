@@ -192,3 +192,6 @@ module.exports = {
   _client: () => client,
   handleMessage,
 };
+
+// Export internals for testing
+module.exports._deviceThrottle = deviceThrottle;
