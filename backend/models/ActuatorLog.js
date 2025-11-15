@@ -36,6 +36,7 @@ const ActuatorLog = sequelize.define('ActuatorLog', {
 }, {
   tableName: 'actuator_logs',
   timestamps: false,
+  underscored: true,
 });
 
 module.exports = ActuatorLog;

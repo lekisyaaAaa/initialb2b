@@ -40,6 +40,7 @@ const Actuator = sequelize.define('Actuator', {
 }, {
   tableName: 'actuators',
   timestamps: false,
+  underscored: true,
 });
 
 module.exports = Actuator;

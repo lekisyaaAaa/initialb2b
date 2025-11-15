@@ -47,6 +47,6 @@ import App from './App';
 test('renders application shell header', () => {
   render(<App />);
 
-  expect(screen.getByText(/Environmental Monitoring System/i)).toBeInTheDocument();
+  expect(screen.getByText(/VermiLinks/i)).toBeInTheDocument();
   expect(screen.getByRole('link', { name: /Contact/i })).toBeInTheDocument();
 });

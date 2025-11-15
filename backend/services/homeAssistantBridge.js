@@ -1,8 +1,10 @@
 const WebSocket = require('ws');
 const axios = require('axios');
+const { Op } = require('sequelize');
 
 const logger = require('../utils/logger');
 const SensorData = require('../models/SensorData');
+const SensorSnapshot = require('../models/SensorSnapshot');
 const { toPlainObject } = require('../utils/sensorFormatting');
 const { resolveIo, broadcastSensorData, checkThresholds } = require('../utils/sensorEvents');
 const deviceManager = require('./deviceManager');
@@ -44,6 +46,8 @@ function resolveFieldName(field) {
 const DEFAULT_DEBOUNCE_MS = Math.max(50, parseInt(process.env.HOME_ASSISTANT_FLUSH_DEBOUNCE_MS || '250', 10));
 const MAX_BACKOFF_MS = Math.max(1000, parseInt(process.env.HOME_ASSISTANT_MAX_BACKOFF_MS || '60000', 10));
 const STARTUP_DELAY_MS = Math.max(0, parseInt(process.env.HOME_ASSISTANT_START_DELAY_MS || '0', 10));
+const historyDays = Number.parseInt(process.env.HOME_ASSISTANT_HISTORY_DAYS || process.env.HA_HISTORY_RETENTION_DAYS || '7', 10);
+const HISTORY_MS = Math.max(1, historyDays || 7) * 24 * 60 * 60 * 1000;
 
 let state = {
   config: null,
@@ -60,6 +64,9 @@ let state = {
   messageId: 1,
   lastSnapshotSignature: null,
   hydrating: false,
+  lastConnectAt: null,
+  lastDisconnectAt: null,
+  lastErrorMessage: null,
 };
 
 const defaultBooleanStrings = {
@@ -461,6 +468,8 @@ async function flushSnapshot() {
   }
 
   if (!hasRealReading(snapshot)) {
+  const timestamp = snapshot.timestamp instanceof Date ? snapshot.timestamp : new Date(snapshot.timestamp);
+
     logger.debug('[HA Bridge] Ignoring snapshot without real telemetry');
     return;
   }
@@ -479,8 +488,27 @@ async function flushSnapshot() {
     record = await SensorData.create({
       ...snapshot,
       isOfflineData: false,
+      source: 'home_assistant_bridge',
+      rawPayload: null,
     });
     state.lastSnapshotSignature = signature;
+    await SensorSnapshot.upsert({
+      deviceId: snapshot.deviceId,
+      temperature: typeof snapshot.temperature === 'number' ? snapshot.temperature : null,
+      humidity: typeof snapshot.humidity === 'number' ? snapshot.humidity : null,
+      moisture: typeof snapshot.moisture === 'number' ? snapshot.moisture : null,
+      ph: typeof snapshot.ph === 'number' ? snapshot.ph : null,
+      ec: typeof snapshot.ec === 'number' ? snapshot.ec : null,
+      nitrogen: typeof snapshot.nitrogen === 'number' ? snapshot.nitrogen : null,
+      phosphorus: typeof snapshot.phosphorus === 'number' ? snapshot.phosphorus : null,
+      potassium: typeof snapshot.potassium === 'number' ? snapshot.potassium : null,
+      waterLevel: typeof snapshot.waterLevel === 'number' ? snapshot.waterLevel : null,
+      floatSensor: typeof snapshot.floatSensor === 'number' ? snapshot.floatSensor : null,
+      batteryLevel: typeof snapshot.batteryLevel === 'number' ? snapshot.batteryLevel : null,
+      signalStrength: typeof snapshot.signalStrength === 'number' ? snapshot.signalStrength : null,
+      timestamp,
+    });
+    pruneHistory(snapshot.deviceId).catch(() => null);
   } catch (error) {
     logger.error('[HA Bridge] Failed to persist sensor data', error && error.message ? error.message : error, snapshot);
     return;
@@ -703,18 +731,24 @@ function connect() {
   state.ws.on('open', () => {
     logger.info('[HA Bridge] WebSocket connection established');
     state.connectionAttempts = 0;
+    state.lastConnectAt = new Date().toISOString();
+    state.lastErrorMessage = null;
   });
 
   state.ws.on('message', handleWsMessage);
 
   state.ws.on('close', (code, reason) => {
     logger.warn('[HA Bridge] WebSocket closed', code, reason ? reason.toString() : '');
+    state.lastDisconnectAt = new Date().toISOString();
+    state.lastErrorMessage = reason ? reason.toString() : state.lastErrorMessage;
     cleanupConnection();
     scheduleReconnect('socket closed');
   });
 
   state.ws.on('error', (error) => {
     logger.error('[HA Bridge] WebSocket error', error && error.message ? error.message : error);
+    state.lastDisconnectAt = new Date().toISOString();
+    state.lastErrorMessage = error && error.message ? error.message : 'socket error';
     cleanupConnection();
     scheduleReconnect(error && error.message ? error.message : 'socket error');
   });
@@ -737,6 +771,9 @@ function initializeState(config) {
     messageId: 1,
     lastSnapshotSignature: null,
     hydrating: false,
+    lastConnectAt: null,
+    lastDisconnectAt: null,
+    lastErrorMessage: null,
   };
 
   config.sensorConfigs.forEach((cfg) => {
@@ -828,9 +865,55 @@ async function stop() {
   state.started = false;
 }
 
+function collectMappedFields(sourceConfig) {
+  const fields = new Set();
+  if (state.entityConfig && state.entityConfig.size > 0) {
+    state.entityConfig.forEach((configs) => {
+      configs.forEach((cfg) => fields.add(cfg.field));
+    });
+  } else if (sourceConfig && Array.isArray(sourceConfig.sensorConfigs)) {
+    sourceConfig.sensorConfigs.forEach((cfg) => {
+      if (cfg && cfg.field) {
+        fields.add(cfg.field);
+      }
+    });
+  }
+  return fields;
+}
+
+function getStatus() {
+  const config = state.config || buildConfig();
+  const mappedFields = collectMappedFields(config);
+  const connected = Boolean(state.ws && state.ws.readyState === WebSocket.OPEN);
+  const timestamp = new Date().toISOString();
+
+  return {
+    timestamp,
+    enabled: Boolean(config && config.enabled),
+    configured: Boolean(config && config.wsUrl && config.token && mappedFields.size > 0),
+    started: Boolean(state.started),
+    connected,
+    reconnectScheduled: Boolean(state.reconnectTimer),
+    hydrating: Boolean(state.hydrating),
+    pendingFlush: Boolean(state.flushTimer),
+    websocketUrl: config && config.wsUrl ? config.wsUrl : null,
+    restBaseUrl: config && config.restBaseUrl ? config.restBaseUrl : null,
+    deviceId: config && config.deviceId ? config.deviceId : null,
+    allowInsecureTls: Boolean(config && config.allowInsecureTls),
+    connectionAttempts: state.connectionAttempts,
+    latestEventTimestamp: state.latestEventTimestamp,
+    lastConnectAt: state.lastConnectAt,
+    lastDisconnectAt: state.lastDisconnectAt,
+    lastErrorMessage: state.lastErrorMessage,
+    mappedFields: Array.from(mappedFields),
+    entityCount: state.entityConfig ? state.entityConfig.size : mappedFields.size,
+  };
+}
+
 module.exports = {
   start,
   stop,
+  getStatus,
   _internal: {
     buildConfig,
     collectSensorConfigs,
@@ -839,3 +922,20 @@ module.exports = {
     hasMeaningfulChange,
   },
 };
+
+async function pruneHistory(deviceId) {
+  if (!deviceId) {
+    return;
+  }
+  try {
+    const cutoff = new Date(Date.now() - HISTORY_MS);
+    await SensorData.destroy({
+      where: {
+        deviceId,
+        timestamp: { [Op.lt]: cutoff },
+      },
+    }).catch(() => {});
+  } catch (error) {
+    logger.warn('[HA Bridge] History prune failed', error && error.message ? error.message : error);
+  }
+}

@@ -23,7 +23,8 @@ const Device = sequelize.define('Device', {
   }
 }, {
   tableName: 'devices',
-  timestamps: false
+  timestamps: false,
+  underscored: true
 });
 
 module.exports = Device;

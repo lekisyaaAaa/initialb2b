@@ -5,16 +5,17 @@ import { createPortal } from 'react-dom';
 import { Bell, Check, Settings, Activity, Users, BarChart3, Calendar, RefreshCw } from 'lucide-react';
 import SensorCharts from '../components/SensorCharts';
 import SystemHealth from '../components/SystemHealth';
-import SensorCard from '../components/SensorCard';
 import DarkModeToggle from '../components/DarkModeToggle';
 import HeaderFrame from '../components/layout/HeaderFrame';
 import SensorSummaryPanel from '../components/SensorSummaryPanel';
 import { DeviceManagement } from '../components/DeviceManagement';
 import { useAuth } from '../contexts/AuthContext';
+import { useData } from '../contexts/DataContext';
 import weatherService from '../services/weatherService';
 import api, { alertService, sensorService } from '../services/api';
-import { LatestSnapshot } from '../types';
+import { LatestSnapshot, SensorData as SensorDataType } from '../types';
 import { socket as sharedSocket } from '../socket';
+import RealtimeTelemetryPanel from '../components/RealtimeTelemetryPanel';
 
 type Sensor = {
   id: string;
@@ -28,9 +29,11 @@ type Sensor = {
   npk?: { n?: number; p?: number; k?: number } | null;
   waterLevel?: number | null;
   batteryLevel?: number | null;
+  signalStrength?: number | null;
   lastSeen?: string | null;
   deviceOnline?: boolean;
   deviceStatus?: string | null;
+  timestamp?: string | null;
 };
 
 type Alert = { id: string; _id?: string; type?: string; title: string; severity: 'info' | 'warning' | 'critical'; message?: string; createdAt: string; acknowledged?: boolean };
@@ -45,6 +48,42 @@ type DeviceSummary = {
 type StatusPillProps = { label: string; status: string };
 
 const SENSOR_STALE_THRESHOLD_MS = 60_000;
+
+const mapSensorDataToSensor = (reading: Partial<SensorDataType> | null | undefined, fallbackId = 'vermilinks-homeassistant'): Sensor | null => {
+  if (!reading) {
+    return null;
+  }
+  const toNumber = (value: unknown): number | null => {
+    if (value === null || value === undefined) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const timestamp = reading.timestamp ? new Date(reading.timestamp).toISOString() : null;
+  const npkValues = {
+    n: toNumber(reading.nitrogen) ?? undefined,
+    p: toNumber(reading.phosphorus) ?? undefined,
+    k: toNumber(reading.potassium) ?? undefined,
+  };
+  const hasNpk = npkValues.n !== undefined || npkValues.p !== undefined || npkValues.k !== undefined;
+
+  return {
+    id: (reading.deviceId || fallbackId || 'home-assistant').toString(),
+    name: 'Home Assistant Feed',
+    deviceId: (reading.deviceId || fallbackId || 'home-assistant').toString(),
+    temperature: toNumber(reading.temperature),
+    humidity: toNumber(reading.humidity),
+    moisture: toNumber(reading.moisture),
+    ph: toNumber(reading.ph),
+    ec: toNumber(reading.ec),
+    npk: hasNpk ? npkValues : null,
+    waterLevel: toNumber(reading.waterLevel ?? reading.floatSensor),
+    batteryLevel: toNumber(reading.batteryLevel),
+    lastSeen: timestamp,
+    deviceOnline: reading.deviceOnline ?? true,
+    deviceStatus: reading.deviceStatus ?? 'online',
+    timestamp,
+  };
+};
 
 const StatusPill: React.FC<StatusPillProps> = ({ label, status }) => {
   const normalized = (status ?? '').toString().toLowerCase();
@@ -65,6 +104,12 @@ const StatusPill: React.FC<StatusPillProps> = ({ label, status }) => {
 
 export default function AdminDashboard(): React.ReactElement {
   const { user, logout } = useAuth();
+  const {
+    latestTelemetry: ctxTelemetry,
+    latestSensorData: ctxSensorBuffer,
+    isConnected: socketsConnected,
+    refreshTelemetry: refreshLiveTelemetry,
+  } = useData();
   const [latestSensor, setLatestSensor] = useState<Sensor | null>(null);
   const [sensorHistory, setSensorHistory] = useState<Sensor[]>([]);
   const cardClass = 'p-4 rounded-xl bg-white dark:bg-gray-900/80 border border-gray-100 dark:border-gray-800 shadow';
@@ -93,6 +138,7 @@ export default function AdminDashboard(): React.ReactElement {
   const [alertsActionMessage, setAlertsActionMessage] = useState<string | null>(null);
   const [alertsActionError, setAlertsActionError] = useState<string | null>(null);
   const [acknowledgingAlertId, setAcknowledgingAlertId] = useState<string | null>(null);
+  const [realtimeRefreshing, setRealtimeRefreshing] = useState(false);
 
   const classifySeverity = useCallback((value: unknown): 'critical' | 'warning' | 'info' => {
     const normalized = (value || '').toString().toLowerCase();
@@ -331,6 +377,20 @@ export default function AdminDashboard(): React.ReactElement {
     }
   }, [loadLatestAlerts]);
 
+  const handleRealtimeRefresh = useCallback(async () => {
+    if (!refreshLiveTelemetry) {
+      return;
+    }
+    setRealtimeRefreshing(true);
+    try {
+      await refreshLiveTelemetry({ background: false });
+    } catch (error) {
+      // Ignore errors; fallback polling will retry
+    } finally {
+      setRealtimeRefreshing(false);
+    }
+  }, [refreshLiveTelemetry]);
+
   const handleRefreshActiveAlerts = useCallback(() => {
     loadLatestAlerts({ showLoader: true });
   }, [loadLatestAlerts]);
@@ -504,34 +564,29 @@ export default function AdminDashboard(): React.ReactElement {
     // also fetch initial history for charts
     (async function loadHistory() {
       try {
-        const h = await fetch('/api/sensors/history?limit=200');
-        if (h.ok) {
-          const body = await h.json().catch(() => ({}));
-          const items = Array.isArray(body.data?.sensorData) ? body.data.sensorData : (Array.isArray(body) ? body : []);
-          if (Array.isArray(items) && items.length) {
-            const now = Date.now();
-            const sanitizedHistory = items.filter((entry: any) => {
-              if (entry?.deviceOnline === true) return true;
-              const status = (entry?.deviceStatus || '').toString().toLowerCase();
-              if (status === 'online') return true;
-              const timestamp = entry?.timestamp || entry?.createdAt || entry?.updatedAt;
-              if (!timestamp) return false;
-              const ts = new Date(timestamp).getTime();
-              if (!Number.isFinite(ts)) return false;
-              return (now - ts) <= SENSOR_STALE_THRESHOLD_MS;
-            }).slice(0, 200).reverse();
-
-            if (sanitizedHistory.length > 0) {
-              setSensorHistory(sanitizedHistory as Sensor[]);
-            } else {
-              setSensorHistory([]);
-            }
-          } else {
-            setSensorHistory([]);
-          }
+        const response = await api.get('/ha/history', { params: { limit: 336 } }).catch(() => null);
+        if (!response || !response.data || !response.data.success) {
+          setSensorHistory([]);
+          return;
         }
+        const readings = Array.isArray(response.data?.data?.readings)
+          ? response.data.data.readings
+          : [];
+        if (!readings.length) {
+          setSensorHistory([]);
+          return;
+        }
+        const normalized = (readings as SensorDataType[])
+          .map((entry) => mapSensorDataToSensor(entry))
+          .filter((entry): entry is Sensor => Boolean(entry));
+        const ordered = normalized.sort((a: Sensor, b: Sensor) => {
+          const aTime = new Date(a.timestamp || a.lastSeen || 0).getTime();
+          const bTime = new Date(b.timestamp || b.lastSeen || 0).getTime();
+          return aTime - bTime;
+        });
+        setSensorHistory(ordered.slice(-336));
       } catch (e) {
-        // ignore
+        setSensorHistory([]);
       }
     })();
   const idDevices = setInterval(refreshDeviceInventory, 10000);
@@ -552,6 +607,21 @@ export default function AdminDashboard(): React.ReactElement {
       setSensorStatus('No sensors connected');
     }
   }, [devicesOnline, latestSensor]);
+
+  useEffect(() => {
+    if (!ctxTelemetry) {
+      return;
+    }
+    const mapped = mapSensorDataToSensor(ctxTelemetry);
+    if (!mapped) {
+      return;
+    }
+    setLatestSensor(mapped);
+    setSensorHistory((prev) => {
+      const merged = [...prev, mapped];
+      return merged.slice(-336);
+    });
+  }, [ctxTelemetry]);
 
   useEffect(() => {
     if (devicesOnline === 0) {
@@ -588,6 +658,55 @@ export default function AdminDashboard(): React.ReactElement {
     }
     return results.slice(0, 12);
   }, [searchQuery, alerts, latestSensor]);
+
+  const realtimeSample = useMemo<SensorDataType | null>(() => {
+    if (ctxTelemetry) {
+      return ctxTelemetry;
+    }
+    if (!latestSensor) {
+      return null;
+    }
+    return {
+      deviceId: latestSensor.deviceId,
+      temperature: latestSensor.temperature ?? undefined,
+      humidity: latestSensor.humidity ?? undefined,
+      moisture: latestSensor.moisture ?? undefined,
+      ph: latestSensor.ph ?? undefined,
+      ec: latestSensor.ec ?? undefined,
+      nitrogen: latestSensor.npk?.n ?? undefined,
+      phosphorus: latestSensor.npk?.p ?? undefined,
+      potassium: latestSensor.npk?.k ?? undefined,
+      waterLevel: latestSensor.waterLevel ?? undefined,
+      floatSensor: latestSensor.waterLevel ?? undefined,
+      batteryLevel: latestSensor.batteryLevel ?? undefined,
+      signalStrength: latestSensor.signalStrength ?? undefined,
+      timestamp: latestSensor.timestamp || latestSensor.lastSeen || undefined,
+    } as SensorDataType;
+  }, [ctxTelemetry, latestSensor]);
+
+  const telemetryHistory = useMemo<SensorDataType[]>(() => {
+    if (Array.isArray(ctxSensorBuffer) && ctxSensorBuffer.length > 0) {
+      return ctxSensorBuffer;
+    }
+    if (!sensorHistory.length) {
+      return [];
+    }
+    return sensorHistory.map((entry) => ({
+      deviceId: entry.deviceId,
+      temperature: entry.temperature ?? undefined,
+      humidity: entry.humidity ?? undefined,
+      moisture: entry.moisture ?? undefined,
+      ph: entry.ph ?? undefined,
+      ec: entry.ec ?? undefined,
+      nitrogen: entry.npk?.n ?? undefined,
+      phosphorus: entry.npk?.p ?? undefined,
+      potassium: entry.npk?.k ?? undefined,
+      waterLevel: entry.waterLevel ?? undefined,
+      batteryLevel: entry.batteryLevel ?? undefined,
+      signalStrength: entry.signalStrength ?? undefined,
+      timestamp: entry.timestamp || entry.lastSeen || undefined,
+    }));
+  }, [ctxSensorBuffer, sensorHistory]);
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -683,7 +802,6 @@ export default function AdminDashboard(): React.ReactElement {
       <HeaderFrame
         className="admin-fixed"
         titleSuffix="Admin"
-        subtitle="Environmental Monitoring System"
         badgeLabel="Admin Dashboard"
         badgeTone="emerald"
         contextTag={(
@@ -965,28 +1083,13 @@ export default function AdminDashboard(): React.ReactElement {
                   </div>
                 </div>
 
-                {/* Latest Sensor Data */}
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Latest Sensor Data</h3>
-                    <div className="text-sm text-gray-500">Updated: <span className="font-medium">{latestSensor ? fmtLastSeen(latestSensor.lastSeen) : '--'}</span></div>
-                  </div>
-
-                  {latestSensor ? (
-                    <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-                      <SensorCard id="temp" label="Temperature" value={latestSensor?.temperature ?? null} unit="°C" icon={<span>🌡️</span>} thresholds={{ ok: [18,30], warn: [15,18], critical: [0,14] }} hint="Optimal 18–30°C" alert={alerts.some(a => (a.type || a._id || '').toString() === 'temperature' && !a.acknowledged)} />
-                      <SensorCard id="humidity" label="Humidity" value={latestSensor?.humidity ?? null} unit="%" icon={<span>💧</span>} thresholds={{ ok: [40,70], warn: [30,40], critical: [0,29] }} hint="Optimal 40–70%" alert={alerts.some(a => (a.type || a._id || '').toString() === 'humidity' && !a.acknowledged)} />
-                      <SensorCard id="moisture" label="Soil Moisture" value={latestSensor?.moisture ?? null} unit="%" icon={<span>🪴</span>} thresholds={{ ok: [30,60], warn: [15,29], critical: [0,14] }} hint="Keep moisture >30%" alert={alerts.some(a => (a.type || a._id || '').toString() === 'moisture' && !a.acknowledged)} />
-                      <SensorCard id="ph" label="pH" value={latestSensor?.ph ?? null} unit="" icon={<span>⚗️</span>} thresholds={{ ok: [6,8], warn: [5,6], critical: [0,4] }} hint="Target pH 6–8" alert={alerts.some(a => (a.type || a._id || '').toString() === 'ph' && !a.acknowledged)} />
-                      <SensorCard id="ec" label="EC (µS/cm)" value={latestSensor?.ec ?? null} unit="µS/cm" icon={<span>🔌</span>} hint="Electrical Conductivity" alert={alerts.some(a => a.type === 'ec' && !a.acknowledged)} />
-                      <SensorCard id="npk" label="NPK (mg/kg)" value={latestSensor?.npk?.n ?? null} unit="mg/kg" icon={<span>🧪</span>} hint="NPK sample (show N)" alert={alerts.some(a => ['nitrogen','phosphorus','potassium'].includes(String(a.type)) && !a.acknowledged)} />
-                    </div>
-                  ) : (
-                    <div className="mt-4 text-center py-8">
-                      <p className="text-gray-500 dark:text-gray-400">No sensor detected. Connect a device to begin streaming live measurements.</p>
-                    </div>
-                  )}
-                </div>
+                <RealtimeTelemetryPanel
+                  latest={realtimeSample}
+                  history={telemetryHistory}
+                  isConnected={Boolean(socketsConnected || realtimeSample)}
+                  onRefresh={handleRealtimeRefresh}
+                  refreshing={realtimeRefreshing}
+                />
               </div>
             )}
 

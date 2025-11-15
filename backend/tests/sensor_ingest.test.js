@@ -6,6 +6,10 @@ jest.mock('../models/SensorData', () => ({
   sequelize: {},
 }));
 
+jest.mock('../models/SensorSnapshot', () => ({
+  upsert: jest.fn(async () => null),
+}));
+
 jest.mock('../models/Alert', () => ({
   createAlert: jest.fn(async (payload) => payload),
 }));

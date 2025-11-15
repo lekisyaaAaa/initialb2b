@@ -33,6 +33,45 @@ const sensorCache = new NodeCache({ stdTTL: 5, checkperiod: 2 });
 
 const allowHomeAssistantBypass = (process.env.ALLOW_HOME_ASSISTANT_PUSH_WITHOUT_SOCKET || '').toString().toLowerCase() === 'true';
 const homeAssistantDeviceId = (process.env.HOME_ASSISTANT_DEVICE_ID || process.env.PRIMARY_DEVICE_ID || 'vermilinks-homeassistant').trim();
+const homeAssistantHistoryDays = Number.parseInt(process.env.HOME_ASSISTANT_HISTORY_DAYS || process.env.HA_HISTORY_RETENTION_DAYS || '7', 10);
+const HOME_ASSISTANT_HISTORY_MS = Math.max(1, homeAssistantHistoryDays || 7) * 24 * 60 * 60 * 1000;
+
+async function pruneDeviceHistory(deviceId) {
+  if (!deviceId) {
+    return;
+  }
+  try {
+    const cutoff = new Date(Date.now() - HOME_ASSISTANT_HISTORY_MS);
+    await SensorData.destroy({
+      where: {
+        deviceId,
+        timestamp: { [Op.lt]: cutoff },
+      },
+    });
+  } catch (error) {
+    console.warn('sensorRoutes::pruneDeviceHistory failed', error && error.message ? error.message : error);
+  }
+}
+
+const MAX_RAW_PAYLOAD_CHARS = Math.max(1024, parseInt(process.env.HOME_ASSISTANT_RAW_CACHE_LIMIT || '8192', 10));
+
+function clampRawPayload(payload) {
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+  try {
+    const serialized = JSON.stringify(payload);
+    if (serialized.length <= MAX_RAW_PAYLOAD_CHARS) {
+      return payload;
+    }
+    return {
+      truncated: true,
+      preview: serialized.slice(0, MAX_RAW_PAYLOAD_CHARS),
+    };
+  } catch (error) {
+    return null;
+  }
+}
 
 const formatLatestSnapshot = (snapshot) => {
   if (!snapshot) {
@@ -44,9 +83,17 @@ const formatLatestSnapshot = (snapshot) => {
     temperature: toNumber(snapshot.temperature),
     humidity: toNumber(snapshot.humidity),
     soil_moisture: toNumber(snapshot.moisture ?? snapshot.soil_moisture),
+    ph: toNumber(snapshot.ph),
+    ec: toNumber(snapshot.ec),
+    nitrogen: toNumber(snapshot.nitrogen),
+    phosphorus: toNumber(snapshot.phosphorus),
+    potassium: toNumber(snapshot.potassium),
+    water_level: toNumber(snapshot.waterLevel ?? snapshot.water_level),
     float_state: snapshot.floatSensor !== undefined && snapshot.floatSensor !== null
       ? Number(snapshot.floatSensor)
       : (snapshot.float_state !== undefined && snapshot.float_state !== null ? Number(snapshot.float_state) : null),
+    battery_level: toNumber(snapshot.batteryLevel ?? snapshot.battery_level),
+    signal_strength: toNumber(snapshot.signalStrength ?? snapshot.signal_strength),
     updated_at: ensureIsoString(timestamp),
   };
 };
@@ -123,7 +170,15 @@ router.post('/ingest-ha', [
       temperature: temperature !== undefined ? Number(temperature) : null,
       humidity: humidity !== undefined ? Number(humidity) : null,
       moisture: resolvedMoisture !== undefined ? Number(resolvedMoisture) : null,
+      ph: req.body.ph !== undefined ? Number(req.body.ph) : null,
+      ec: req.body.ec !== undefined ? Number(req.body.ec) : null,
+      nitrogen: req.body.nitrogen !== undefined ? Number(req.body.nitrogen) : null,
+      phosphorus: req.body.phosphorus !== undefined ? Number(req.body.phosphorus) : null,
+      potassium: req.body.potassium !== undefined ? Number(req.body.potassium) : null,
+      waterLevel: req.body.waterLevel !== undefined ? Number(req.body.waterLevel) : null,
       floatSensor: resolvedFloat !== undefined && resolvedFloat !== null ? Number(resolvedFloat) : null,
+      batteryLevel: req.body.batteryLevel !== undefined ? Number(req.body.batteryLevel) : null,
+      signalStrength: req.body.signalStrength !== undefined ? Number(req.body.signalStrength) : null,
       timestamp: effectiveTimestamp,
     });
 
@@ -137,15 +192,19 @@ router.post('/ingest-ha', [
         humidity: humidity !== undefined ? Number(humidity) : null,
         moisture: resolvedMoisture !== undefined ? Number(resolvedMoisture) : null,
         floatSensor: resolvedFloat !== undefined && resolvedFloat !== null ? Number(resolvedFloat) : null,
+        ph: req.body.ph !== undefined ? Number(req.body.ph) : null,
+        ec: req.body.ec !== undefined ? Number(req.body.ec) : null,
+        nitrogen: req.body.nitrogen !== undefined ? Number(req.body.nitrogen) : null,
+        phosphorus: req.body.phosphorus !== undefined ? Number(req.body.phosphorus) : null,
+        potassium: req.body.potassium !== undefined ? Number(req.body.potassium) : null,
+        waterLevel: req.body.waterLevel !== undefined ? Number(req.body.waterLevel) : null,
+        batteryLevel: req.body.batteryLevel !== undefined ? Number(req.body.batteryLevel) : null,
+        signalStrength: req.body.signalStrength !== undefined ? Number(req.body.signalStrength) : null,
         timestamp: effectiveTimestamp,
+        source: 'home_assistant_rest',
+        rawPayload: clampRawPayload(req.body),
       });
-
-      await SensorData.destroy({
-        where: {
-          deviceId: homeAssistantDeviceId,
-          id: { [Op.ne]: sensorData.id },
-        },
-      });
+      pruneDeviceHistory(homeAssistantDeviceId);
     } catch (createError) {
       console.warn('SensorData persistence for HA ingest failed (continuing):', createError?.message || createError);
     }
@@ -156,6 +215,14 @@ router.post('/ingest-ha', [
       humidity: humidity !== undefined ? Number(humidity) : null,
       moisture: resolvedMoisture !== undefined ? Number(resolvedMoisture) : null,
       floatSensor: resolvedFloat !== undefined && resolvedFloat !== null ? Number(resolvedFloat) : null,
+      ph: req.body.ph !== undefined ? Number(req.body.ph) : null,
+      ec: req.body.ec !== undefined ? Number(req.body.ec) : null,
+      nitrogen: req.body.nitrogen !== undefined ? Number(req.body.nitrogen) : null,
+      phosphorus: req.body.phosphorus !== undefined ? Number(req.body.phosphorus) : null,
+      potassium: req.body.potassium !== undefined ? Number(req.body.potassium) : null,
+      waterLevel: req.body.waterLevel !== undefined ? Number(req.body.waterLevel) : null,
+      batteryLevel: req.body.batteryLevel !== undefined ? Number(req.body.batteryLevel) : null,
+      signalStrength: req.body.signalStrength !== undefined ? Number(req.body.signalStrength) : null,
       timestamp: effectiveTimestamp,
       source: source || 'home_assistant',
     };
@@ -301,7 +368,9 @@ router.post('/', [
       timestamp: ts,
       batteryLevel: batteryLevel !== undefined ? parseFloat(batteryLevel) : undefined,
       signalStrength: signalStrength !== undefined ? parseFloat(signalStrength) : undefined,
-      isOfflineData
+      isOfflineData,
+      source: 'esp32',
+      rawPayload: null,
     });
 
     // Respond quickly — process alerts and broadcast asynchronously to avoid blocking or failing the request
@@ -312,7 +381,15 @@ router.post('/', [
       temperature: temperature !== undefined ? parseFloat(temperature) : null,
       humidity: humidity !== undefined ? parseFloat(humidity) : null,
       moisture: soilMoisture !== undefined ? parseFloat(soilMoisture) : null,
+      ph: ph !== undefined ? parseFloat(ph) : null,
+      ec: ec !== undefined ? parseFloat(ec) : null,
+      nitrogen: nitrogen !== undefined ? parseFloat(nitrogen) : null,
+      phosphorus: phosphorus !== undefined ? parseFloat(phosphorus) : null,
+      potassium: potassium !== undefined ? parseFloat(potassium) : null,
+      waterLevel: waterLevel !== undefined ? parseInt(waterLevel, 10) : null,
       floatSensor: typeof floatSensor === 'number' ? floatSensor : null,
+      batteryLevel: batteryLevel !== undefined ? parseFloat(batteryLevel) : null,
+      signalStrength: signalStrength !== undefined ? parseFloat(signalStrength) : null,
       timestamp: ts,
     });
 
@@ -403,7 +480,9 @@ router.post('/batch', [
         timestamp: item.timestamp ? new Date(item.timestamp) : new Date(),
         batteryLevel: item.batteryLevel ? parseFloat(item.batteryLevel) : undefined,
         signalStrength: item.signalStrength ? parseFloat(item.signalStrength) : undefined,
-        isOfflineData: true
+        isOfflineData: true,
+        source: 'esp32_batch',
+        rawPayload: null,
       });
 
       const alerts = await checkThresholds(sensorData, io);

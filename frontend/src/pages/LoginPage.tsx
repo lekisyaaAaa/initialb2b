@@ -171,10 +171,10 @@ const LoginPage: React.FC = () => {
             </div>
           </div>
           <h2 className="mt-6 text-3xl font-extrabold text-espresso-900 dark:text-white">
-            BeanToBin
+            VermiLinks
           </h2>
           <p className="mt-2 text-sm text-espresso-600 dark:text-gray-300">
-            Admin Sign In - Environmental Monitoring System
+            Admin Sign In
           </p>
         </div>
 

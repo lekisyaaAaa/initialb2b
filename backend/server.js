@@ -192,9 +192,23 @@ global.wsConnections = new Set();
 // Optional mapping from deviceId -> ws connection (when ESP32 registers itself)
 global.deviceSockets = new Map();
 
-deviceCommandQueue.startCommandRetryLoop();
+// Start device command retry loop only when not running tests to avoid open handles
+if ((process.env.NODE_ENV || 'development') !== 'test') {
+  deviceCommandQueue.startCommandRetryLoop();
+} else {
+  logger.info('Skipping deviceCommandQueue retry loop in test mode');
+}
 
 let homeAssistantBridgeHandle = null;
+// Start MQTT ingest service if configured (non-test only)
+try {
+  if (process.env.NODE_ENV !== 'test') {
+    const mqttService = require('./services/mqttIngest');
+    mqttService.startMqtt();
+  }
+} catch (e) {
+  logger.warn('Failed to initialize MQTT ingest service', e && e.message ? e.message : e);
+}
 
 wss.on('connection', (ws, request) => {
   const requestPath = (request && request.url) ? request.url.split('?')[0] : 'unknown';
@@ -318,7 +332,17 @@ app.use(httpCors);
 app.options('*', httpCors);
 
 // Body parsing middleware
-app.use(express.json({ limit: '10mb' }));
+const captureRawBody = (req, res, buf) => {
+  if (!buf) {
+    return;
+  }
+  const route = req.originalUrl || '';
+  if (route.startsWith('/api/ha')) {
+    req.rawBody = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
+  }
+};
+
+app.use(express.json({ limit: '10mb', verify: captureRawBody }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use('/api/admin/login', adminAuthLimiter);
@@ -425,6 +449,12 @@ app.use('/api/auth', authRoutes);
 app.use('/api/alerts', alertRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationRoutes);
+const homeAssistantRoutes = require('./routes/homeAssistant');
+app.use('/api/ha', homeAssistantRoutes);
+const integrationRoutes = require('./routes/integrations');
+app.use('/api/integrations', integrationRoutes);
+const deviceEventsRoutes = require('./routes/deviceEvents');
+app.use('/api/device-events', deviceEventsRoutes);
 
 // Serve frontend production build if available (useful in local dev)
 try {
@@ -644,7 +674,6 @@ if ((process.env.NODE_ENV || 'development') !== 'test') {
       tryListen(configuredPort);
     });
 } else {
-  // In test mode, bind server to the port immediately but avoid console logs
-  const testPort = process.env.PORT ? Number(process.env.PORT) : 0;
-  server.listen(testPort, '0.0.0.0');
+  // In test mode we avoid calling server.listen() to prevent open handles during Jest runs.
+  // Tests should use the exported `app` with Supertest which does not require the server to listen.
 }

@@ -2,6 +2,9 @@ const { DataTypes } = require('sequelize');
 const sequelize = require('../services/database_pg');
 
 // Sequelize model for sensor readings. Fields align with the REST route payloads.
+const dialect = typeof sequelize.getDialect === 'function' ? sequelize.getDialect() : 'postgres';
+const rawPayloadType = dialect === 'postgres' ? DataTypes.JSONB : DataTypes.JSON;
+
 const SensorData = sequelize.define('SensorData', {
   deviceId: {
     type: DataTypes.STRING,
@@ -61,6 +64,15 @@ const SensorData = sequelize.define('SensorData', {
     allowNull: true,
     defaultValue: false
   },
+  source: {
+    type: DataTypes.STRING(64),
+    allowNull: true,
+  },
+  rawPayload: {
+    type: rawPayloadType,
+    allowNull: true,
+    field: 'raw_payload',
+  },
   timestamp: {
     type: DataTypes.DATE,
     allowNull: false,
@@ -69,6 +81,7 @@ const SensorData = sequelize.define('SensorData', {
 }, {
   tableName: 'sensordata',
   timestamps: false,
+  underscored: true,
 });
 
 module.exports = SensorData;

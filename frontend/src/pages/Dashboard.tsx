@@ -13,7 +13,6 @@ import {
   LogIn,
   LogOut,
   User,
-  BarChart3,
   Activity,
   Shield,
   ExternalLink,
@@ -21,7 +20,6 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { Link, useNavigate } from 'react-router-dom';
-import ChartContainer from '../components/charts/ChartContainer';
 import AlertSummaryChart from '../components/charts/AlertSummaryChart';
 import DarkModeToggle from '../components/DarkModeToggle';
 import HeaderFrame from '../components/layout/HeaderFrame';
@@ -30,10 +28,10 @@ const isFiniteNumber = (value: number | null | undefined): value is number =>
   typeof value === 'number' && Number.isFinite(value);
 
 const formatFixed = (value: number | null | undefined, digits = 1) =>
-  isFiniteNumber(value) ? value.toFixed(digits) : '—';
+  isFiniteNumber(value) ? value.toFixed(digits) : '???';
 
 const formatInteger = (value: number | null | undefined) =>
-  isFiniteNumber(value) ? value.toFixed(0) : '—';
+  isFiniteNumber(value) ? value.toFixed(0) : '???';
 
 const toFiniteNumber = (value: unknown): number | null => {
   const parsed = Number(value);
@@ -62,7 +60,7 @@ const Dashboard: React.FC = () => {
     refreshSensors,
     lastFetchAt,
   } = useData();
-  const [activeTab, setActiveTab] = useState<'overview' | 'charts' | 'alerts' | 'sensors'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'alerts' | 'sensors'>('overview');
   const [lastManualRefresh, setLastManualRefresh] = useState<Date | null>(null);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [alertsError, setAlertsError] = useState<string | null>(null);
@@ -184,7 +182,7 @@ const Dashboard: React.FC = () => {
     if (lockoutActive) {
       return {
         label: 'LOCKOUT',
-        description: floatLockoutState?.message || 'Float lockout active — pump commands paused.',
+        description: floatLockoutState?.message || 'Float lockout active ??? pump commands paused.',
         containerClass: 'bg-red-50 dark:bg-red-900/20',
         textClass: 'text-red-600 dark:text-red-300',
       };
@@ -200,14 +198,14 @@ const Dashboard: React.FC = () => {
     if (Number(value) <= 0) {
       return {
         label: 'LOW',
-        description: 'Float is low — feed pump commands remain locked out.',
+        description: 'Float is low ??? feed pump commands remain locked out.',
         containerClass: 'bg-red-50 dark:bg-red-900/20',
         textClass: 'text-red-600 dark:text-red-300',
       };
     }
     return {
       label: 'HIGH',
-      description: 'Float is high — system may resume queue processing.',
+      description: 'Float is high ??? system may resume queue processing.',
       containerClass: 'bg-emerald-50 dark:bg-emerald-900/20',
       textClass: 'text-emerald-600 dark:text-emerald-300',
     };
@@ -433,13 +431,12 @@ const Dashboard: React.FC = () => {
           <div className="flex space-x-8">
             {[
               { id: 'overview', label: 'Overview', icon: Activity },
-              { id: 'charts', label: 'Data Visualization', icon: BarChart3 },
               { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
               { id: 'sensors', label: 'Sensors', icon: Settings },
             ].map(({ id, label, icon: Icon }) => (
               <button
                 key={id}
-                onClick={() => setActiveTab(id as 'overview' | 'charts' | 'alerts' | 'sensors')}
+                onClick={() => setActiveTab(id as 'overview' | 'alerts' | 'sensors')}
                 className={`flex items-center space-x-2 px-4 py-4 border-b-2 font-medium text-sm transition-colors ${
                   activeTab === id
                     ? 'border-teal-500 text-teal-600 dark:text-teal-400'
@@ -481,7 +478,7 @@ const Dashboard: React.FC = () => {
                           </div>
                           <div className="flex flex-col justify-center flex-1 min-h-[72px]">
                             <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">Temperature</p></div>
-                            <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">{`${formatFixed(latestReadings?.temperature, 1)}°C`}</p>
+                            <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">{`${formatFixed(latestReadings?.temperature, 1)}??C`}</p>
                           </div>
                         </div>
                         <div className="flex-1 min-h-[140px]"></div>
@@ -636,7 +633,7 @@ const Dashboard: React.FC = () => {
                           <div className="flex flex-col justify-center flex-1 min-h-[72px]">
                             <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">Water Level</p></div>
                             <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">
-                              {(latestReadings?.waterLevel ?? null) !== null ? (latestReadings?.waterLevel === 1 ? 'Present' : 'Low') : '—'}
+                              {(latestReadings?.waterLevel ?? null) !== null ? (latestReadings?.waterLevel === 1 ? 'Present' : 'Low') : '???'}
                             </p>
                           </div>
                         </div>
@@ -727,25 +724,6 @@ const Dashboard: React.FC = () => {
                 </div>
               </div>
             )}
-
-            {activeTab === 'charts' && (
-              <div className="space-y-8">
-                <div className="text-center">
-                  <h2 className="text-2xl font-bold text-coffee-900 dark:text-white mb-2">Data Visualization</h2>
-                  <p className="text-coffee-600 dark:text-gray-300">Interactive charts showing environmental sensor data over time</p>
-                </div>
-                <ChartContainer data={safeLatestSensorData} title="Current Environmental Data" />
-                {deviceIds.map(deviceId => (
-                  <ChartContainer
-                    key={deviceId}
-                    data={safeLatestSensorData.filter(d => d.deviceId === deviceId)}
-                    title={`Device ${deviceId} - Current Readings`}
-                    deviceId={deviceId}
-                  />
-                ))}
-              </div>
-            )}
-
             {activeTab === 'alerts' && (
               <div className="space-y-6">
                 {unresolvedAlerts.length > 0 && user?.role === 'admin' && (
@@ -799,7 +777,7 @@ const Dashboard: React.FC = () => {
                                 <div>
                                   <p className="text-coffee-900 dark:text-white font-medium">{alert.message || alert.title || 'Alert triggered'}</p>
                                   <p className="text-coffee-600 dark:text-gray-300 text-sm mt-1">
-                                    {formatTimestampLabel(alert.createdAt || null)}{alert.deviceId ? ` • Device: ${alert.deviceId}` : ''}
+                                    {formatTimestampLabel(alert.createdAt || null)}{alert.deviceId ? ` ??? Device: ${alert.deviceId}` : ''}
                                   </p>
                                   {alert.isResolved && alert.resolvedAt && (
                                     <p className="text-green-600 dark:text-green-300 text-sm mt-1">
@@ -869,7 +847,7 @@ const Dashboard: React.FC = () => {
                                     <Thermometer className="h-4 w-4 text-red-500" />
                                     <span className="text-sm font-medium text-espresso-600 dark:text-gray-300">Temperature</span>
                                   </div>
-                                  <span className="font-bold text-espresso-900 dark:text-white">{`${formatFixed(latestData.temperature, 1)}°C`}</span>
+                                  <span className="font-bold text-espresso-900 dark:text-white">{`${formatFixed(latestData.temperature, 1)}??C`}</span>
                                 </div>
 
                                 <div className="flex items-center justify-between p-2 rounded-lg bg-gradient-to-r from-blue-50 to-blue-25 dark:from-blue-900/20 dark:to-blue-800/20">
@@ -922,7 +900,7 @@ const Dashboard: React.FC = () => {
                                     <span className="text-sm font-medium text-espresso-600 dark:text-gray-300">Water Level</span>
                                   </div>
                                   <span className="font-bold text-espresso-900 dark:text-white">
-                                    {(latestData.waterLevel ?? null) !== null ? (latestData.waterLevel === 1 ? 'Present' : 'Low') : '—'}
+                                    {(latestData.waterLevel ?? null) !== null ? (latestData.waterLevel === 1 ? 'Present' : 'Low') : '???'}
                                   </span>
                                 </div>
 
@@ -942,7 +920,7 @@ const Dashboard: React.FC = () => {
                                     <span className="text-sm font-medium text-espresso-600 dark:text-gray-300">Last Update</span>
                                   </div>
                                   <span className="font-bold text-xs text-espresso-900 dark:text-white">
-                                    {latestData.timestamp ? format(new Date(latestData.timestamp), 'HH:mm:ss') : '—'}
+                                    {latestData.timestamp ? format(new Date(latestData.timestamp), 'HH:mm:ss') : '???'}
                                   </span>
                                 </div>
                               </div>
@@ -969,3 +947,5 @@ const Dashboard: React.FC = () => {
 };
 
 export default Dashboard;
+
+

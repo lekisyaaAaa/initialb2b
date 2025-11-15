@@ -56,6 +56,7 @@ const Alert = sequelize.define('Alert', {
 }, {
   tableName: 'alerts',
   timestamps: false,
+  underscored: true,
 });
 
 // Static helper to create an alert with a consistent shape

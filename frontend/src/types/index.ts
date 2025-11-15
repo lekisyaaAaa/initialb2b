@@ -55,7 +55,15 @@ export interface LatestSnapshot {
   temperature: number | null;
   humidity: number | null;
   soil_moisture: number | null;
+  ph?: number | null;
+  ec?: number | null;
+  nitrogen?: number | null;
+  phosphorus?: number | null;
+  potassium?: number | null;
+  water_level?: number | null;
   float_state: number | null;
+  battery_level?: number | null;
+  signal_strength?: number | null;
   updated_at: string;
 }
 

@@ -17,6 +17,7 @@ const Settings = sequelize.define('Settings', {
 }, {
   tableName: 'settings',
   timestamps: false,
+  underscored: true,
 });
 
 const DEFAULT_THRESHOLDS = {

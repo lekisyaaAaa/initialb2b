@@ -5,7 +5,7 @@ import { Leaf } from 'lucide-react';
 interface HeaderFrameProps {
   className?: string;
   titleSuffix?: string;
-  subtitle: string;
+  subtitle?: string;
   badgeLabel?: string;
   badgeTone?: 'default' | 'emerald';
   contextTag?: ReactNode;
@@ -20,7 +20,7 @@ const badgeToneClass: Record<NonNullable<HeaderFrameProps['badgeTone']>, string>
 export const HeaderFrame: React.FC<HeaderFrameProps> = ({
   className,
   titleSuffix,
-  subtitle,
+  subtitle = '',
   badgeLabel,
   badgeTone = 'default',
   contextTag,
@@ -43,7 +43,7 @@ export const HeaderFrame: React.FC<HeaderFrameProps> = ({
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
               <h1 className="site-title text-lg font-semibold sm:text-xl">
-                Bean<span className="site-accent">To</span>Bin
+                Vermi<span className="site-accent">Links</span>
                 {titleSuffix ? <span className="ml-2 text-sm font-medium sm:text-base">{titleSuffix}</span> : null}
               </h1>
               {badgeLabel ? (
@@ -51,7 +51,9 @@ export const HeaderFrame: React.FC<HeaderFrameProps> = ({
               ) : null}
               {contextTag}
             </div>
-            <p className="site-subtitle text-xs sm:text-sm">{subtitle}</p>
+            {subtitle ? (
+              <p className="site-subtitle text-xs sm:text-sm">{subtitle}</p>
+            ) : null}
           </div>
         </div>
 

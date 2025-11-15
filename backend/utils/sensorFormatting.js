@@ -52,6 +52,10 @@ const sanitizeSensorPayload = (sensor, alerts = []) => {
     timestamp: ensureIsoString(plainSensor.timestamp),
   };
 
+  if (sanitized.rawPayload) {
+    delete sanitized.rawPayload;
+  }
+
   if (!sanitized._id && (sanitized.id || sanitized.ID)) {
     sanitized._id = String(sanitized.id || sanitized.ID);
   }

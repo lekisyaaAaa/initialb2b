@@ -246,6 +246,9 @@ export const sensorService = {
     endDate?: string;
   }) =>
     api.get<ApiResponse<SensorStats>>('/sensors/stats', { params }),
+
+  getHaHistory: (params?: { deviceId?: string; limit?: number; since?: string }) =>
+    api.get<ApiResponse<{ deviceId: string; since: string; readings: SensorData[] }>>('/ha/history', { params }),
   
   submitData: (data: Omit<SensorData, '_id'>) =>
     api.post<ApiResponse<SensorData>>('/sensors/data', data),

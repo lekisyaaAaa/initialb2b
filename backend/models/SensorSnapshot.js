@@ -23,10 +23,50 @@ const SensorSnapshot = sequelize.define('SensorSnapshot', {
     allowNull: true,
     field: 'moisture',
   },
+  ph: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    field: 'ph',
+  },
+  ec: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    field: 'ec',
+  },
+  nitrogen: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    field: 'nitrogen',
+  },
+  phosphorus: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    field: 'phosphorus',
+  },
+  potassium: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    field: 'potassium',
+  },
+  waterLevel: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'water_level',
+  },
   floatSensor: {
     type: DataTypes.INTEGER,
     allowNull: true,
     field: 'float_sensor',
+  },
+  batteryLevel: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    field: 'battery_level',
+  },
+  signalStrength: {
+    type: DataTypes.FLOAT,
+    allowNull: true,
+    field: 'signal_strength',
   },
   timestamp: {
     type: DataTypes.DATE,
@@ -36,6 +76,7 @@ const SensorSnapshot = sequelize.define('SensorSnapshot', {
 }, {
   tableName: 'sensor_snapshots',
   timestamps: false,
+  underscored: true,
 });
 
 module.exports = SensorSnapshot;

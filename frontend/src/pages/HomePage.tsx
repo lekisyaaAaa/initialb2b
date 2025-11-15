@@ -36,9 +36,8 @@ const HomePage: React.FC = () => {
               </div>
               <div>
                 <h1 className="text-2xl font-bold text-espresso-900 dark:text-white">
-                  Bean<span className="text-letran-500">To</span>Bin
+                  VermiLinks
                 </h1>
-                <p className="text-sm text-espresso-600 dark:text-gray-300">Environmental Monitoring System</p>
               </div>
             </div>
             <div className="flex items-center space-x-6">
@@ -127,10 +126,10 @@ const HomePage: React.FC = () => {
             <div className="flex flex-col sm:flex-row justify-center items-center gap-4">
               <Link 
                 id="dashboard-card"
-                to="/dashboard" 
+                to="/dashboard"
                 className="font-sans bg-primary-600 hover:bg-primary-700 dark:bg-primary-500 dark:hover:bg-primary-600 text-white font-semibold px-8 py-3 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 tracking-wide"
               >
-                View Dashboard
+                View User Dashboard
               </Link>
               
               <Link
