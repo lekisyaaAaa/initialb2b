@@ -311,16 +311,45 @@ const checkThresholds = async (sensorData, ioInstance) => {
     }
 
     const persistedAlerts = [];
+    // Debounce / dedupe: avoid creating duplicate unresolved alerts repeatedly
+    const debounceMs = (() => {
+      try {
+        const env = parseInt(process.env.ALERT_DEBOUNCE_MS || process.env.ALERT_DEBOUNCE || '', 10);
+        if (!Number.isNaN(env) && env > 0) return env;
+      } catch (e) {}
+      try {
+        const s = settings && settings.alerts && settings.alerts.debounceMs;
+        if (typeof s === 'number' && s > 0) return s;
+      } catch (e) {}
+      return 5 * 60 * 1000; // default 5 minutes
+    })();
+
     for (const alertData of alertsToCreate) {
-      const created = await Alert.createAlert(alertData);
-      const createdPlain = toPlainObject(created) || {};
-      persistedAlerts.push(
-        sanitizeAlertPayload({
-          ...alertData,
-          ...createdPlain,
-          sensorData: alertData.sensorData,
-        }),
-      );
+      try {
+        const where = { type: alertData.type };
+        if (alertData.deviceId) where.deviceId = alertData.deviceId;
+        // look for a recent unresolved alert of same type/device
+        const recent = await Alert.findOne({ where: { ...where, isResolved: false }, order: [['createdAt', 'DESC']] });
+        if (recent) {
+          const createdAt = recent.createdAt ? new Date(recent.createdAt).getTime() : null;
+          if (createdAt && (Date.now() - createdAt) < debounceMs) {
+            // Skip creating a duplicate alert; optionally update message/updatedAt
+            continue;
+          }
+        }
+
+        const created = await Alert.createAlert(alertData);
+        const createdPlain = toPlainObject(created) || {};
+        persistedAlerts.push(
+          sanitizeAlertPayload({
+            ...alertData,
+            ...createdPlain,
+            sensorData: alertData.sensorData,
+          }),
+        );
+      } catch (e) {
+        logger && logger.warn && logger.warn('Failed to persist alert (continuing):', e && e.message ? e.message : e);
+      }
     }
 
     try {
