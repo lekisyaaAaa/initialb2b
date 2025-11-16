@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { Bell, Check, Settings, Activity, Users, BarChart3, Calendar, RefreshCw } from 'lucide-react';
+import { Bell, Check, Settings, Activity, Users, BarChart3, Calendar, RefreshCw, ExternalLink } from 'lucide-react';
 import SensorCharts from '../components/SensorCharts';
 import SystemHealth from '../components/SystemHealth';
 import DarkModeToggle from '../components/DarkModeToggle';
@@ -16,6 +16,7 @@ import api, { alertService, sensorService } from '../services/api';
 import { LatestSnapshot, SensorData as SensorDataType } from '../types';
 import { socket as sharedSocket } from '../socket';
 import RealtimeTelemetryPanel from '../components/RealtimeTelemetryPanel';
+import { resolveHomeAssistantUrl } from '../utils/homeAssistant';
 
 type Sensor = {
   id: string;
@@ -139,6 +140,7 @@ export default function AdminDashboard(): React.ReactElement {
   const [alertsActionError, setAlertsActionError] = useState<string | null>(null);
   const [acknowledgingAlertId, setAcknowledgingAlertId] = useState<string | null>(null);
   const [realtimeRefreshing, setRealtimeRefreshing] = useState(false);
+  const homeAssistantUrl = useMemo(resolveHomeAssistantUrl, []);
 
   const classifySeverity = useCallback((value: unknown): 'critical' | 'warning' | 'info' => {
     const normalized = (value || '').toString().toLowerCase();
@@ -910,19 +912,30 @@ export default function AdminDashboard(): React.ReactElement {
           <div className="text-sm text-gray-500 dark:text-gray-300">
             Monitor realtime telemetry, sensor trends, and live alerts below. Hardware status updates every few seconds.
           </div>
-          <div className="inline-flex items-center justify-center gap-3 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Backend online
+          <div className="flex flex-col gap-3 sm:items-end">
+            <div className="inline-flex items-center justify-center gap-3 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Backend online
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                Database connected
+              </div>
+              <div className="flex items-center gap-2">
+                <span className={`h-2 w-2 rounded-full ${devicesOnline > 0 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                ESP32 {devicesOnline > 0 ? 'active' : 'awaiting heartbeat'}
+              </div>
             </div>
-            <div className="flex items-center gap-2">
-              <span className="h-2 w-2 rounded-full bg-emerald-500" />
-              Database connected
-            </div>
-            <div className="flex items-center gap-2">
-              <span className={`h-2 w-2 rounded-full ${devicesOnline > 0 ? 'bg-emerald-500' : 'bg-amber-500'}`} />
-              ESP32 {devicesOnline > 0 ? 'active' : 'awaiting heartbeat'}
-            </div>
+            <a
+              href={homeAssistantUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-blue-200 bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400 dark:border-transparent"
+            >
+              View VermiLinks Actuators
+              <ExternalLink className="h-4 w-4" />
+            </a>
           </div>
         </div>
 

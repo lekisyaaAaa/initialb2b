@@ -41,9 +41,8 @@ describe('mqttIngest handleMessage throttling integration', () => {
 
   test('message after throttle window is allowed', async () => {
     const topic = 'vermilinks/dev-2/data';
-    const payload = JSON.stringify({ deviceId: 'dev-2', temperature: 22 });
-
-    await mqttIngest.handleMessage(topic, Buffer.from(payload));
+    const payload1 = JSON.stringify({ deviceId: 'dev-2', temperature: 22, ts: Date.now() });
+    await mqttIngest.handleMessage(topic, Buffer.from(payload1));
     expect(DeviceEvent.create).toHaveBeenCalledTimes(1);
 
     // simulate time passing by directly manipulating throttle cache
@@ -51,7 +50,9 @@ describe('mqttIngest handleMessage throttling integration', () => {
     // set last seen to far in the past
     if (thr && thr.cache) thr.cache.set('dev-2', Date.now() - (thr.windowMs + 100));
 
-    await mqttIngest.handleMessage(topic, Buffer.from(payload));
+    // send a slightly different payload (different timestamp) so dedupe doesn't skip
+    const payload2 = JSON.stringify({ deviceId: 'dev-2', temperature: 22, ts: Date.now() + 1000 });
+    await mqttIngest.handleMessage(topic, Buffer.from(payload2));
     expect(DeviceEvent.create).toHaveBeenCalledTimes(2);
   });
 });

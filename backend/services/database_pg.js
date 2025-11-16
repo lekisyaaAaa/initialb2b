@@ -100,8 +100,13 @@ async function ensureDatabaseSetup(options = {}) {
 		syncOptions.force = true;
 	}
 
+	// In production we rely on explicit migrations rather than Sequelize's
+	// automatic `alter` behavior which can be dangerous when data exists.
+	const isProd = (process.env.NODE_ENV || '').toLowerCase() === 'production';
 	if (!syncOptions.force) {
-		syncOptions.alter = options.alter ?? true;
+		// Only enable `alter` automatically when not in production. Callers can
+		// still pass `options.alter = true` to override explicitly (use with care).
+		syncOptions.alter = options.alter ?? (!isProd);
 	}
 
 	logger.info('Syncing database schema', { force: Boolean(syncOptions.force), alter: Boolean(syncOptions.alter) });

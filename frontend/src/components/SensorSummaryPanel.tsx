@@ -2,39 +2,12 @@ import React, { useMemo } from 'react';
 import { ExternalLink, RefreshCw, Activity } from 'lucide-react';
 import { useSensorsPolling } from '../hooks/useSensorsPolling';
 import { SensorData, SensorSummaryItem } from '../types';
+import { resolveHomeAssistantUrl } from '../utils/homeAssistant';
 
 interface SensorSummaryPanelProps {
   className?: string;
   deviceId?: string;
 }
-
-const resolveHomeAssistantUrl = (): string => {
-  const envUrl =
-    process.env.REACT_APP_HOME_ASSISTANT_URL ||
-    process.env.VITE_HOME_ASSISTANT_URL ||
-    process.env.NEXT_PUBLIC_HOME_ASSISTANT_URL ||
-    '';
-
-  const globalUrl =
-    typeof window !== 'undefined' && (window as any).__HOME_ASSISTANT_URL__
-      ? String((window as any).__HOME_ASSISTANT_URL__)
-      : '';
-
-  const candidate = envUrl || globalUrl;
-  if (candidate) {
-    if (/^https?:\/\//i.test(candidate)) {
-      return candidate;
-    }
-    if (typeof window !== 'undefined' && window.location) {
-      const base = window.location.origin.replace(/\/$/, '');
-      const normalized = candidate.startsWith('/') ? candidate : `/${candidate}`;
-      return `${base}${normalized}`;
-    }
-    return candidate;
-  }
-
-  return 'https://yvhqbpr07mrxznxn0azgwpnynntpvvpf.ui.nabu.casa';
-};
 
 const formatValue = (item: SensorSummaryItem): string => {
   const { value, unit } = item;
@@ -183,7 +156,7 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
           rel="noreferrer"
           className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
         >
-          Open VermiLinks Actuators
+          View VermiLinks Actuators
           <ExternalLink className="h-4 w-4" />
         </a>
       </footer>

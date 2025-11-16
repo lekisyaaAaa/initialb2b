@@ -2,20 +2,48 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const { auth, adminOnly } = require('../middleware/auth');
 const ActuatorState = require('../models/ActuatorState');
+const ActuatorLog = require('../models/ActuatorLog');
+const deviceCommandQueue = require('../services/deviceCommandQueue');
 const logger = require('../utils/logger');
 
 const router = express.Router();
 
 // POST /api/actuators/override
 // Admin-only: set an override state for an actuator (persisted)
-router.post('/override', [auth, adminOnly, body('actuatorKey').isString().notEmpty(), body('state').exists()], async (req, res) => {
+router.post('/override', [auth, adminOnly, body('deviceId').isString().notEmpty(), body('actuatorKey').isString().notEmpty(), body('state').exists()], async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) return res.status(400).json({ success: false, errors: errors.array() });
 
-    const { actuatorKey, state } = req.body;
+    const { deviceId, actuatorKey, state, actuatorType, reason } = req.body;
 
     const rec = await ActuatorState.create({ actuatorKey, state, reportedAt: new Date() });
+
+    // create an ActuatorLog entry for audit
+    try {
+      await ActuatorLog.create({
+        deviceId,
+        actuatorType: actuatorType || 'pump',
+        action: (state && state.on) || state === 'on' ? 'on' : (state && state === 'manual' ? 'manual' : 'off'),
+        reason: reason || 'admin_override',
+        triggeredBy: 'manual',
+        userId: req.user && req.user.id ? req.user.id : null,
+      });
+    } catch (logErr) {
+      logger.warn('Failed to create ActuatorLog for override', logErr && logErr.message ? logErr.message : logErr);
+    }
+
+    // enqueue a device command to dispatch to the device (best-effort)
+    try {
+      await deviceCommandQueue.queueActuatorCommand({
+        hardwareId: deviceId,
+        actuatorName: actuatorKey,
+        desiredState: (state && (state === 'on' || (state.on === true))) || state === true,
+        context: { actuator: actuatorKey },
+      });
+    } catch (cmdErr) {
+      logger.warn('Failed to enqueue actuator command for override', cmdErr && cmdErr.message ? cmdErr.message : cmdErr);
+    }
 
     // Broadcast override to connected clients
     try {
