@@ -5,10 +5,7 @@ const SensorData = require('../models/SensorData');
 const sequelize = require('./database_pg');
 const deviceCommandQueue = require('./deviceCommandQueue');
 const { enforceFloatSafety } = require('./floatSensorGuard');
-
-function resolveIo() {
-  return global.io && typeof global.io.emit === 'function' ? global.io : null;
-}
+const { REALTIME_EVENTS, emitRealtime } = require('../utils/realtime');
 
 function normalizeName(value = '') {
   return value.trim().toLowerCase();
@@ -209,12 +206,8 @@ async function logActuatorAction(actuator, action, options = {}) {
 
 async function broadcastActuator(actuator) {
   try {
-    if (global.io && typeof global.io.emit === 'function') {
-      const payload = sanitizeActuator(actuator);
-      global.io.emit('actuator_update', payload);
-      // Maintain backward compatibility with legacy clients during transition.
-      global.io.emit('actuatorUpdate', payload);
-    }
+    const payload = sanitizeActuator(actuator);
+    emitRealtime(REALTIME_EVENTS.ACTUATOR_UPDATE, payload);
   } catch (error) {
     console.warn('actuatorService: broadcast failed:', error && error.message ? error.message : error);
   }
@@ -274,17 +267,14 @@ async function updateActuatorStatus(actuator, status, options = {}) {
 
     if (!safety.allowed) {
       try {
-        const io = resolveIo();
-        if (io) {
-          io.emit('floatLockout', {
-            deviceId: hardwareId || null,
-            actuator: actuatorKeyFromName(actuator.name) || actuator.name,
-            message: safety.message || 'Float sensor lockout active',
-            floatSensor: typeof safety.floatState === 'number' ? safety.floatState : null,
-            floatSensorTimestamp: safety.timestamp || null,
-            timestamp: new Date().toISOString(),
-          });
-        }
+        emitRealtime(REALTIME_EVENTS.FLOAT_LOCKOUT, {
+          deviceId: hardwareId || null,
+          actuator: actuatorKeyFromName(actuator.name) || actuator.name,
+          message: safety.message || 'Float sensor lockout active',
+          floatSensor: typeof safety.floatState === 'number' ? safety.floatState : null,
+          floatSensorTimestamp: safety.timestamp || null,
+          timestamp: new Date().toISOString(),
+        });
       } catch (emitError) {
         console.warn('actuatorService: failed to emit floatLockout', emitError && emitError.message ? emitError.message : emitError);
       }
@@ -321,18 +311,15 @@ async function updateActuatorStatus(actuator, status, options = {}) {
       });
       if (queueResult && queueResult.command) {
         try {
-          const io = resolveIo();
-          if (io) {
-            const commandRow = queueResult.command.get ? queueResult.command.get({ plain: true }) : queueResult.command;
-            io.emit('device_command_created', {
-              deviceId: hardwareId,
-              commandId: commandRow.id,
-              actuator: commandRow.payload && commandRow.payload.actuatorKey ? commandRow.payload.actuatorKey : actuatorKeyFromName(actuator.name),
-              desiredState: desired ? 'on' : 'off',
-              queuedAt: commandRow.requested_at || new Date().toISOString(),
-              dispatched: queueResult.dispatched === true,
-            });
-          }
+          const commandRow = queueResult.command.get ? queueResult.command.get({ plain: true }) : queueResult.command;
+          emitRealtime(REALTIME_EVENTS.DEVICE_COMMAND_CREATED, {
+            deviceId: hardwareId,
+            commandId: commandRow.id,
+            actuator: commandRow.payload && commandRow.payload.actuatorKey ? commandRow.payload.actuatorKey : actuatorKeyFromName(actuator.name),
+            desiredState: desired ? 'on' : 'off',
+            queuedAt: commandRow.requested_at || new Date().toISOString(),
+            dispatched: queueResult.dispatched === true,
+          });
         } catch (emitError) {
           console.warn('actuatorService: failed to emit device_command_created', emitError && emitError.message ? emitError.message : emitError);
         }

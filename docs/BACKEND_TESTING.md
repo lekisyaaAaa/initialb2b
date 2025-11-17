@@ -72,6 +72,18 @@ curl -X POST http://localhost:5000/api/auth/login \
 }
 ```
 
+### Admin OTP hardening checklist
++- Required email variables: set `EMAIL_USER`, `EMAIL_PASS`, and optionally `EMAIL_FROM`, `EMAIL_SERVICE`, or SMTP knobs (`SMTP_HOST`, `SMTP_PORT`, `EMAIL_SECURE`). Missing values now warn loudly so you know when no OTP emails can be sent.
++- Tunable TTL and rate limits: `ADMIN_OTP_TTL_MS`, `ADMIN_OTP_MAX_ATTEMPTS`, `ADMIN_OTP_RESEND_MAX_ATTEMPTS`, `ADMIN_OTP_RETENTION_HOURS`, and `ADMIN_OTP_CLEANUP_CRON` bound OTP lifetime and cleanup cadence. Defaults stay safe (3‑minute TTL, daily cleanup) if you omit them.
++- Tests and CI: the hardened flow is covered by `npm test -- __tests__/auth_flow.test.js`. The suite runs in SQLite mode, skips the cron cleanup scheduler, and expects either a running local SMTP catcher (e.g., MailHog on `SMTP_HOST=localhost:1025`) or falls back to the debug OTP path when delivery fails.
+
+### Token lifecycle hardening checklist
++- Token blacklisting: Access tokens are blacklisted on logout to prevent reuse. Refresh tokens are blacklisted on rotation to enforce single-use.
++- Refresh token rotation: Each refresh generates a new refresh token, invalidating the old one.
++- Session metadata tracking: Enhanced metadata in `user_sessions` table includes IP, user agent, and activity timestamps.
++- Audit logging: Token issuance, refresh, revocation, and blacklisting events are logged to `audit_logs` table.
++- Middleware checks: Auth middleware now checks for blacklisted tokens before allowing access.
+
 ### Test User Login
 ```bash
 curl -X POST http://localhost:5000/api/auth/login \

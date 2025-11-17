@@ -16,6 +16,7 @@ const { ensureDefaultActuators, sanitizeActuator } = require('../services/actuat
 const deviceManager = require('../services/deviceManager');
 const { auth } = require('../middleware/auth');
 const logger = require('../utils/logger');
+const { REALTIME_EVENTS, emitRealtime } = require('../utils/realtime');
 
 const router = express.Router();
 
@@ -160,14 +161,7 @@ function emitActuatorUpdate(actuator) {
     return null;
   }
   const payload = sanitizeActuator(actuator);
-  try {
-    if (global.io && typeof global.io.emit === 'function') {
-      global.io.emit('actuator_update', payload);
-      global.io.emit('actuatorUpdate', payload);
-    }
-  } catch (error) {
-    logger.warn('HA float endpoint failed to broadcast actuator update', error && error.message ? error.message : error);
-  }
+  emitRealtime(REALTIME_EVENTS.ACTUATOR_UPDATE, payload);
   return payload;
 }
 

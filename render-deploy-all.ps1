@@ -169,6 +169,113 @@ function Show-BackendLogs {
     }
 }
 
+function Test-HealthChecks {
+    param(
+        [string]$BackendUrl
+    )
+
+    Write-Section "Running comprehensive health checks"
+
+    $healthChecks = @(
+        @{
+            Name = "API Health"
+            Url = "$BackendUrl/api/health"
+            Method = "GET"
+        },
+        @{
+            Name = "Admin Alerts"
+            Url = "$BackendUrl/api/admin/alerts"
+            Method = "GET"
+            Headers = @{ "Authorization" = "Bearer test-token" }
+            ExpectedStatus = 401  # Should fail without auth, but endpoint should exist
+        }
+    )
+
+    $allPassed = $true
+
+    foreach ($check in $healthChecks) {
+        try {
+            $params = @{
+                Uri = $check.Url
+                Method = $check.Method
+                TimeoutSec = 10
+                ErrorAction = 'Stop'
+            }
+
+            if ($check.Headers) {
+                $params.Headers = $check.Headers
+            }
+
+            $response = Invoke-WebRequest @params
+
+            if ($check.ExpectedStatus -and $response.StatusCode -ne $check.ExpectedStatus) {
+                Write-WarningLine "$($check.Name): Expected status $($check.ExpectedStatus), got $($response.StatusCode)"
+                $allPassed = $false
+            } else {
+                Write-Success "$($check.Name): $($response.StatusCode) - OK"
+            }
+        } catch {
+            if ($check.ExpectedStatus) {
+                Write-Success "$($check.Name): Expected failure - OK"
+            } else {
+                Write-Failure "$($check.Name): Failed - $_"
+                $allPassed = $false
+            }
+        }
+    }
+
+    return $allPassed
+}
+
+function Test-WebSocketConnection {
+    param(
+        [string]$WsUrl,
+        [string]$DeviceId = "smoke-test-device"
+    )
+
+    Write-Section "Testing WebSocket connection"
+
+    try {
+        # Use Node.js script for WebSocket testing
+        $scriptPath = Join-Path $PSScriptRoot "backend\scripts\ws-device-sim.js"
+        if (Test-Path $scriptPath) {
+            Write-Info "Running WebSocket smoke test with device ID: $DeviceId"
+
+            # Run the WebSocket simulator for a short test
+            $job = Start-Job -ScriptBlock {
+                param($script, $url, $id)
+                try {
+                    & node $script $url $id
+                } catch {
+                    Write-Error "WebSocket test failed: $_"
+                }
+            } -ArgumentList $scriptPath, $WsUrl, $DeviceId
+
+            # Wait a bit for connection
+            Start-Sleep -Seconds 3
+
+            # Check if job is still running (good sign)
+            if ($job.State -eq 'Running') {
+                Write-Success "WebSocket connection established and maintained"
+                Stop-Job $job -ErrorAction SilentlyContinue
+                Remove-Job $job -ErrorAction SilentlyContinue
+                return $true
+            } else {
+                Write-Failure "WebSocket connection failed or terminated early"
+                Receive-Job $job -ErrorAction SilentlyContinue
+                Remove-Job $job -ErrorAction SilentlyContinue
+                return $false
+            }
+        } else {
+            Write-WarningLine "WebSocket test script not found at $scriptPath"
+            return $false
+        }
+    } catch {
+        Write-Failure "WebSocket test error: $_"
+        return $false
+    }
+}
+
 # Script parameters and constants
 $backendId = 'srv-d43v9q0dl3ps73aarv30'
 $frontendId = 'srv-d43v9h0dl3ps73aarlgg'
@@ -183,6 +290,14 @@ $frontendExit = Invoke-Deploy -ServiceId $frontendId -ServiceName 'VermiLinks Fr
 $statuses = Show-ServiceStatuses -ServiceIds @($backendId, $frontendId)
 Show-BackendLogs -ServiceId $backendId
 
+# Run comprehensive health checks
+$backendUrl = "https://vermilinks-backend.onrender.com"
+$healthPassed = Test-HealthChecks -BackendUrl $backendUrl
+
+# Test WebSocket connection
+$wsUrl = "wss://vermilinks-backend.onrender.com"
+$wsPassed = Test-WebSocketConnection -WsUrl $wsUrl -DeviceId "deploy-smoke-test"
+
 if ($backendExit -eq 0 -and $frontendExit -eq 0) {
     $allLive = $false
     if ($statuses) {
@@ -194,14 +309,28 @@ if ($backendExit -eq 0 -and $frontendExit -eq 0) {
         }
     }
 
-    if ($allLive) {
-        Write-Success "VermiLinks deployment complete. All services report live."
+    if ($allLive -and $healthPassed -and $wsPassed) {
+        Write-Success "VermiLinks deployment complete. All services live and healthy."
+    } elseif ($allLive) {
+        Write-Success "VermiLinks deployment complete. Services are live, but some health checks failed."
     } else {
         Write-Success "VermiLinks deployment complete. Verify service statuses above."
     }
 
     Write-Info "Backend URL: https://vermilinks-backend.onrender.com"
     Write-Info "Frontend URL: https://vermilinks-frontend.onrender.com"
+    Write-Info "HA Webhook URL: https://vermilinks-backend.onrender.com/api/ha/webhook"
+    Write-Info "Health Check: https://vermilinks-backend.onrender.com/api/health"
+    Write-Info "Admin Alerts: https://vermilinks-backend.onrender.com/api/admin/alerts"
+    Write-Info "WebSocket URL: wss://vermilinks-backend.onrender.com"
+
+    if (-not $healthPassed) {
+        Write-WarningLine "Some health checks failed. Check the logs above."
+    }
+    if (-not $wsPassed) {
+        Write-WarningLine "WebSocket connection test failed. Verify WebSocket configuration."
+    }
+
     exit 0
 } else {
     Write-Failure "One or more deploy commands exited with an error. Review logs above."

@@ -6,7 +6,6 @@ import './App.css';
 // Import components
 import HomePage from './pages/HomePage';
 import ContactPage from './pages/ContactPage';
-import Dashboard from './pages/Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import DevicePortsPage from './pages/DevicePortsPage';
 import LogsPage from './pages/LogsPage';
@@ -21,10 +20,12 @@ import AlertsPage from './pages/admin/Alerts';
 import { AuthProvider } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
 import { DarkModeProvider } from './contexts/DarkModeContext';
+import { ToastProvider } from './contexts/ToastContext';
 
 // Import components
 import ProtectedRoute from './components/ProtectedRoute';
 import OnboardingTour from './components/OnboardingTour';
+import ToastContainer from './components/ToastContainer';
 import tourSteps from './components/OnboardingTour/tourConfig';
 
 function App() {
@@ -32,13 +33,13 @@ function App() {
     <DarkModeProvider>
       <AuthProvider>
         <DataProvider>
-          <Router>
-            <div className="App">
-              <OnboardingTour steps={tourSteps} />
-              <Routes>
+          <ToastProvider>
+            <Router>
+              <div className="App">
+                <OnboardingTour steps={tourSteps} />
+                <Routes>
                 <Route path="/" element={<HomePage />} />
                 <Route path="/contact" element={<ContactPage />} />
-                <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/login" element={<Navigate to="/admin/login" replace />} />
                 {/* Public admin authentication routes */}
                 <Route path="/admin/login" element={<AdminLoginPage />} />
@@ -54,13 +55,13 @@ function App() {
                 <Route path="/logs" element={<ProtectedRoute><LogsPage /></ProtectedRoute>} />
                 <Route path="/thresholds" element={<ProtectedRoute><ThresholdsPage /></ProtectedRoute>} />
                 <Route path="*" element={<Navigate to="/" />} />
-              </Routes>
-            </div>
-          </Router>
+                </Routes>
+                <ToastContainer />
+              </div>
+            </Router>
+          </ToastProvider>
         </DataProvider>
       </AuthProvider>
     </DarkModeProvider>
   );
-}
-
-export default App;
+}export default App;

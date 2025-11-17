@@ -1,5 +1,7 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const UserSession = require('../models/UserSession');
+const RevokedToken = require('../models/RevokedToken');
 
 // Authentication middleware
 const auth = async (req, res, next) => {
@@ -15,6 +17,35 @@ const auth = async (req, res, next) => {
 
     const secret = process.env.JWT_SECRET || 'devsecret';
     const decoded = jwt.verify(token, secret);
+
+    // Check if token is blacklisted
+    try {
+      const tokenHash = require('crypto').createHash('sha256').update(token, 'utf8').digest('hex');
+      const blacklisted = await RevokedToken.findOne({ where: { tokenHash } });
+      if (blacklisted) {
+        return res.status(401).json({ success: false, message: 'Token has been revoked.' });
+      }
+    } catch (e) {
+      // ignore DB errors and continue
+    }
+    // If a session record exists for this token, enforce session state (revoked/expired)
+    try {
+      const session = await UserSession.findOne({ where: { token } });
+      if (session) {
+        if (session.revokedAt) {
+          return res.status(401).json({ success: false, message: 'Session has been revoked.' });
+        }
+        if (session.expiresAt && new Date(session.expiresAt).getTime() < Date.now()) {
+          // Destroy expired session if possible and deny access
+          try { await session.destroy(); } catch (e) {}
+          return res.status(401).json({ success: false, message: 'Session has expired.' });
+        }
+        // attach session metadata for downstream handlers
+        req.session = session;
+      }
+    } catch (e) {
+      // ignore DB errors and continue; JWT verification is still authoritative
+    }
     // Sequelize: findByPk to fetch user
     let user = null;
     try {

@@ -11,6 +11,7 @@ import SensorSummaryPanel from '../components/SensorSummaryPanel';
 import { DeviceManagement } from '../components/DeviceManagement';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
+import { useToast } from '../contexts/ToastContext';
 import weatherService from '../services/weatherService';
 import api, { alertService, sensorService } from '../services/api';
 import { LatestSnapshot, SensorData as SensorDataType } from '../types';
@@ -44,6 +45,16 @@ type DeviceSummary = {
   lastHeartbeat?: string | null;
   signalStrength?: number | null;
   metadata?: Record<string, any> | null;
+};
+
+type ActuatorSnapshot = {
+  key: string;
+  name?: string | null;
+  status: boolean | null;
+  mode: 'auto' | 'manual' | 'locked';
+  updatedAt: string;
+  deviceAck: boolean | null;
+  deviceAckMessage: string | null;
 };
 
 type StatusPillProps = { label: string; status: string };
@@ -111,6 +122,7 @@ export default function AdminDashboard(): React.ReactElement {
     isConnected: socketsConnected,
     refreshTelemetry: refreshLiveTelemetry,
   } = useData();
+  const { success, error, warning, info } = useToast();
   const [latestSensor, setLatestSensor] = useState<Sensor | null>(null);
   const [sensorHistory, setSensorHistory] = useState<Sensor[]>([]);
   const cardClass = 'p-4 rounded-xl bg-white dark:bg-gray-900/80 border border-gray-100 dark:border-gray-800 shadow';
@@ -123,9 +135,12 @@ export default function AdminDashboard(): React.ReactElement {
   const [deviceInventory, setDeviceInventory] = useState<DeviceSummary[]>([]);
   const [deviceError, setDeviceError] = useState<string | null>(null);
   const [healthStatus, setHealthStatus] = useState<any | null>(null);
+  const [actuatorStatuses, setActuatorStatuses] = useState<Record<string, ActuatorSnapshot>>({});
+  const [actuatorTimeline, setActuatorTimeline] = useState<ActuatorSnapshot[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const lastTelemetryToastRef = useRef<number>(0);
 
   // Maintenance reminders state (populated from backend)
   const [reminders, setReminders] = useState<Array<any>>([]);
@@ -292,6 +307,94 @@ export default function AdminDashboard(): React.ReactElement {
     }
   }, []);
 
+  const describeRelativeTime = useCallback((value?: string | null) => {
+    if (!value) return 'just now';
+    const timestamp = Date.parse(value);
+    if (Number.isNaN(timestamp)) {
+      return String(value);
+    }
+    const diff = Date.now() - timestamp;
+    if (diff < 30_000) return 'just now';
+    if (diff < 60_000) return 'under 1m ago';
+    if (diff < 3_600_000) {
+      const minutes = Math.round(diff / 60_000);
+      return `${minutes}m ago`;
+    }
+    if (diff < 86_400_000) {
+      const hours = Math.round(diff / 3_600_000);
+      return `${hours}h ago`;
+    }
+    const days = Math.round(diff / 86_400_000);
+    if (days <= 7) {
+      return `${days}d ago`;
+    }
+    return new Date(timestamp).toLocaleString();
+  }, []);
+
+  const normalizeActuatorSnapshot = useCallback((payload: any): ActuatorSnapshot | null => {
+    if (!payload || typeof payload !== 'object') {
+      return null;
+    }
+    const keyCandidate = payload.key
+      ?? payload.actuator
+      ?? payload.actuatorKey
+      ?? payload.id
+      ?? payload.name;
+    if (!keyCandidate) {
+      return null;
+    }
+    const key = keyCandidate.toString();
+
+    const extractBoolean = (...candidates: any[]): boolean | null => {
+      for (const candidate of candidates) {
+        if (typeof candidate === 'boolean') {
+          return candidate;
+        }
+        if (typeof candidate === 'number') {
+          return candidate > 0;
+        }
+        if (typeof candidate === 'string' && candidate.trim()) {
+          const normalized = candidate.trim().toLowerCase();
+          if (['on', 'true', '1', 'open', 'enabled', 'start', 'active'].includes(normalized)) {
+            return true;
+          }
+          if (['off', 'false', '0', 'closed', 'disabled', 'stop', 'inactive'].includes(normalized)) {
+            return false;
+          }
+        }
+      }
+      return null;
+    };
+
+    const status = extractBoolean(payload.status, payload.desiredState, payload.value, payload.state);
+    const modeSource = (payload.mode || payload.actuatorMode || payload.controlMode || '').toString().toLowerCase();
+    let mode: ActuatorSnapshot['mode'] = 'auto';
+    if (modeSource === 'manual') {
+      mode = 'manual';
+    } else if (modeSource === 'locked' || modeSource === 'lockout') {
+      mode = 'locked';
+    }
+
+    const updatedAtSource = payload.updatedAt || payload.lastUpdated || payload.timestamp || new Date().toISOString();
+    const updatedDate = new Date(updatedAtSource);
+    const updatedAt = Number.isNaN(updatedDate.getTime()) ? new Date().toISOString() : updatedDate.toISOString();
+
+    return {
+      key,
+      name: payload.name || payload.displayName || payload.actuatorName || key,
+      status,
+      mode,
+      updatedAt,
+      deviceAck: typeof payload.deviceAck === 'boolean' ? payload.deviceAck : null,
+      deviceAckMessage: payload.deviceAckMessage || null,
+    };
+  }, []);
+
+  const formatActuatorStatusLabel = (value: boolean | null): string => {
+    if (value === null) return 'unknown';
+    return value ? 'on' : 'off';
+  };
+
   useEffect(() => {
     if (!sharedSocket) {
       return undefined;
@@ -317,6 +420,7 @@ export default function AdminDashboard(): React.ReactElement {
       sharedSocket.off('device_heartbeat', handleDeviceStatus);
     };
   }, [applyDeviceStatusUpdate]);
+
 
   const loadLatestAlerts = useCallback(async (options?: { showLoader?: boolean }) => {
     const showLoader = Boolean(options?.showLoader);
@@ -360,6 +464,49 @@ export default function AdminDashboard(): React.ReactElement {
       }
     }
   }, [classifySeverity]);
+
+  useEffect(() => {
+    if (!sharedSocket) {
+      return undefined;
+    }
+
+    const handleActuatorUpdate = (payload: any) => {
+      const snapshot = normalizeActuatorSnapshot(payload);
+      if (!snapshot) {
+        return;
+      }
+      setActuatorStatuses((prev) => ({
+        ...prev,
+        [snapshot.key]: snapshot,
+      }));
+      setActuatorTimeline((prev) => {
+        const filtered = prev.filter((entry) => !(entry.key === snapshot.key && entry.updatedAt === snapshot.updatedAt));
+        return [snapshot, ...filtered].slice(0, 10);
+      });
+    };
+
+    const handleAlertRealtime = () => {
+      loadLatestAlerts();
+      // Show toast for new alerts
+      info('Alert Update', 'New alerts detected - check the Alerts panel');
+    };
+
+    sharedSocket.on('actuator:update', handleActuatorUpdate);
+    sharedSocket.on('actuator_update', handleActuatorUpdate);
+    sharedSocket.on('actuatorUpdate', handleActuatorUpdate);
+    sharedSocket.on('alert:new', handleAlertRealtime);
+    sharedSocket.on('alert:cleared', handleAlertRealtime);
+    sharedSocket.on('alert:trigger', handleAlertRealtime);
+
+    return () => {
+      sharedSocket.off('actuator:update', handleActuatorUpdate);
+      sharedSocket.off('actuator_update', handleActuatorUpdate);
+      sharedSocket.off('actuatorUpdate', handleActuatorUpdate);
+      sharedSocket.off('alert:new', handleAlertRealtime);
+      sharedSocket.off('alert:cleared', handleAlertRealtime);
+      sharedSocket.off('alert:trigger', handleAlertRealtime);
+    };
+  }, [loadLatestAlerts, normalizeActuatorSnapshot]);
 
   const markAlertAsRead = useCallback(async (alertId?: string) => {
     if (!alertId) {
@@ -419,6 +566,48 @@ export default function AdminDashboard(): React.ReactElement {
       setAlertsClearing(false);
     }
   }, [alertsClearing, loadLatestAlerts]);
+
+  const handleExportSensorData = useCallback(() => {
+    if (!sensorHistory.length) {
+      warning('Export Failed', 'No sensor data available to export');
+      return;
+    }
+
+    try {
+      const headers = ['Timestamp', 'Temperature (°C)', 'Humidity (%)', 'Soil Moisture (%)', 'pH', 'EC (mS/cm)', 'Water Level', 'Battery (%)', 'Signal (dBm)'];
+      const csvData = sensorHistory.map((entry) => [
+        entry.timestamp || entry.lastSeen || '',
+        entry.temperature ?? '',
+        entry.humidity ?? '',
+        entry.moisture ?? '',
+        entry.ph ?? '',
+        entry.ec ?? '',
+        entry.waterLevel ?? '',
+        entry.batteryLevel ?? '',
+        entry.signalStrength ?? '',
+      ]);
+
+      const csvContent = [headers, ...csvData]
+        .map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+        .join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `sensor-data-${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      success('Export Complete', `Exported ${sensorHistory.length} sensor readings to CSV`);
+    } catch (err) {
+      console.error('Export failed:', err);
+      error('Export Failed', 'Unable to export sensor data');
+    }
+  }, [sensorHistory, success, error, warning]);
 
   function acknowledgeReminder(id: string) {
     setReminders(prev => prev.map(r => r.id === id ? { ...r, acknowledged: true } : r));
@@ -623,7 +812,14 @@ export default function AdminDashboard(): React.ReactElement {
       const merged = [...prev, mapped];
       return merged.slice(-336);
     });
-  }, [ctxTelemetry]);
+
+    // Show toast for new telemetry, but not too frequently
+    const now = Date.now();
+    if (now - lastTelemetryToastRef.current > 5 * 60 * 1000) { // 5 minutes
+      info('Sensor Update', 'New telemetry data received');
+      lastTelemetryToastRef.current = now;
+    }
+  }, [ctxTelemetry, info]);
 
   useEffect(() => {
     if (devicesOnline === 0) {
@@ -779,6 +975,13 @@ export default function AdminDashboard(): React.ReactElement {
     }
     return sensorHistory.length > 0 || filteredAlerts.length > 0 || latestAlerts.length > 0;
   }, [filteredAlerts, hasConnectedSensors, latestAlerts, sensorHistory]);
+
+  const actuatorCards = useMemo(() => {
+    const list = Object.values(actuatorStatuses);
+    return list.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }, [actuatorStatuses]);
+
+  const actuatorHistory = useMemo(() => actuatorTimeline.slice(0, 6), [actuatorTimeline]);
 
   const groupedActiveAlerts = useMemo(() => {
     const buckets: Record<'critical' | 'warning' | 'info', any[]> = {
@@ -1094,6 +1297,87 @@ export default function AdminDashboard(): React.ReactElement {
                       )}
                     </div>
                   </div>
+                </div>
+
+                <div className={`${cardClass} rounded-2xl`}>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 flex items-center gap-2">
+                        <Settings className="w-5 h-5" />
+                        Actuator Activity
+                      </h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        Commands dispatched from VermiLinks Actuators update here instantly.
+                      </p>
+                    </div>
+                    <span className="inline-flex items-center rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold text-gray-600 dark:border-gray-700 dark:text-gray-300">
+                      {actuatorCards.length} tracked
+                    </span>
+                  </div>
+
+                  {actuatorCards.length === 0 ? (
+                    <p className="mt-4 text-sm text-gray-500 dark:text-gray-400">
+                      Waiting for the first actuator command. Manual overrides or Home Assistant automations will appear here.
+                    </p>
+                  ) : (
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {actuatorCards.slice(0, 4).map((actuator) => (
+                        <div key={actuator.key} className="rounded-lg border border-gray-100 bg-gray-50/80 p-3 text-sm shadow-sm dark:border-gray-800 dark:bg-gray-900/40">
+                          <div className="flex items-center justify-between">
+                            <span className="font-semibold text-gray-800 dark:text-gray-100">{actuator.name || actuator.key}</span>
+                            <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                              actuator.status === null
+                                ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-200'
+                                : actuator.status
+                                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-200'
+                                  : 'bg-gray-200 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+                            }`}>
+                              {formatActuatorStatusLabel(actuator.status)}
+                            </span>
+                          </div>
+                          <div className="mt-2 flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                            <span>Mode: <span className="font-semibold text-gray-800 dark:text-gray-100 capitalize">{actuator.mode}</span></span>
+                            <span>{describeRelativeTime(actuator.updatedAt)}</span>
+                          </div>
+                          {actuator.deviceAck === false && (
+                            <div className="mt-2 text-xs text-amber-600 dark:text-amber-300">
+                              Awaiting device ack{actuator.deviceAckMessage ? ` — ${actuator.deviceAckMessage}` : ''}
+                            </div>
+                          )}
+                          {actuator.deviceAck && (
+                            <div className="mt-2 text-[11px] font-semibold text-emerald-600 dark:text-emerald-300">
+                              Device acknowledged
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {actuatorHistory.length > 0 && (
+                    <div className="mt-5 border-t border-gray-100 pt-4 dark:border-gray-800">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-400 mb-2">
+                        Recent Commands
+                      </div>
+                      <ul className="space-y-2 text-xs text-gray-600 dark:text-gray-300">
+                        {actuatorHistory.map((entry) => (
+                          <li key={`${entry.key}-${entry.updatedAt}`} className="flex items-center justify-between gap-3">
+                            <div>
+                              <div className="font-semibold text-gray-800 dark:text-gray-100">{entry.name || entry.key}</div>
+                              <div className="text-[11px] text-gray-500 dark:text-gray-400 capitalize">
+                                {formatActuatorStatusLabel(entry.status)} • {entry.mode}
+                                {entry.deviceAck === false && ' • pending ack'}
+                              </div>
+                              {entry.deviceAckMessage && (
+                                <div className="text-[11px] text-amber-600 dark:text-amber-300">{entry.deviceAckMessage}</div>
+                              )}
+                            </div>
+                            <span className="text-gray-500 dark:text-gray-400">{describeRelativeTime(entry.updatedAt)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
 
                 <RealtimeTelemetryPanel
@@ -1444,31 +1728,7 @@ export default function AdminDashboard(): React.ReactElement {
                           </button>
                           <button
                             title="Export as CSV"
-                            onClick={async () => {
-                              const rows = sensorHistory.map(s => ({
-                                timestamp: (s as any).timestamp || new Date().toISOString(),
-                                deviceId: s.deviceId || '',
-                                temperature: s.temperature ?? '',
-                                humidity: s.humidity ?? '',
-                                moisture: s.moisture ?? '',
-                                ph: s.ph ?? '',
-                                ec: s.ec ?? '',
-                                waterLevel: s.waterLevel ?? '',
-                              }));
-                              const csv = [
-                                ['timestamp','deviceId','temperature','humidity','moisture','ph','ec','waterLevel'],
-                                ...rows.map(r => [r.timestamp, r.deviceId, r.temperature, r.humidity, r.moisture, r.ph, r.ec, r.waterLevel])
-                              ].map(r => r.join(',')).join('\n');
-                              const blob = new Blob([csv], { type: 'text/csv' });
-                              const url = URL.createObjectURL(blob);
-                              const a = document.createElement('a');
-                              a.href = url;
-                              a.download = 'sensor-history.csv';
-                              document.body.appendChild(a);
-                              a.click();
-                              a.remove();
-                              URL.revokeObjectURL(url);
-                            }}
+                            onClick={handleExportSensorData}
                             className="px-4 py-2 text-sm rounded-md bg-gray-200 dark:bg-gray-700"
                           >
                             Export CSV

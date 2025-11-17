@@ -22,6 +22,26 @@ const UserSession = sequelize.define('UserSession', {
     allowNull: false,
     field: 'expires_at',
   },
+  refreshTokenHash: {
+    type: DataTypes.STRING(128),
+    allowNull: true,
+    field: 'refresh_token_hash',
+  },
+  refreshExpiresAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'refresh_expires_at',
+  },
+  revokedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'revoked_at',
+  },
+  revocationReason: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    field: 'revocation_reason',
+  },
   metadata: {
     type: DataTypes.JSON,
     allowNull: true,

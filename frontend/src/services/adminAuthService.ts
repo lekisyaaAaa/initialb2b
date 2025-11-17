@@ -16,6 +16,9 @@ export interface AdminVerifyOtpResponse {
   message?: string;
   data?: {
     token?: string;
+    refreshToken?: string;
+    refreshExpiresAt?: string;
+    expiresAt?: string;
     user?: Record<string, unknown>;
     attemptsRemaining?: number;
     delivery?: string;
@@ -34,12 +37,46 @@ export interface AdminResendOtpResponse {
     expiresAt?: string;
     debugCode?: string;
     delivery?: string;
+    rateLimit?: {
+      remaining?: number;
+      locked?: boolean;
+      retryAfterMs?: number;
+      retryAfterSeconds?: number;
+    };
   };
 }
 
 export interface AdminResetPasswordResponse {
   success: boolean;
   message?: string;
+}
+
+export interface AdminRefreshResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    token: string;
+    expiresAt: string;
+    refreshToken: string;
+    refreshExpiresAt: string;
+    user?: Record<string, unknown>;
+  };
+}
+
+export interface AdminLogoutResponse {
+  success: boolean;
+  message?: string;
+}
+
+export interface AdminSessionResponse {
+  success: boolean;
+  message?: string;
+  data?: {
+    token?: string;
+    expiresAt?: string | null;
+    refreshExpiresAt?: string | null;
+    user?: Record<string, unknown>;
+  };
 }
 
 function extractMessage(error: any, fallback: string): never {
@@ -123,5 +160,36 @@ export async function resetPassword(token: string, newPassword: string): Promise
     return response.data;
   } catch (error: any) {
     extractMessage(error, 'Unable to reset the password. Please try again.');
+  }
+}
+
+export async function refreshSession(refreshToken: string): Promise<AdminRefreshResponse> {
+  await ensureApiBase();
+  try {
+    const response = await api.post<AdminRefreshResponse>('/admin/refresh', { refreshToken: refreshToken.trim() });
+    return response.data;
+  } catch (error: any) {
+    extractMessage(error, 'Unable to refresh the session. Please log in again.');
+  }
+}
+
+export async function logoutSession(payload: { refreshToken?: string; token?: string }): Promise<AdminLogoutResponse> {
+  await ensureApiBase();
+  try {
+    const response = await api.post<AdminLogoutResponse>('/admin/logout', payload);
+    return response.data;
+  } catch (error: any) {
+    extractMessage(error, 'Unable to log out at this time.');
+  }
+}
+
+export async function getSession(token?: string): Promise<AdminSessionResponse> {
+  await ensureApiBase();
+  try {
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+    const response = await api.get<AdminSessionResponse>('/admin/session', { headers });
+    return response.data;
+  } catch (error: any) {
+    extractMessage(error, 'Unable to validate session.');
   }
 }

@@ -2,7 +2,20 @@ import { io, ManagerOptions, Socket, SocketOptions } from 'socket.io-client';
 
 let socketRef: Socket | null = null;
 
-const defaultUrl = process.env.REACT_APP_WS_URL || 'https://vermilinks-backend.onrender.com';
+const inferDefaultUrl = (): string => {
+  if (process.env.REACT_APP_WS_URL && process.env.REACT_APP_WS_URL.trim().length > 0) {
+    return process.env.REACT_APP_WS_URL.trim();
+  }
+  if (process.env.REACT_APP_BACKEND_URL && process.env.REACT_APP_BACKEND_URL.trim().length > 0) {
+    return process.env.REACT_APP_BACKEND_URL.trim();
+  }
+  if (typeof window !== 'undefined' && window.location && window.location.origin) {
+    return window.location.origin;
+  }
+  return 'http://localhost:4000';
+};
+
+const defaultUrl = inferDefaultUrl();
 export const SOCKET_URL = defaultUrl;
 
 const baseOptions: Partial<ManagerOptions & SocketOptions> = {

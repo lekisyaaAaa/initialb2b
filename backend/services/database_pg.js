@@ -7,7 +7,11 @@ const rawNodeEnv = (process.env.NODE_ENV || '').toLowerCase();
 const isTestEnv = rawNodeEnv === 'test' || Boolean(process.env.JEST_WORKER_ID);
 const envFile = isTestEnv ? '.env.test' : '.env';
 
-dotenv.config({ path: path.join(__dirname, '..', envFile), override: true });
+// Load environment variables from the env file but do NOT override any
+// variables explicitly set in the environment. This makes it possible to
+// run the server with a temporary `DATABASE_URL` (for example
+// `sqlite::memory:`) without `.env` values clobbering it.
+dotenv.config({ path: path.join(__dirname, '..', envFile), override: false });
 
 const baseOptions = {
 	logging: false,
@@ -39,6 +43,19 @@ if (isTestEnv) {
 	if (!databaseUrl || typeof databaseUrl !== 'string') {
 		logger.fatal('DATABASE_URL is missing or invalid.');
 		throw new Error('DATABASE_URL is missing or invalid.');
+	}
+
+	// If someone configured a SQLite DATABASE_URL in a non-development environment
+	// and did not explicitly allow SQLite fallback, refuse to start. This prevents
+	// accidental usage of a local SQLite DB in production (e.g., Render) which can
+	// cause runtime schema/ALTER issues and data loss.
+	const isDevEnv = (process.env.NODE_ENV || '').toLowerCase() === 'development';
+	const allowSqliteFallback = (process.env.ALLOW_SQLITE_FALLBACK || '').toLowerCase() === 'true';
+	if (typeof databaseUrl === 'string' && databaseUrl.trim().toLowerCase().startsWith('sqlite:')) {
+		if (!isTestEnv && !isDevEnv && !allowSqliteFallback) {
+			logger.fatal('Refusing to use SQLite in non-development environment. Set DATABASE_URL to a PostgreSQL url for production, or enable ALLOW_SQLITE_FALLBACK=true for local development.');
+			throw new Error('DATABASE_URL points to SQLite but ALLOW_SQLITE_FALLBACK is not enabled.');
+		}
 	}
 	let parsedUrl;
 	try {
@@ -80,8 +97,11 @@ function loadModels() {
 	require('../models/DeviceCommand');
 	require('../models').Command;
 	require('../models/Admin');
+	require('../models/AdminOTP');
 	require('../models/Otp');
+	require('../models/RevokedToken');
 	require('../models/UserSession');
+	require('../models/AuditLog');
 	require('../models/PasswordResetToken');
 	require('../models/SensorSnapshot');
 }
@@ -107,6 +127,22 @@ async function ensureDatabaseSetup(options = {}) {
 		// Only enable `alter` automatically when not in production. Callers can
 		// still pass `options.alter = true` to override explicitly (use with care).
 		syncOptions.alter = options.alter ?? (!isProd);
+	}
+
+	// SQLite has limited ALTER TABLE support and certain alterations (like adding
+	// a UNIQUE column) will fail. When using SQLite, avoid running `alter`
+	// automatically — migrations should be applied explicitly instead.
+	try {
+		const dialect = sequelize && typeof sequelize.getDialect === 'function' ? sequelize.getDialect() : null;
+		if (dialect === 'sqlite') {
+			syncOptions.alter = false;
+			// If force was requested (test mode), keep it as-is so tests still run
+			if (options.force) {
+				syncOptions.force = true;
+			}
+		}
+	} catch (e) {
+		// swallow - non-critical
 	}
 
 	logger.info('Syncing database schema', { force: Boolean(syncOptions.force), alter: Boolean(syncOptions.alter) });

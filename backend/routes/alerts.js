@@ -3,6 +3,7 @@ const { query, validationResult, body } = require('express-validator');
 const Alert = require('../models/Alert');
 const { auth, adminOnly } = require('../middleware/auth');
 const { sanitizeAlertPayload } = require('../utils/sensorFormatting');
+const { REALTIME_EVENTS, emitRealtime } = require('../utils/realtime');
 
 const router = express.Router();
 
@@ -356,14 +357,14 @@ router.delete('/clear', [auth, adminOnly], async (req, res) => {
     );
 
     // Broadcast a realtime update so dashboards can refresh summaries
-    try {
-      const io = (req.app && typeof req.app.get === 'function') ? req.app.get('io') : global.io;
-      if (io && typeof io.emit === 'function') {
-        io.emit('alert:trigger', { type: 'cleared', resolved: updated, timestamp: new Date().toISOString() });
-      }
-    } catch (e) {
-      // ignore emit errors
-    }
+    emitRealtime(REALTIME_EVENTS.ALERT_CLEARED, {
+      type: 'cleared',
+      event: 'cleared',
+      resolved: updated,
+      resolvedCount: updated,
+      deviceId: null,
+      timestamp: new Date().toISOString(),
+    }, { io: req.app });
 
     return res.json({ ok: true, resolved: updated });
   } catch (error) {
@@ -394,6 +395,15 @@ router.put('/:id/resolve', [auth, adminOnly], async (req, res) => {
     }
 
     await alert.resolve(req.user.username);
+
+    emitRealtime(REALTIME_EVENTS.ALERT_CLEARED, {
+      type: 'resolved',
+      event: 'resolved',
+      alertId: alert.id,
+      deviceId: alert.deviceId || null,
+      alert: sanitizeAlertPayload(alert),
+      timestamp: new Date().toISOString(),
+    }, { io: req.app });
 
     res.json({
       success: true,
@@ -432,6 +442,15 @@ router.put('/resolve-all', [auth, adminOnly], async (req, res) => {
       },
       { where: query }
     );
+
+    emitRealtime(REALTIME_EVENTS.ALERT_CLEARED, {
+      type: 'resolved-all',
+      event: 'resolved-all',
+      deviceId: deviceId || null,
+      resolved: updatedCount,
+      resolvedCount: updatedCount,
+      timestamp: new Date().toISOString(),
+    }, { io: req.app });
 
     res.json({
       success: true,
@@ -497,6 +516,14 @@ router.post('/test', [auth, adminOnly], async (req, res) => {
         moisture: 45.0
       }
     });
+
+    const sanitized = sanitizeAlertPayload(testAlert);
+    emitRealtime(REALTIME_EVENTS.ALERT_NEW, {
+      deviceId: sanitized.deviceId || null,
+      alerts: [sanitized],
+      event: 'test',
+      triggeredAt: new Date().toISOString(),
+    }, { io: req.app });
 
     res.status(201).json({
       success: true,

@@ -62,6 +62,28 @@ const adminAuthLimiter = rateLimit({
   },
 });
 
+const adminVerifyLimiter = rateLimit({
+  windowMs: parseInt(process.env.ADMIN_OTP_WINDOW_MS || (10 * 60 * 1000).toString(), 10),
+  max: parseInt(process.env.ADMIN_OTP_MAX_ATTEMPTS || '5', 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many verification attempts. Please try again later.',
+  },
+});
+
+const adminResendLimiter = rateLimit({
+  windowMs: parseInt(process.env.ADMIN_OTP_RESEND_WINDOW_MS || (10 * 60 * 1000).toString(), 10),
+  max: parseInt(process.env.ADMIN_OTP_RESEND_MAX_ATTEMPTS || '3', 10),
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: {
+    success: false,
+    message: 'Too many resend attempts. Please try again later.',
+  },
+});
+
 const sensorRateLimiter = rateLimit({
   windowMs: 1000,
   max: parseInt(process.env.SENSORS_RATE_LIMIT_MAX || '60', 10),
@@ -347,6 +369,8 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 app.use('/api/admin/login', adminAuthLimiter);
 app.use('/api/admin/forgot-password', adminAuthLimiter);
+app.use('/api/admin/verify-otp', adminVerifyLimiter);
+app.use('/api/admin/resend-otp', adminResendLimiter);
 
 // Friendly JSON parse error handler: body-parser throws a SyntaxError which would
 // surface to the generic error handler. Catch it early and return a clear 400
@@ -670,6 +694,7 @@ if ((process.env.NODE_ENV || 'development') !== 'test') {
 module.exports = app;
 // Export the http server as a property to allow tests to close it gracefully
 module.exports.server = server;
+module.exports.schemaReady = schemaReady;
 
 // Simple server startup for development
 if ((process.env.NODE_ENV || 'development') !== 'test') {

@@ -2,12 +2,9 @@
 const Device = require('../models/Device');
 const Alert = require('../models/Alert');
 const { ensureDatabaseSetup } = require('../services/database_pg');
+const { REALTIME_EVENTS, emitRealtime } = require('../utils/realtime');
 
 const schemaReady = ensureDatabaseSetup({ force: (process.env.NODE_ENV || 'development') === 'test' });
-
-function resolveIo() {
-  return global.io && typeof global.io.emit === 'function' ? global.io : null;
-}
 
 async function ensureReady() {
   if (schemaReady && typeof schemaReady.then === 'function') {
@@ -35,14 +32,14 @@ async function markDeviceOnline(deviceId, metadata = {}) {
   resetOfflineTimer(deviceId);
   // Broadcast device status via Socket.IO
   try {
-    const io = resolveIo();
-    if (io) {
-      const payload = { deviceId, status: 'online', online: true, lastHeartbeat: device.lastHeartbeat };
-      io.emit('device:status', payload);
-      // legacy aliases
-      io.emit('device_status', payload);
-      io.emit('deviceHeartbeat', payload);
-    }
+    const payload = {
+      deviceId,
+      status: 'online',
+      online: true,
+      lastHeartbeat: device.lastHeartbeat,
+      event: 'online',
+    };
+    emitRealtime(REALTIME_EVENTS.DEVICE_STATUS, payload);
   } catch (e) {
     // ignore emit errors
   }
@@ -97,12 +94,14 @@ async function markDeviceOffline(deviceId) {
     }
   } catch (e) { /* ignore */ }
   try {
-    const io = resolveIo();
-    if (io) {
-      const payload = { deviceId, status: 'offline', online: false, lastHeartbeat: device.lastHeartbeat };
-      io.emit('device:status', payload);
-      io.emit('device_status', payload);
-    }
+    const payload = {
+      deviceId,
+      status: 'offline',
+      online: false,
+      lastHeartbeat: device.lastHeartbeat,
+      event: 'offline',
+    };
+    emitRealtime(REALTIME_EVENTS.DEVICE_STATUS, payload);
   } catch (e) { /* ignore */ }
   return device;
 }

@@ -8,6 +8,7 @@ const {
   sanitizeAlertPayload,
   buildSensorSummary,
 } = require('./sensorFormatting');
+const { REALTIME_EVENTS, emitRealtime } = require('./realtime');
 
 const resolveIo = (app) => {
   if (app && typeof app.get === 'function') {
@@ -53,22 +54,14 @@ const broadcastSensorData = (data, ioInstance) => {
   }
 
   const io = ioInstance || global.io;
-  if (io && typeof io.emit === 'function') {
-    try {
-      io.emit('sensor_update', payload);
-      io.emit('newSensorData', payload);
-      io.emit('telemetry:update', payload);
-      if (Array.isArray(summary) && summary.length > 0) {
-        io.emit('device_sensor_update', {
-          deviceId: payload.deviceId || null,
-          sensors: summary,
-          timestamp: payload.timestamp,
-          isStale: false,
-        });
-      }
-    } catch (error) {
-      logger.warn('Socket.IO emit failed for sensor_update:', error && error.message ? error.message : error);
-    }
+  emitRealtime(REALTIME_EVENTS.SENSOR_UPDATE, payload, { io });
+  if (Array.isArray(summary) && summary.length > 0) {
+    emitRealtime(REALTIME_EVENTS.SENSOR_SUMMARY, {
+      deviceId: payload.deviceId || null,
+      sensors: summary,
+      timestamp: payload.timestamp,
+      isStale: false,
+    }, { io });
   }
 
   return payload;
@@ -352,15 +345,15 @@ const checkThresholds = async (sensorData, ioInstance) => {
       }
     }
 
-    try {
-      const io = ioInstance || global.io;
-      if (persistedAlerts.length > 0 && io && typeof io.emit === 'function') {
-        const first = persistedAlerts[0] || {};
-        const devId = first.deviceId || sanitizedSensor.deviceId || plainSensor.deviceId || null;
-        io.emit('alert:trigger', { deviceId: devId, alerts: persistedAlerts });
-      }
-    } catch (error) {
-      // ignore emit errors
+    const first = persistedAlerts[0] || {};
+    const devId = first.deviceId || sanitizedSensor.deviceId || plainSensor.deviceId || null;
+    if (persistedAlerts.length > 0) {
+      emitRealtime(REALTIME_EVENTS.ALERT_NEW, {
+        deviceId: devId,
+        alerts: persistedAlerts,
+        event: 'new',
+        triggeredAt: new Date().toISOString(),
+      }, { io: ioInstance || global.io });
     }
 
     return persistedAlerts;

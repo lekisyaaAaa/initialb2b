@@ -5,6 +5,7 @@ const ActuatorState = require('../models/ActuatorState');
 const ActuatorLog = require('../models/ActuatorLog');
 const deviceCommandQueue = require('../services/deviceCommandQueue');
 const logger = require('../utils/logger');
+const { REALTIME_EVENTS, emitRealtime } = require('../utils/realtime');
 
 const router = express.Router();
 
@@ -47,8 +48,7 @@ router.post('/override', [auth, adminOnly, body('deviceId').isString().notEmpty(
 
     // Broadcast override to connected clients
     try {
-      const io = req.app && typeof req.app.get === 'function' ? req.app.get('io') : global.io;
-      if (io && typeof io.emit === 'function') io.emit('actuator:update', { actuatorKey, state, source: 'admin-override' });
+      emitRealtime(REALTIME_EVENTS.ACTUATOR_UPDATE, { actuatorKey, state, source: 'admin-override' }, { io: req.app });
     } catch (e) {
       logger.warn('Failed to emit actuator override', e && e.message ? e.message : e);
     }

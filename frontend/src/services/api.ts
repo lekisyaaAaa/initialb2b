@@ -31,6 +31,112 @@ const api: AxiosInstance = axios.create({
   withCredentials: false,
 });
 
+const ADMIN_REFRESH_EXCLUDED_PATHS = ['/admin/login', '/admin/verify-otp', '/admin/refresh', '/admin/logout'];
+let refreshPromise: Promise<any> | null = null;
+
+function safeStorage(): Storage | null {
+  if (typeof window === 'undefined' || !window.localStorage) {
+    return null;
+  }
+  try {
+    return window.localStorage;
+  } catch (err) {
+    return null;
+  }
+}
+
+function getStoredRefreshToken(): string | null {
+  const storage = safeStorage();
+  if (!storage) {
+    return null;
+  }
+  try {
+    return storage.getItem('adminRefreshToken') || storage.getItem('refreshToken');
+  } catch {
+    return null;
+  }
+}
+
+function persistTokens(data: { token: string; refreshToken?: string; user?: any; expiresAt?: string }) {
+  const storage = safeStorage();
+  if (!storage) {
+    return;
+  }
+  try {
+    storage.setItem('token', data.token);
+    storage.setItem('adminToken', data.token);
+    if (data.refreshToken) {
+      storage.setItem('adminRefreshToken', data.refreshToken);
+    }
+    if (data.user) {
+      const serialized = JSON.stringify(data.user);
+      storage.setItem('user', serialized);
+      storage.setItem('adminUser', serialized);
+    }
+    if (data.expiresAt) {
+      storage.setItem('tokenExpiresAt', data.expiresAt);
+    }
+  } catch (err) {
+    console.warn('persistTokens storage warning', err && ((err as any).message || err));
+  }
+}
+
+function clearStoredTokens() {
+  const storage = safeStorage();
+  if (!storage) {
+    return;
+  }
+  ['token', 'adminToken', 'user', 'adminUser', 'adminRefreshToken', 'tokenExpiresAt'].forEach((key) => {
+    try {
+      storage.removeItem(key);
+    } catch {
+      // ignore per-key failures
+    }
+  });
+  if ((api.defaults.headers as any).Authorization) {
+    delete (api.defaults.headers as any).Authorization;
+  }
+}
+
+function shouldAttemptRefresh(config: any): boolean {
+  if (!config || config._retry) {
+    return false;
+  }
+  const url = (config.url || '').toString();
+  if (!url) {
+    return false;
+  }
+  return !ADMIN_REFRESH_EXCLUDED_PATHS.some((path) => url.includes(path));
+}
+
+async function triggerTokenRefresh() {
+  const refreshToken = getStoredRefreshToken();
+  if (!refreshToken) {
+    return null;
+  }
+  if (!refreshPromise) {
+    refreshPromise = api
+      .post('/admin/refresh', { refreshToken })
+      .then((resp) => {
+        const data = resp?.data?.data;
+        if (data?.token && data?.refreshToken) {
+          persistTokens(data);
+          (api.defaults.headers as any).Authorization = `Bearer ${data.token}`;
+          return data;
+        }
+        return null;
+      })
+      .catch((err) => {
+        clearStoredTokens();
+        throw err;
+      })
+      .finally(() => {
+        refreshPromise = null;
+      });
+  }
+  return refreshPromise;
+}
+
 // Try to discover a reachable API base by probing health endpoints.
 // Returns { ok: boolean, baseURL?: string, message?: string }
 export async function discoverApi(options?: { candidates?: string[]; timeout?: number }) {
@@ -85,27 +191,35 @@ api.interceptors.response.use(
   (response: AxiosResponse) => {
     return response;
   },
-  (error) => {
-    if (error.response?.status === 401) {
-      // Token expired or invalid - clear client auth state but do NOT force navigation.
-      // This ensures opening the landing page will not automatically redirect to login
-      // if a background request fails with 401. Individual pages/components may
-      // listen for the 'auth:expired' event to react (optional).
+  async (error) => {
+    const status = error.response?.status;
+    const originalRequest = error.config;
+
+    if (status === 401 && shouldAttemptRefresh(originalRequest)) {
       try {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
-        // remove Authorization header if set
-        if ((api.defaults.headers as any).Authorization) {
-          delete (api.defaults.headers as any).Authorization;
+        const refreshed = await triggerTokenRefresh();
+        if (refreshed?.token) {
+          originalRequest._retry = true;
+          originalRequest.headers = originalRequest.headers || {};
+          originalRequest.headers.Authorization = `Bearer ${refreshed.token}`;
+          return api(originalRequest);
         }
-        // notify app if anyone wants to handle expired auth
-        if (typeof window !== 'undefined' && typeof CustomEvent === 'function') {
-          window.dispatchEvent(new CustomEvent('auth:expired'));
-        }
-      } catch (err) {
-        // swallow errors - nothing critical here
+      } catch (refreshErr) {
+        // fall through to clearing tokens below
       }
     }
+
+    if (status === 401) {
+      clearStoredTokens();
+      if (typeof window !== 'undefined' && typeof CustomEvent === 'function') {
+        try {
+          window.dispatchEvent(new CustomEvent('auth:expired'));
+        } catch (eventErr) {
+          console.warn('auth:expired dispatch failed', eventErr && ((eventErr as any).message || eventErr));
+        }
+      }
+    }
+
     return Promise.reject(error);
   }
 );

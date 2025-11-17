@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, AuthContextType } from '../types';
 import api, { authService, discoverApi } from '../services/api';
+import { logoutSession } from '../services/adminAuthService';
 
 const resolveStorage = (): Storage | null => {
   try {
@@ -71,11 +72,63 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         console.debug('AuthContext: discovery failed at startup', (e && (e.message || String(e))) || String(e));
       }
 
-  // Allow adminToken as an alternative key (used by admin login flow)
-  const storedToken = storageGet('token') || storageGet('adminToken');
-  const storedUser = storageGet('user');
+      const storedToken = storageGet('token') || storageGet('adminToken');
+      const storedRefreshToken = storageGet('adminRefreshToken');
+      const storedUserRaw = storageGet('user') || storageGet('adminUser');
+      let parsedUser: User | null = null;
+      if (storedUserRaw) {
+        try {
+          parsedUser = JSON.parse(storedUserRaw);
+        } catch (err) {
+          parsedUser = null;
+        }
+      }
 
-      if (storedToken && storedUser) {
+      const tryAdminSessionVerification = async (): Promise<boolean> => {
+        if (!storedToken) return false;
+        try {
+          api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+          const response = await api.get('/admin/session');
+          if (response?.data?.success && response.data.data?.user) {
+            const adminUser = response.data.data.user;
+            setToken(storedToken);
+            setUser(adminUser as User);
+            storageSet('user', JSON.stringify(adminUser));
+            storageSet('adminUser', JSON.stringify(adminUser));
+            console.log('✅ Admin session restored');
+            return true;
+          }
+        } catch (err) {
+          if (storedRefreshToken) {
+            try {
+              const refreshResp = await api.post('/admin/refresh', { refreshToken: storedRefreshToken });
+              const payload = refreshResp?.data?.data;
+              if (payload?.token && payload?.user) {
+                storageSet('token', payload.token);
+                storageSet('adminToken', payload.token);
+                storageSet('user', JSON.stringify(payload.user));
+                storageSet('adminUser', JSON.stringify(payload.user));
+                if (payload.refreshToken) storageSet('adminRefreshToken', payload.refreshToken);
+                (api.defaults.headers as any).Authorization = `Bearer ${payload.token}`;
+                setToken(payload.token);
+                setUser(payload.user as User);
+                console.log('✅ Admin session refreshed on startup');
+                return true;
+              }
+            } catch (refreshErr) {
+              console.warn('Admin refresh on startup failed', refreshErr && (refreshErr as any).message);
+            }
+          }
+        }
+        return false;
+      };
+
+      let restored = false;
+      if (storedToken) {
+        restored = await tryAdminSessionVerification();
+      }
+
+      if (!restored && storedToken) {
         try {
           api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
           const verifyResp = await api.get('/auth/verify');
@@ -86,28 +139,27 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             storageSet('user', JSON.stringify(userData));
             storageSet('token', storedToken);
             console.log('✅ Token verified on startup for user', userData.username || userData.id);
+            restored = true;
           } else {
             throw new Error('Token verify failed');
           }
         } catch (e: any) {
           const looksLikeLocalDevToken = typeof storedToken === 'string' && storedToken.startsWith('local-dev-token-');
-          if (looksLikeLocalDevToken && storedUser) {
+          if (looksLikeLocalDevToken && parsedUser) {
             try {
-              const parsed = JSON.parse(storedUser);
               setToken(storedToken);
-              setUser(parsed);
+              setUser(parsedUser);
               (api.defaults.headers as any).Authorization = `Bearer ${storedToken}`;
-              console.log('✅ Using stored development token on startup for user', parsed.username || parsed.id);
+              console.log('✅ Using stored development token on startup for user', parsedUser.username || parsedUser.id);
+              restored = true;
             } catch (parseErr) {
-              console.warn('Stored token verify failed, clearing local auth:', e && (e.message || String(e)));
-              storageRemoveMany(['token', 'user']);
-              delete api.defaults.headers.common['Authorization'];
-              setToken(null);
-              setUser(null);
+              // fall through to cleanup below
             }
-          } else {
+          }
+
+          if (!restored) {
             console.warn('Stored token verify failed, clearing local auth:', e && (e.message || String(e)));
-            storageRemoveMany(['token', 'user']);
+            storageRemoveMany(['token', 'user', 'adminToken', 'adminUser', 'adminRefreshToken', 'tokenExpiresAt']);
             delete api.defaults.headers.common['Authorization'];
             setToken(null);
             setUser(null);
@@ -118,8 +170,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       setIsLoading(false);
     };
 
-  init();
-}, []);
+    init();
+  }, []);
 
 const login = async (username: string, password: string): Promise<{ success: boolean; message?: string }> => {
     const maxAttempts = 3;
@@ -211,11 +263,21 @@ const login = async (username: string, password: string): Promise<{ success: boo
     return { success: false, message: errorMessage };
   };
 
-  const logout = () => {
+  const logout = async () => {
+    const refreshToken = storageGet('adminRefreshToken');
+    const currentToken = storageGet('token') || storageGet('adminToken');
+    if (refreshToken || currentToken) {
+      try {
+        await logoutSession({ refreshToken: refreshToken || undefined, token: currentToken || undefined });
+      } catch (err) {
+        console.debug('logout session API warning', err && (err as any).message ? (err as any).message : err);
+      }
+    }
+
     setUser(null);
     setToken(null);
     // clear both token keys used in different flows
-    storageRemoveMany(['token', 'adminToken', 'user', 'adminUser']);
+    storageRemoveMany(['token', 'adminToken', 'user', 'adminUser', 'adminRefreshToken', 'tokenExpiresAt']);
     try {
       // axios instances sometimes have headers.common; other mocks may set headers directly.
       const anyApi: any = api;
@@ -232,12 +294,30 @@ const login = async (username: string, password: string): Promise<{ success: boo
     }
   };
 
-  const setAuth = (newToken: string, newUser?: any) => {
+  useEffect(() => {
+    const handleAuthExpired = () => {
+      logout();
+    };
+    window.addEventListener('auth:expired', handleAuthExpired);
+    return () => {
+      window.removeEventListener('auth:expired', handleAuthExpired);
+    };
+  }, [logout]);
+
+  const setAuth = (newToken: string, newUser?: any, options?: { refreshToken?: string }) => {
     setToken(newToken);
     if (newUser) setUser(newUser);
     try {
       storageSet('token', newToken);
-      if (newUser) storageSet('user', JSON.stringify(newUser));
+      storageSet('adminToken', newToken);
+      if (options?.refreshToken) {
+        storageSet('adminRefreshToken', options.refreshToken);
+      }
+      if (newUser) {
+        const serialized = JSON.stringify(newUser);
+        storageSet('user', serialized);
+        storageSet('adminUser', serialized);
+      }
       (api.defaults.headers as any).Authorization = `Bearer ${newToken}`;
     } catch (e) {
       // ignore storage errors

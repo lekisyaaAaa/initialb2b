@@ -413,20 +413,28 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     };
 
     socket.on('telemetry:update', telemetryHandler);
+    socket.on('sensor:update', telemetryHandler);
     socket.on('sensor_update', telemetryHandler);
     socket.on('device:status', deviceStatusHandler);
     socket.on('device_status', deviceStatusHandler);
+    socket.on('float:lockout', floatLockoutHandler);
     socket.on('floatLockout', floatLockoutHandler);
     socket.on('floatLockoutCleared', floatLockoutHandler);
+    socket.on('alert:new', alertsTriggerHandler);
+    socket.on('alert:cleared', alertsTriggerHandler);
     socket.on('alert:trigger', alertsTriggerHandler);
 
     return () => {
       socket.off('telemetry:update', telemetryHandler);
+      socket.off('sensor:update', telemetryHandler);
       socket.off('sensor_update', telemetryHandler);
       socket.off('device:status', deviceStatusHandler);
       socket.off('device_status', deviceStatusHandler);
+      socket.off('float:lockout', floatLockoutHandler);
       socket.off('floatLockout', floatLockoutHandler);
       socket.off('floatLockoutCleared', floatLockoutHandler);
+      socket.off('alert:new', alertsTriggerHandler);
+      socket.off('alert:cleared', alertsTriggerHandler);
       socket.off('alert:trigger', alertsTriggerHandler);
     };
   }, [handleTelemetryPayload, mergeDeviceStatus, refreshAlerts]);

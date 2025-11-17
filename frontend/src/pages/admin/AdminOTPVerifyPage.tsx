@@ -9,6 +9,7 @@ interface LocationState {
   email?: string;
   debugCode?: string | null;
   delivery?: string | null;
+  expiresAt?: string | null;
 }
 
 const AdminOTPVerifyPage: React.FC = () => {
@@ -19,19 +20,59 @@ const AdminOTPVerifyPage: React.FC = () => {
   const [email] = useState<string>(locationState.email || '');
   const [debugCode, setDebugCode] = useState<string | null>(locationState.debugCode ?? null);
   const [delivery, setDelivery] = useState<string | null>(locationState.delivery ?? null);
+  const [otpExpiresAt, setOtpExpiresAt] = useState<string | null>(locationState.expiresAt ?? null);
   const [otp, setOtp] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isResending, setIsResending] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState<number>(0);
+  const [resendRemaining, setResendRemaining] = useState<number | null>(null);
+  const [remainingMs, setRemainingMs] = useState<number>(() => {
+    if (!locationState.expiresAt) return 0;
+    const diff = new Date(locationState.expiresAt).getTime() - Date.now();
+    return diff > 0 ? diff : 0;
+  });
 
   const formattedEmail = useMemo(() => email.trim(), [email]);
+  const otpIsExpired = useMemo(() => Boolean(otpExpiresAt && remainingMs <= 0), [otpExpiresAt, remainingMs]);
+
+  const formatCountdown = (ms: number) => {
+    const totalSeconds = Math.max(Math.ceil(ms / 1000), 0);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
 
   useEffect(() => {
     if (!formattedEmail) {
       navigate('/admin/login', { replace: true });
     }
   }, [formattedEmail, navigate]);
+
+  useEffect(() => {
+    if (!otpExpiresAt) {
+      setRemainingMs(0);
+      return undefined;
+    }
+
+    const interval = window.setInterval(() => {
+      const diff = new Date(otpExpiresAt).getTime() - Date.now();
+      setRemainingMs(diff > 0 ? diff : 0);
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [otpExpiresAt]);
+
+  useEffect(() => {
+    if (resendCooldown <= 0) {
+      return undefined;
+    }
+    const timer = window.setInterval(() => {
+      setResendCooldown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [resendCooldown]);
 
   const isFormValid = otp.trim().length === 6 && /^\d{6}$/.test(otp.trim());
 
@@ -47,8 +88,9 @@ const AdminOTPVerifyPage: React.FC = () => {
     try {
       const response = await verifyOtp(formattedEmail, otp.trim());
       const token = response?.data?.token;
+      const refreshToken = response?.data?.refreshToken;
 
-      if (!token) {
+      if (!token || !refreshToken) {
         setError('Unexpected response from the server.');
         return;
       }
@@ -57,18 +99,11 @@ const AdminOTPVerifyPage: React.FC = () => {
 
       if (typeof setAuth === 'function') {
         if (user) {
-          setAuth(token, user);
+          setAuth(token, user, { refreshToken });
         } else {
-          setAuth(token);
+          setAuth(token, undefined, { refreshToken });
         }
       }
-
-      if (user) {
-        localStorage.setItem('user', JSON.stringify(user));
-      }
-
-      localStorage.setItem('adminToken', token);
-      localStorage.setItem('token', token);
 
       navigate('/admin/dashboard', { replace: true });
     } catch (err) {
@@ -81,7 +116,7 @@ const AdminOTPVerifyPage: React.FC = () => {
   };
 
   const handleResend = async () => {
-    if (!formattedEmail || isResending) {
+    if (!formattedEmail || isResending || resendCooldown > 0) {
       return;
     }
 
@@ -93,9 +128,31 @@ const AdminOTPVerifyPage: React.FC = () => {
       const response = await resendOtp(formattedEmail);
       const nextDebug = response?.data?.debugCode ?? null;
       const nextDelivery = response?.data?.delivery ?? null;
+      const nextExpires = response?.data?.expiresAt ?? null;
+      const rateLimit = response?.data?.rateLimit;
 
       setDebugCode(nextDebug);
       setDelivery(nextDelivery);
+      if (nextExpires) {
+        setOtpExpiresAt(nextExpires);
+        const diff = new Date(nextExpires).getTime() - Date.now();
+        setRemainingMs(diff > 0 ? diff : 0);
+      }
+
+      if (rateLimit) {
+        if (typeof rateLimit.remaining === 'number') {
+          setResendRemaining(rateLimit.remaining);
+        }
+        if (rateLimit.retryAfterSeconds) {
+          setResendCooldown(Math.max(Math.ceil(rateLimit.retryAfterSeconds), 0));
+        }
+        if (rateLimit.locked && rateLimit.retryAfterMs && !rateLimit.retryAfterSeconds) {
+          setResendCooldown(Math.max(Math.ceil(rateLimit.retryAfterMs / 1000), 0));
+        }
+      } else {
+        setResendRemaining(null);
+        setResendCooldown(0);
+      }
 
       if (response?.message) {
         setInfoMessage(response.message);
@@ -120,9 +177,14 @@ const AdminOTPVerifyPage: React.FC = () => {
         <div className="rounded-2xl border border-coffee-200 bg-white px-8 py-10 shadow-xl dark:border-gray-700 dark:bg-gray-800">
           <div className="mb-8 text-center">
             <h1 className="text-3xl font-bold text-espresso-900 dark:text-white">Verify OTP</h1>
-            <p className="mt-2 text-sm text-espresso-600 dark:text-gray-300">
-              Enter the 6-digit code we sent to {formattedEmail || 'your email'}.
-            </p>
+              <p className="mt-2 text-sm text-espresso-600 dark:text-gray-300">
+                Enter the 6-digit code we sent to {formattedEmail || 'your email'}.
+              </p>
+              {otpExpiresAt && (
+                <p className="mt-1 text-xs font-medium text-primary-700 dark:text-primary-300">
+                  {otpIsExpired ? 'Code expired. Please request a new one.' : `Code expires in ${formatCountdown(remainingMs)}.`}
+                </p>
+              )}
             {debugCode && (
               <p className="mt-2 text-xs font-medium text-amber-600 dark:text-amber-300">
                 Email delivery failed in development; use debug code <span className="font-mono">{debugCode}</span> shown here.
@@ -184,7 +246,7 @@ const AdminOTPVerifyPage: React.FC = () => {
                 />
               </div>
               <p className="mt-2 text-xs text-espresso-500 dark:text-gray-400">
-                The code expires in a few minutes. Request a new one from the login screen if needed.
+                The code expires in a few minutes. Request a new one if the countdown reaches zero.
               </p>
             </div>
 
@@ -206,11 +268,16 @@ const AdminOTPVerifyPage: React.FC = () => {
             <button
               type="button"
               onClick={handleResend}
-              disabled={!formattedEmail || isResending}
+              disabled={!formattedEmail || isResending || resendCooldown > 0}
               className="flex w-full items-center justify-center gap-2 rounded-full border border-coffee-300 px-6 py-3 text-sm font-semibold text-espresso-700 transition-colors duration-200 hover:border-coffee-400 hover:text-espresso-900 focus:outline-none focus:ring-2 focus:ring-coffee-300 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:text-gray-200 dark:hover:border-gray-500 dark:hover:text-white"
             >
-              {isResending ? 'Resending…' : 'Resend Code'}
+              {isResending ? 'Resending…' : resendCooldown > 0 ? `Resend Available In ${resendCooldown}s` : 'Resend Code'}
             </button>
+            {typeof resendRemaining === 'number' && (
+              <p className="text-center text-xs text-espresso-500 dark:text-gray-400">
+                Resends remaining in this window: {Math.max(resendRemaining, 0)}
+              </p>
+            )}
           </form>
         </div>
       </div>

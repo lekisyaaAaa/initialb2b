@@ -104,6 +104,24 @@ const LoginPage: React.FC = () => {
         return;
       }
 
+      if (result.requires2FA) {
+        // Navigate to OTP verification page
+        navigate('/admin/verify-otp', {
+          state: {
+            email: formData.email.trim(),
+            debugCode: result.debugCode || null,
+            delivery: result.delivery || null,
+            expiresAt: result.expiresAt || null,
+          },
+        });
+        return;
+      }
+
+      if (!result.token) {
+        setError('Unexpected response from server. Please try again.');
+        return;
+      }
+
       // Success: set token and user into context/storage immediately
       try {
         if (setAuth) {

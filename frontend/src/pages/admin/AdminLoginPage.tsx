@@ -28,8 +28,9 @@ const AdminLoginPage: React.FC = () => {
       if (response?.data?.requires2FA) {
         const debugCode = response?.data?.debugCode;
         const delivery = response?.data?.delivery;
+        const expiresAt = response?.data?.expiresAt || null;
         navigate('/admin/verify-otp', {
-          state: { email: email.trim(), debugCode: debugCode ?? null, delivery },
+          state: { email: email.trim(), debugCode: debugCode ?? null, delivery, expiresAt },
           replace: true,
         });
         return;
