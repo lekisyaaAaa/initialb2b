@@ -328,7 +328,7 @@ const HomePage: React.FC = () => {
               <Link to="/" className="text-gray-300 dark:text-gray-400 hover:text-white transition-colors">
                 Home
               </Link>
-              <Link to="/dashboard" className="text-gray-300 dark:text-gray-400 hover:text-white transition-colors">
+              <Link to="/admin/dashboard" className="text-gray-300 dark:text-gray-400 hover:text-white transition-colors">
                 Dashboard
               </Link>
             </div>
