@@ -15,6 +15,7 @@ import AdminOTPVerifyPage from './pages/admin/AdminOTPVerifyPage';
 import AdminForgotPasswordPage from './pages/admin/AdminForgotPasswordPage';
 import AdminResetPasswordPage from './pages/admin/AdminResetPasswordPage';
 import AlertsPage from './pages/admin/Alerts';
+import UserDashboard from './pages/UserDashboard';
 
 // Import context providers
 import { AuthProvider } from './contexts/AuthContext';
@@ -39,6 +40,7 @@ function App() {
                 <OnboardingTour steps={tourSteps} />
                 <Routes>
                 <Route path="/" element={<HomePage />} />
+                <Route path="/dashboard" element={<UserDashboard />} />
                 <Route path="/contact" element={<ContactPage />} />
                 <Route path="/login" element={<Navigate to="/admin/login" replace />} />
                 {/* Public admin authentication routes */}

@@ -1,9 +1,11 @@
 export interface User {
   id: string;
-  username: string;
+  username?: string;
+  email?: string;
   role: 'admin' | 'user';
-  lastLogin?: Date;
-  loginCount?: number;
+  lastLogin?: Date | string | null;
+  loginCount?: number | null;
+  [key: string]: unknown;
 }
 
 export interface AuthContextType {

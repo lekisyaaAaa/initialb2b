@@ -15,7 +15,7 @@ interface LocationState {
 const AdminOTPVerifyPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { setAuth } = useAuth();
+  const { setAuth, isAuthenticated } = useAuth();
   const locationState = (location.state as LocationState) || {};
   const [email] = useState<string>(locationState.email || '');
   const [debugCode, setDebugCode] = useState<string | null>(locationState.debugCode ?? null);
@@ -49,6 +49,12 @@ const AdminOTPVerifyPage: React.FC = () => {
       navigate('/admin/login', { replace: true });
     }
   }, [formattedEmail, navigate]);
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/admin/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
 
   useEffect(() => {
     if (!otpExpiresAt) {

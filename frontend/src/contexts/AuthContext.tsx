@@ -46,6 +46,44 @@ const storageSet = (key: string, value: string) => {
   }
 };
 
+const normalizeUser = (raw: any): User | null => {
+  if (!raw) return null;
+  try {
+    const idSource = raw.id ?? raw._id ?? raw.email ?? raw.username;
+    const id = idSource ? idSource.toString() : 'admin-local';
+    const username = raw.username || raw.email || raw.name || 'Administrator';
+    const email = raw.email || undefined;
+    const role: User['role'] = raw.role === 'user' ? 'user' : 'admin';
+    return {
+      ...raw,
+      id,
+      username,
+      email,
+      role,
+    } as User;
+  } catch (err) {
+    console.debug('AuthContext: failed to normalize user payload', err instanceof Error ? err.message : err);
+    return null;
+  }
+};
+
+const persistUser = (user: User | null) => {
+  if (!user) return;
+  const serialized = JSON.stringify(user);
+  storageSet('user', serialized);
+  storageSet('adminUser', serialized);
+};
+
+const fallbackUserForToken = (payload?: Partial<User> & { email?: string | null }): User => {
+  const idSource = payload?.id ?? payload?.email ?? 'admin-local';
+  return {
+    id: idSource ? idSource.toString() : 'admin-local',
+    username: payload?.username || payload?.email || 'Administrator',
+    email: payload?.email || undefined,
+    role: payload?.role === 'user' ? 'user' : 'admin',
+  };
+};
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 interface AuthProviderProps {
@@ -78,7 +116,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
       let parsedUser: User | null = null;
       if (storedUserRaw) {
         try {
-          parsedUser = JSON.parse(storedUserRaw);
+          parsedUser = normalizeUser(JSON.parse(storedUserRaw));
         } catch (err) {
           parsedUser = null;
         }
@@ -90,11 +128,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
           const response = await api.get('/admin/session');
           if (response?.data?.success && response.data.data?.user) {
-            const adminUser = response.data.data.user;
+            const adminUser = normalizeUser(response.data.data.user) || fallbackUserForToken(response.data.data.user);
             setToken(storedToken);
-            setUser(adminUser as User);
-            storageSet('user', JSON.stringify(adminUser));
-            storageSet('adminUser', JSON.stringify(adminUser));
+            setUser(adminUser);
+            persistUser(adminUser);
             console.log('✅ Admin session restored');
             return true;
           }
@@ -103,15 +140,28 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             try {
               const refreshResp = await api.post('/admin/refresh', { refreshToken: storedRefreshToken });
               const payload = refreshResp?.data?.data;
-              if (payload?.token && payload?.user) {
+              if (payload?.token) {
                 storageSet('token', payload.token);
                 storageSet('adminToken', payload.token);
-                storageSet('user', JSON.stringify(payload.user));
-                storageSet('adminUser', JSON.stringify(payload.user));
                 if (payload.refreshToken) storageSet('adminRefreshToken', payload.refreshToken);
                 (api.defaults.headers as any).Authorization = `Bearer ${payload.token}`;
                 setToken(payload.token);
-                setUser(payload.user as User);
+
+                let refreshedUser = normalizeUser(payload.user);
+                if (!refreshedUser) {
+                  try {
+                    const sessionResp = await api.get('/admin/session');
+                    if (sessionResp?.data?.data?.user) {
+                      refreshedUser = normalizeUser(sessionResp.data.data.user);
+                    }
+                  } catch (sessionErr) {
+                    console.debug('Admin refresh session lookup failed', sessionErr instanceof Error ? sessionErr.message : sessionErr);
+                  }
+                }
+
+                const finalUser = refreshedUser || fallbackUserForToken(payload.user);
+                setUser(finalUser);
+                persistUser(finalUser);
                 console.log('✅ Admin session refreshed on startup');
                 return true;
               }
@@ -133,10 +183,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
           api.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
           const verifyResp = await api.get('/auth/verify');
           if (verifyResp?.data?.success && verifyResp.data.data?.user) {
-            const userData = verifyResp.data.data.user;
+            const userData = normalizeUser(verifyResp.data.data.user) || fallbackUserForToken(verifyResp.data.data.user);
             setToken(storedToken);
             setUser(userData);
-            storageSet('user', JSON.stringify(userData));
+            persistUser(userData);
             storageSet('token', storedToken);
             console.log('✅ Token verified on startup for user', userData.username || userData.id);
             restored = true;
@@ -215,11 +265,12 @@ const login = async (username: string, password: string): Promise<{ success: boo
         const resp = await authService.login({ username, password });
         if (resp?.data?.success && resp.data.data) {
           const newToken = resp.data.data.token;
-          const userData = resp.data.data.user;
+          const userDataRaw = resp.data.data.user;
+          const normalizedUser = normalizeUser(userDataRaw) || fallbackUserForToken(userDataRaw);
           setToken(newToken);
-          setUser(userData);
+          setUser(normalizedUser);
           storageSet('token', newToken);
-          storageSet('user', JSON.stringify(userData));
+          persistUser(normalizedUser);
           (api.defaults.headers as any).Authorization = `Bearer ${newToken}`;
           setIsLoading(false);
           return { success: true };
@@ -304,19 +355,47 @@ const login = async (username: string, password: string): Promise<{ success: boo
     };
   }, [logout]);
 
+  useEffect(() => {
+    if (isLoading || !token || user) {
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const resp = await api.get('/admin/session');
+        const sessionUser = normalizeUser(resp?.data?.data?.user);
+        if (!cancelled && sessionUser) {
+          setUser(sessionUser);
+          persistUser(sessionUser);
+        }
+      } catch (err) {
+        console.debug('AuthContext: session hydrate skipped', err instanceof Error ? err.message : err);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLoading, token, user]);
+
   const setAuth = (newToken: string, newUser?: any, options?: { refreshToken?: string }) => {
     setToken(newToken);
-    if (newUser) setUser(newUser);
+    const normalizedUser = normalizeUser(newUser || null);
+    if (normalizedUser) {
+      setUser(normalizedUser);
+      persistUser(normalizedUser);
+    } else if (!user) {
+      const fallback = fallbackUserForToken(newUser);
+      setUser(fallback);
+      persistUser(fallback);
+    }
+
     try {
       storageSet('token', newToken);
       storageSet('adminToken', newToken);
       if (options?.refreshToken) {
         storageSet('adminRefreshToken', options.refreshToken);
-      }
-      if (newUser) {
-        const serialized = JSON.stringify(newUser);
-        storageSet('user', serialized);
-        storageSet('adminUser', serialized);
       }
       (api.defaults.headers as any).Authorization = `Bearer ${newToken}`;
     } catch (e) {
@@ -331,7 +410,7 @@ const login = async (username: string, password: string): Promise<{ success: boo
     logout,
     setAuth,
     isLoading,
-    isAuthenticated: !!user && !!token,
+    isAuthenticated: Boolean(token),
   };
 
   return (

@@ -41,6 +41,7 @@ const HomePage: React.FC = () => {
               </div>
             </div>
             <div className="flex items-center space-x-6">
+              <Link to="/dashboard" className="text-espresso-700 dark:text-gray-300 hover:text-letran-600 dark:hover:text-letran-400 transition-colors">Live Dashboard</Link>
               <Link to="/contact" className="text-espresso-700 dark:text-gray-300 hover:text-letran-600 dark:hover:text-letran-400 transition-colors">Contact</Link>
               {/* Dark Mode Toggle */}
               <DarkModeToggle />
@@ -130,6 +131,12 @@ const HomePage: React.FC = () => {
               >
                 <ArrowRight className="h-5 w-5" />
                 <span>{adminHeroLabel}</span>
+              </Link>
+              <Link
+                to="/dashboard"
+                className="font-sans border border-letran-400 text-letran-600 hover:bg-letran-50 dark:text-letran-300 dark:border-letran-500 dark:hover:bg-gray-800 font-semibold px-8 py-3 rounded-full shadow flex items-center gap-3 transition-all duration-200"
+              >
+                <span>View Live Dashboard</span>
               </Link>
             </div>
             
