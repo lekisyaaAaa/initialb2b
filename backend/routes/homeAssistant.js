@@ -17,6 +17,7 @@ const deviceManager = require('../services/deviceManager');
 const { auth } = require('../middleware/auth');
 const logger = require('../utils/logger');
 const { REALTIME_EVENTS, emitRealtime } = require('../utils/realtime');
+const sensorLogService = require('../services/sensorLogService');
 
 const router = express.Router();
 
@@ -242,6 +243,11 @@ function extractMetrics(body = {}) {
     floatSensor: coerce(source.floatSensor ?? source.float_state ?? source.float),
     batteryLevel: coerce(source.batteryLevel ?? source.battery_level),
     signalStrength: coerce(source.signalStrength ?? source.signal_strength ?? source.rssi),
+    pumpState: typeof (source.pumpState ?? source.pump_state ?? source.pump) !== 'undefined'
+      ? normalizePumpState(source.pumpState ?? source.pump_state ?? source.pump)
+      : null,
+    pumpRuntimeSec: coerce(source.pumpRuntimeSec ?? source.pump_runtime_sec ?? source.pumpRuntime ?? source.pump_runtime),
+    pumpFlowLpm: coerce(source.pumpFlowLpm ?? source.pump_flow_lpm ?? source.flowLpm ?? source.flow_lpm ?? source.flowRate),
   };
 }
 
@@ -318,6 +324,8 @@ router.post('/webhook', webhookLimiter, [
     logger.warn('HA webhook markDeviceOnline failed', error && error.message ? error.message : error);
   }
 
+  const trimmedPayload = clampPayload(req.body);
+
   try {
     await SensorData.create({
       deviceId: resolvedDeviceId,
@@ -325,7 +333,7 @@ router.post('/webhook', webhookLimiter, [
       timestamp,
       isOfflineData: false,
       source: 'home_assistant',
-      rawPayload: clampPayload(req.body),
+      rawPayload: trimmedPayload,
     });
 
     // Persist a device event for auditing
@@ -333,7 +341,7 @@ router.post('/webhook', webhookLimiter, [
       await DeviceEvent.create({
         deviceId: resolvedDeviceId,
         eventType: 'webhook',
-        payload: clampPayload(req.body) ? JSON.stringify(clampPayload(req.body)) : null,
+        payload: trimmedPayload ? JSON.stringify(trimmedPayload) : null,
         timestamp,
         source: 'home_assistant',
       });
@@ -356,6 +364,14 @@ router.post('/webhook', webhookLimiter, [
       batteryLevel: metrics.batteryLevel,
       signalStrength: metrics.signalStrength,
       timestamp,
+    });
+
+    await sensorLogService.recordSensorLogs({
+      deviceId: resolvedDeviceId,
+      metrics,
+      origin: 'home_assistant_webhook',
+      recordedAt: timestamp,
+      rawPayload: trimmedPayload,
     });
 
     pruneHistory(resolvedDeviceId).catch(() => null);

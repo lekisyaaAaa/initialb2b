@@ -323,6 +323,63 @@ function buildSessionMetadata(req, overrides) {
   };
 }
 
+async function persistAdminSession({
+  req,
+  adminId,
+  token,
+  tokenExpiresAt,
+  refreshTokenHash,
+  refreshExpiresAt,
+}) {
+  if (!adminId || !token) {
+    return null;
+  }
+
+  const metadata = buildSessionMetadata(req, {
+    refreshIssuedAt: new Date().toISOString(),
+    otpVerifiedAt: new Date().toISOString(),
+  });
+
+  const sessionPayload = {
+    adminId,
+    token,
+    expiresAt: tokenExpiresAt,
+    refreshTokenHash,
+    refreshExpiresAt,
+    revokedAt: null,
+    revocationReason: null,
+    metadata,
+  };
+
+  try {
+    const session = await UserSession.create(sessionPayload);
+    return session;
+  } catch (err) {
+    const errMessage = err && err.message ? err.message : err;
+    const looksLikeConstraint = err && err.name && err.name.toLowerCase().includes('unique');
+
+    if (looksLikeConstraint || (errMessage && errMessage.toString().includes('duplicate'))) {
+      try {
+        const existing = await UserSession.findOne({
+          where: { adminId },
+          order: [['updatedAt', 'DESC']],
+        });
+
+        if (existing) {
+          await existing.update(sessionPayload);
+          console.warn('adminAuthController.persistAdminSession reused existing session', { adminId, sessionId: existing.id });
+          return existing;
+        }
+      } catch (updateErr) {
+        console.warn('adminAuthController.persistAdminSession update fallback failed', updateErr && updateErr.message ? updateErr.message : updateErr);
+      }
+    }
+
+    console.warn('adminAuthController.persistAdminSession failed to persist session record', errMessage);
+    return null;
+  }
+}
+
 exports.login = async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
@@ -508,21 +565,16 @@ exports.verifyOtp = async (req, res) => {
 
     try { await recordAudit('otp.verified', admin.email, { success: true, ip: requesterIp }); } catch (e) {}
 
-    try {
-      await UserSession.create({
-        adminId: admin.id,
-        token,
-        expiresAt: tokenExpiresAt,
-        refreshTokenHash,
-        refreshExpiresAt,
-        revokedAt: null,
-        revocationReason: null,
-        metadata: buildSessionMetadata(req, {
-          refreshIssuedAt: new Date().toISOString(),
-        }),
-      });
-    } catch (sessionErr) {
-      console.warn('adminAuthController.verifyOtp failed to persist session', sessionErr && sessionErr.message ? sessionErr.message : sessionErr);
+    const session = await persistAdminSession({
+      req,
+      adminId: admin.id,
+      token,
+      tokenExpiresAt,
+      refreshTokenHash,
+      refreshExpiresAt,
+    });
+    if (!session) {
+      console.warn('adminAuthController.verifyOtp issued token without durable session record', { adminId: admin.id });
     }
 
     console.info('Admin OTP verified and session issued', { email: admin.email, sessionExpiresAt: tokenExpiresAt.toISOString() });
@@ -535,6 +587,7 @@ exports.verifyOtp = async (req, res) => {
         expiresAt: tokenExpiresAt.toISOString(),
         refreshToken,
         refreshExpiresAt: refreshExpiresAt.toISOString(),
+        sessionId: session && session.id ? session.id : null,
         user: {
           id: admin.id,
           email: admin.email,
@@ -769,10 +822,48 @@ exports.getSession = async (req, res) => {
   try {
     const secret = process.env.JWT_SECRET || 'devsecret';
     const decoded = jwt.verify(token, secret);
+    const decodedPayload = decoded && typeof decoded === 'object' ? decoded : null;
+    const adminId = decodedPayload && decodedPayload.id ? decodedPayload.id : null;
 
-    const session = await UserSession.findOne({ where: { token } });
-    if (!session) {
+    if (!adminId) {
       return res.status(401).json({ success: false, message: 'Session is invalid or has been revoked' });
+    }
+
+    let session = await UserSession.findOne({ where: { token } });
+    if (!session) {
+      const fallbackExpiresAt = decodedPayload && decodedPayload.exp
+        ? new Date(decodedPayload.exp * 1000)
+        : new Date(Date.now() + getSessionTtlSeconds() * 1000);
+      const fallbackMetadata = buildSessionMetadata(req, {
+        recoveredAt: new Date().toISOString(),
+        reason: 'missing_session_row',
+      });
+
+      try {
+        session = await UserSession.create({
+          adminId,
+          token,
+          expiresAt: fallbackExpiresAt,
+          refreshTokenHash: null,
+          refreshExpiresAt: null,
+          revokedAt: null,
+          revocationReason: null,
+          metadata: fallbackMetadata,
+        });
+        console.warn('adminAuthController.getSession: recreated missing session record', { adminId, sessionId: session.id });
+      } catch (creationErr) {
+        console.warn('adminAuthController.getSession: unable to persist fallback session', creationErr && creationErr.message ? creationErr.message : creationErr);
+        session = {
+          adminId,
+          token,
+          expiresAt: fallbackExpiresAt,
+          refreshTokenHash: null,
+          refreshExpiresAt: null,
+          revokedAt: null,
+          revocationReason: null,
+          metadata: fallbackMetadata,
+        };
+      }
     }
 
     if (session.revokedAt) {
@@ -780,11 +871,13 @@ exports.getSession = async (req, res) => {
     }
 
     if (session.expiresAt && new Date(session.expiresAt).getTime() < Date.now()) {
-      await session.destroy().catch(() => {});
+      if (typeof session.destroy === 'function') {
+        await session.destroy().catch(() => {});
+      }
       return res.status(401).json({ success: false, message: 'Session has expired' });
     }
 
-    const admin = await Admin.findByPk(decoded.id, {
+    const admin = await Admin.findByPk(adminId, {
       attributes: ['id', 'email', 'createdAt', 'updatedAt'],
     });
 

@@ -45,6 +45,18 @@ export interface SensorData {
   lastSeen?: string | null;
 }
 
+export interface SensorLogEntry {
+  id: number;
+  deviceId: string;
+  sensorName: string;
+  value: number;
+  unit?: string | null;
+  origin?: string | null;
+  recordedAt: string;
+  mqttTopic?: string | null;
+  rawPayload?: Record<string, unknown> | null;
+}
+
 export interface SensorSummaryItem {
   key: string;
   label: string;
@@ -192,6 +204,7 @@ export interface ApiResponse<T> {
   success: boolean;
   message: string;
   data?: T;
+  meta?: Record<string, unknown>;
   errors?: string[];
 }
 

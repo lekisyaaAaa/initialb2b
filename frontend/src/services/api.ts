@@ -3,6 +3,7 @@ import {
   ApiResponse,
   PaginatedResponse,
   SensorData,
+  SensorLogEntry,
   Alert,
   Settings,
   AlertRules,
@@ -32,7 +33,9 @@ const api: AxiosInstance = axios.create({
 });
 
 const ADMIN_REFRESH_EXCLUDED_PATHS = ['/admin/login', '/admin/verify-otp', '/admin/refresh', '/admin/logout'];
+const SESSION_ENDPOINTS = ['/admin/session', '/auth/verify'];
 let refreshPromise: Promise<any> | null = null;
+let sessionProbePromise: Promise<boolean> | null = null;
 
 function safeStorage(): Storage | null {
   if (typeof window === 'undefined' || !window.localStorage) {
@@ -107,6 +110,52 @@ function shouldAttemptRefresh(config: any): boolean {
     return false;
   }
   return !ADMIN_REFRESH_EXCLUDED_PATHS.some((path) => url.includes(path));
+}
+
+const isSessionEndpoint = (url: string | undefined | null) => {
+  if (!url) return false;
+  return SESSION_ENDPOINTS.some((endpoint) => url.includes(endpoint));
+};
+
+async function confirmActiveSession(authHeader: string) {
+  if (sessionProbePromise) {
+    return sessionProbePromise;
+  }
+
+  const probeHeaders = {
+    Authorization: authHeader,
+  };
+  const probeConfig: any = {
+    headers: probeHeaders,
+    __authProbe: true,
+  };
+
+  const runProbe = async () => {
+    try {
+      const resp = await api.get('/admin/session', probeConfig);
+      if (resp?.data?.success) {
+        return true;
+      }
+    } catch (sessionErr: any) {
+      const status = sessionErr?.response?.status;
+      if (status !== 401 && status !== 403) {
+        // For network/server errors we still fall back to /auth/verify below
+      }
+    }
+
+    try {
+      const verifyResp = await api.get('/auth/verify', probeConfig);
+      return Boolean(verifyResp?.data?.success);
+    } catch (verifyErr) {
+      return false;
+    }
+  };
+
+  sessionProbePromise = runProbe().finally(() => {
+    sessionProbePromise = null;
+  });
+
+  return sessionProbePromise;
 }
 
 async function triggerTokenRefresh() {
@@ -193,7 +242,11 @@ api.interceptors.response.use(
   },
   async (error) => {
     const status = error.response?.status;
-    const originalRequest = error.config;
+    const originalRequest: any = error.config || {};
+
+    if (originalRequest?.__authProbe) {
+      return Promise.reject(error);
+    }
 
     if (status === 401 && shouldAttemptRefresh(originalRequest)) {
       try {
@@ -210,12 +263,24 @@ api.interceptors.response.use(
     }
 
     if (status === 401) {
-      clearStoredTokens();
-      if (typeof window !== 'undefined' && typeof CustomEvent === 'function') {
-        try {
-          window.dispatchEvent(new CustomEvent('auth:expired'));
-        } catch (eventErr) {
-          console.warn('auth:expired dispatch failed', eventErr && ((eventErr as any).message || eventErr));
+      const headerAuth = originalRequest?.headers?.Authorization || originalRequest?.headers?.authorization;
+      const hadAuthHeader = Boolean(headerAuth);
+
+      if (hadAuthHeader && !isSessionEndpoint(originalRequest?.url)) {
+        const sessionStillValid = await confirmActiveSession(headerAuth).catch(() => false);
+        if (sessionStillValid) {
+          return Promise.reject(error);
+        }
+      }
+
+      if (hadAuthHeader) {
+        clearStoredTokens();
+        if (typeof window !== 'undefined' && typeof CustomEvent === 'function') {
+          try {
+            window.dispatchEvent(new CustomEvent('auth:expired'));
+          } catch (eventErr) {
+            console.warn('auth:expired dispatch failed', eventErr && ((eventErr as any).message || eventErr));
+          }
         }
       }
     }
@@ -366,6 +431,19 @@ export const sensorService = {
   
   submitData: (data: Omit<SensorData, '_id'>) =>
     api.post<ApiResponse<SensorData>>('/sensors/data', data),
+};
+
+export const sensorLogService = {
+  list: (params?: {
+    page?: number;
+    limit?: number;
+    deviceId?: string;
+    sensor?: string;
+    origin?: string;
+    search?: string;
+    start?: string;
+    end?: string;
+  }) => api.get<PaginatedResponse<SensorLogEntry>>('/sensor-logs', { params }),
 };
 
 export const alertService = {

@@ -21,7 +21,7 @@ export const resolveHomeAssistantUrl = (): string => {
     return candidate;
   }
 
-  return 'https://yvhqbpr07mrxznxn0azgwpnynntpvvpf.ui.nabu.casa';
+  return 'http://192.168.8.142:8123/';
 };
 
 export default resolveHomeAssistantUrl;

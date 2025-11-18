@@ -6,6 +6,7 @@ const SensorData = require('../models/SensorData');
 const SensorSnapshot = require('../models/SensorSnapshot');
 const DeviceEvent = require('../models/DeviceEvent');
 const { checkThresholds, broadcastSensorData } = require('../utils/sensorEvents');
+const sensorLogService = require('./sensorLogService');
 
 const DEFAULT_TOPIC = process.env.MQTT_SUBSCRIPTIONS || process.env.MQTT_TOPIC || 'vermilinks/#';
 const BROKER = process.env.MQTT_BROKER_URL || process.env.MQTT_URL || process.env.MQTT_BROKER;
@@ -112,19 +113,33 @@ async function handleMessage(topic, message) {
       signalStrength: metrics.signalStrength || null,
       timestamp,
     });
+    const broadcastPayload = {
+      deviceId,
+      ...metrics,
+      timestamp,
+      source: `mqtt:${topic}`,
+    };
+
     // Run threshold checks and broadcast via sockets
     try {
-      const payload = {
-        deviceId,
-        ...metrics,
-        timestamp,
-        source: `mqtt:${topic}`,
-      };
-      const alerts = await checkThresholds(payload, global.io);
-      if (alerts && alerts.length > 0) payload.alerts = alerts;
-      broadcastSensorData(payload, global.io);
+      const alerts = await checkThresholds(broadcastPayload, global.io);
+      if (alerts && alerts.length > 0) broadcastPayload.alerts = alerts;
+      broadcastSensorData(broadcastPayload, global.io);
     } catch (e) {
       logger.warn('Failed to run alert checks or broadcast for MQTT message', e && e.message ? e.message : e);
+    }
+
+    try {
+      await sensorLogService.recordSensorLogs({
+        deviceId,
+        metrics,
+        origin: 'mqtt',
+        recordedAt: timestamp,
+        rawPayload: sensorLogService.clampRawPayload(broadcastPayload),
+        mqttTopic: topic,
+      });
+    } catch (logErr) {
+      logger.warn('Failed to persist MQTT sensor log', logErr && logErr.message ? logErr.message : logErr);
     }
   } catch (err) {
     logger.warn('Failed to persist MQTT SensorData/Snapshot', err && err.message ? err.message : err);

@@ -46,6 +46,8 @@ const commandRoutes = require('./routes/command');
 const { errorHandler } = require('./middleware/errorHandler');
 
 const app = express();
+// Render and other proxies populate X-Forwarded-* headers; trust the first hop for accurate rate limiting/IP logging
+app.set('trust proxy', 1);
 const server = http.createServer(app);
 
 const rateLimitWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS || process.env.API_RATE_LIMIT_WINDOW_MS || '900000', 10);
@@ -420,7 +422,14 @@ app.get('/api/health', async (req, res) => {
         db = database.getActiveDialect() || 'unknown';
       }
       // If connectDB is available, try a quick authenticate but don't throw on failure
-      if (typeof database.connectDB === 'function') {
+      if (typeof database.authenticate === 'function') {
+        try {
+          await database.authenticate();
+          db = 'connected';
+        } catch (e) {
+          db = 'disconnected';
+        }
+      } else if (typeof database.connectDB === 'function') {
         try {
           await database.connectDB();
           db = 'connected';
@@ -479,6 +488,8 @@ const integrationRoutes = require('./routes/integrations');
 app.use('/api/integrations', integrationRoutes);
 const deviceEventsRoutes = require('./routes/deviceEvents');
 app.use('/api/device-events', deviceEventsRoutes);
+const sensorLogRoutes = require('./routes/sensorLogs');
+app.use('/api/sensor-logs', sensorLogRoutes);
 // RS485 telemetry fallback
 try {
   const rs485Routes = require('./routes/rs485');

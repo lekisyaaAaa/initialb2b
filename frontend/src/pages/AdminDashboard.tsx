@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { createPortal } from 'react-dom';
-import { Bell, Check, Settings, Activity, Users, BarChart3, Calendar, RefreshCw, ExternalLink } from 'lucide-react';
+import { Bell, Check, Settings, Activity, Users, BarChart3, Calendar, RefreshCw, ExternalLink, FileText } from 'lucide-react';
 import SensorCharts from '../components/SensorCharts';
 import SystemHealth from '../components/SystemHealth';
 import DarkModeToggle from '../components/DarkModeToggle';
@@ -13,8 +13,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 import { useToast } from '../contexts/ToastContext';
 import weatherService from '../services/weatherService';
-import api, { alertService, sensorService } from '../services/api';
-import { LatestSnapshot, SensorData as SensorDataType } from '../types';
+import api, { alertService } from '../services/api';
+import { SensorData as SensorDataType } from '../types';
 import { socket as sharedSocket } from '../socket';
 import RealtimeTelemetryPanel from '../components/RealtimeTelemetryPanel';
 import { resolveHomeAssistantUrl } from '../utils/homeAssistant';
@@ -121,6 +121,7 @@ export default function AdminDashboard(): React.ReactElement {
     latestSensorData: ctxSensorBuffer,
     isConnected: socketsConnected,
     refreshTelemetry: refreshLiveTelemetry,
+    telemetryDisabled,
   } = useData();
   const { success, error, warning, info } = useToast();
   const [latestSensor, setLatestSensor] = useState<Sensor | null>(null);
@@ -140,6 +141,7 @@ export default function AdminDashboard(): React.ReactElement {
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const historyFetchedRef = useRef<boolean>(false);
   const lastTelemetryToastRef = useRef<number>(0);
 
   // Maintenance reminders state (populated from backend)
@@ -156,6 +158,19 @@ export default function AdminDashboard(): React.ReactElement {
   const [acknowledgingAlertId, setAcknowledgingAlertId] = useState<string | null>(null);
   const [realtimeRefreshing, setRealtimeRefreshing] = useState(false);
   const homeAssistantUrl = useMemo(resolveHomeAssistantUrl, []);
+
+  const hasLiveTelemetry = useMemo(() => {
+    if (telemetryDisabled) {
+      return false;
+    }
+    if (ctxTelemetry) {
+      return true;
+    }
+    if (Array.isArray(ctxSensorBuffer) && ctxSensorBuffer.length > 0) {
+      return true;
+    }
+    return sensorHistory.length > 0;
+  }, [ctxSensorBuffer, ctxTelemetry, sensorHistory, telemetryDisabled]);
 
   const classifySeverity = useCallback((value: unknown): 'critical' | 'warning' | 'info' => {
     const normalized = (value || '').toString().toLowerCase();
@@ -506,7 +521,7 @@ export default function AdminDashboard(): React.ReactElement {
       sharedSocket.off('alert:cleared', handleAlertRealtime);
       sharedSocket.off('alert:trigger', handleAlertRealtime);
     };
-  }, [loadLatestAlerts, normalizeActuatorSnapshot]);
+  }, [info, loadLatestAlerts, normalizeActuatorSnapshot]);
 
   const markAlertAsRead = useCallback(async (alertId?: string) => {
     if (!alertId) {
@@ -527,6 +542,10 @@ export default function AdminDashboard(): React.ReactElement {
   }, [loadLatestAlerts]);
 
   const handleRealtimeRefresh = useCallback(async () => {
+    if (telemetryDisabled) {
+      info('Telemetry Disabled', 'Live data will remain hidden until sensors come online.');
+      return;
+    }
     if (!refreshLiveTelemetry) {
       return;
     }
@@ -538,7 +557,7 @@ export default function AdminDashboard(): React.ReactElement {
     } finally {
       setRealtimeRefreshing(false);
     }
-  }, [refreshLiveTelemetry]);
+  }, [info, refreshLiveTelemetry, telemetryDisabled]);
 
   const handleRefreshActiveAlerts = useCallback(() => {
     loadLatestAlerts({ showLoader: true });
@@ -631,14 +650,6 @@ export default function AdminDashboard(): React.ReactElement {
     async function loadLatest() {
       try {
         const start = Date.now();
-        let latestSnapshot: LatestSnapshot | null = null;
-        try {
-          latestSnapshot = await sensorService.getLatestData();
-        } catch (err) {
-          console.warn('AdminDashboard::loadLatest sensor fetch error', err);
-          throw err;
-        }
-
         let healthResp = null;
         try {
           healthResp = await api.get('/health');
@@ -650,35 +661,6 @@ export default function AdminDashboard(): React.ReactElement {
         if (!mounted) return;
 
         const latency = Date.now() - start;
-        const snapshot = latestSnapshot ?? null;
-        const resolvedDeviceId = snapshot ? 'vermilinks-homeassistant' : null;
-
-        const candidateReading: Sensor | null = snapshot && resolvedDeviceId
-          ? {
-              id: resolvedDeviceId,
-              name: 'VermiLinks Sensor Suite',
-              deviceId: resolvedDeviceId,
-              temperature: snapshot.temperature,
-              humidity: snapshot.humidity,
-              moisture: snapshot.soil_moisture,
-              waterLevel: snapshot.float_state,
-              lastSeen: snapshot.updated_at,
-              deviceOnline: true,
-              deviceStatus: 'online',
-            }
-          : null;
-
-        if (candidateReading) {
-          setLatestSensor(candidateReading);
-          setSensorHistory((prev) => {
-            const next = [...prev.slice(-199), candidateReading as Sensor];
-            return next;
-          });
-        } else {
-          setLatestSensor(null);
-          setSensorHistory([]);
-        }
-
         const healthPayload: any = healthResp?.data || {};
 
         const primaryServerStatus =
@@ -717,7 +699,6 @@ export default function AdminDashboard(): React.ReactElement {
         console.warn('AdminDashboard::loadLatest error', error);
         if (!mounted) return;
         setSystemStatus({ server: 'offline', database: 'offline', apiLatency: 0 });
-        setLatestSensor(null);
       }
     }
 
@@ -754,6 +735,14 @@ export default function AdminDashboard(): React.ReactElement {
     refreshDeviceInventory();
     // also fetch initial history for charts
     (async function loadHistory() {
+      if (telemetryDisabled || !ctxTelemetry) {
+        setSensorHistory([]);
+        historyFetchedRef.current = false;
+        return;
+      }
+      if (historyFetchedRef.current) {
+        return;
+      }
       try {
         const response = await api.get('/ha/history', { params: { limit: 336 } }).catch(() => null);
         if (!response || !response.data || !response.data.success) {
@@ -776,6 +765,7 @@ export default function AdminDashboard(): React.ReactElement {
           return aTime - bTime;
         });
         setSensorHistory(ordered.slice(-336));
+        historyFetchedRef.current = true;
       } catch (e) {
         setSensorHistory([]);
       }
@@ -787,19 +777,28 @@ export default function AdminDashboard(): React.ReactElement {
     const id4 = setInterval(loadReminders, 60_000);
     const id5 = setInterval(loadLatestAlerts, 10000); // Poll for new alerts every 10 seconds
     return () => { mounted = false; clearInterval(idDevices); clearInterval(id1); clearInterval(id2); clearInterval(id3); clearInterval(id4); clearInterval(id5); };
-  }, [refreshDeviceInventory, loadLatestAlerts]);
+  }, [refreshDeviceInventory, loadLatestAlerts, telemetryDisabled, ctxTelemetry]);
 
   useEffect(() => {
+    if (telemetryDisabled) {
+      setSensorStatus('Awaiting physical sensors');
+      return;
+    }
     if (devicesOnline > 0) {
       setSensorStatus(`${devicesOnline} device${devicesOnline === 1 ? '' : 's'} online`);
-    } else if (latestSensor) {
+    } else if (hasLiveTelemetry) {
       setSensorStatus('Sensor activity detected');
     } else {
       setSensorStatus('No sensors connected');
     }
-  }, [devicesOnline, latestSensor]);
+  }, [devicesOnline, hasLiveTelemetry, telemetryDisabled]);
 
   useEffect(() => {
+    if (telemetryDisabled) {
+      setLatestSensor(null);
+      setSensorHistory([]);
+      return;
+    }
     if (!ctxTelemetry) {
       return;
     }
@@ -819,14 +818,14 @@ export default function AdminDashboard(): React.ReactElement {
       info('Sensor Update', 'New telemetry data received');
       lastTelemetryToastRef.current = now;
     }
-  }, [ctxTelemetry, info]);
+  }, [ctxTelemetry, info, telemetryDisabled]);
 
   useEffect(() => {
-    if (devicesOnline === 0) {
+    if (telemetryDisabled) {
       setLatestSensor(null);
       setSensorHistory([]);
     }
-  }, [devicesOnline]);
+  }, [telemetryDisabled]);
 
   useEffect(() => {
     if (!alertsActionMessage) {
@@ -861,6 +860,9 @@ export default function AdminDashboard(): React.ReactElement {
     if (ctxTelemetry) {
       return ctxTelemetry;
     }
+    if (Array.isArray(ctxSensorBuffer) && ctxSensorBuffer.length > 0) {
+      return ctxSensorBuffer[ctxSensorBuffer.length - 1];
+    }
     if (!latestSensor) {
       return null;
     }
@@ -880,7 +882,7 @@ export default function AdminDashboard(): React.ReactElement {
       signalStrength: latestSensor.signalStrength ?? undefined,
       timestamp: latestSensor.timestamp || latestSensor.lastSeen || undefined,
     } as SensorDataType;
-  }, [ctxTelemetry, latestSensor]);
+  }, [ctxSensorBuffer, ctxTelemetry, latestSensor]);
 
   const telemetryHistory = useMemo<SensorDataType[]>(() => {
     if (Array.isArray(ctxSensorBuffer) && ctxSensorBuffer.length > 0) {
@@ -956,18 +958,11 @@ export default function AdminDashboard(): React.ReactElement {
   }, [sensorHistory]);
 
   const hasConnectedSensors = useMemo(() => {
-    if (deviceInventory.some((device) => (device.status || '').toLowerCase() === 'online')) {
+    if (hasLiveTelemetry) {
       return true;
     }
-    if (latestSensor) {
-      return true;
-    }
-    return sensorHistory.some((entry) => {
-      if (entry.deviceOnline) return true;
-      const status = (entry.deviceStatus || '').toString().toLowerCase();
-      return status === 'online';
-    });
-  }, [deviceInventory, latestSensor, sensorHistory]);
+    return deviceInventory.some((device) => (device.status || '').toLowerCase() === 'online');
+  }, [deviceInventory, hasLiveTelemetry]);
 
   const reportsAvailable = useMemo(() => {
     if (!hasConnectedSensors) {
@@ -1010,9 +1005,11 @@ export default function AdminDashboard(): React.ReactElement {
         badgeLabel="Admin Dashboard"
         badgeTone="emerald"
         contextTag={(
-          <div className="hidden sm:flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300">
-            <span className="inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
-            System Online
+          <div className={`hidden sm:flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${hasLiveTelemetry
+            ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300'
+            : 'border-amber-200 bg-amber-50 text-amber-700 dark:border-amber-700 dark:bg-amber-900/20 dark:text-amber-200'}`}>
+            <span className={`inline-flex h-2 w-2 rounded-full ${hasLiveTelemetry ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+            {hasLiveTelemetry ? 'Sensors Online' : 'Awaiting Sensors'}
           </div>
         )}
         rightSlot={(
@@ -1139,6 +1136,13 @@ export default function AdminDashboard(): React.ReactElement {
               View VermiLinks Actuators
               <ExternalLink className="h-4 w-4" />
             </a>
+            <Link
+              to="/admin/sensor-logs"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-gray-200 bg-white/80 px-4 py-2 text-sm font-semibold text-gray-700 shadow hover:border-gray-300 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-800/80 dark:text-gray-100"
+            >
+              <FileText className="h-4 w-4" />
+              Review Sensor Logs
+            </Link>
           </div>
         </div>
 
@@ -1210,23 +1214,30 @@ export default function AdminDashboard(): React.ReactElement {
             {activeTab === 'overview' && (
               <div className="space-y-6">
                 {/* Hero Metrics */}
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div className={`${cardClass} rounded-2xl flex flex-col items-start gap-2`}>
-                    <div className="text-xs text-gray-500">Current Temperature</div>
-                    <div className="text-4xl md:text-5xl font-extrabold text-rose-600">{latestSensor?.temperature != null ? `${latestSensor.temperature}°C` : '--'}</div>
-                    <div className="text-sm text-gray-500">Sensor: <span className="font-medium">{latestSensor?.name ?? latestSensor?.deviceId ?? '—'}</span></div>
+                {hasLiveTelemetry && latestSensor ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className={`${cardClass} rounded-2xl flex flex-col items-start gap-2`}>
+                      <div className="text-xs text-gray-500">Current Temperature</div>
+                      <div className="text-4xl md:text-5xl font-extrabold text-rose-600">{`${latestSensor.temperature ?? '--'}${latestSensor.temperature != null ? '°C' : ''}`}</div>
+                      <div className="text-sm text-gray-500">Sensor: <span className="font-medium">{latestSensor.name ?? latestSensor.deviceId ?? '—'}</span></div>
+                    </div>
+                    <div className={`${cardClass} rounded-2xl flex flex-col items-start gap-2`}>
+                      <div className="text-xs text-gray-500">Humidity</div>
+                      <div className="text-4xl md:text-5xl font-extrabold text-sky-600">{latestSensor.humidity != null ? `${latestSensor.humidity}%` : '--'}</div>
+                      <div className="text-sm text-gray-500">Last seen: <span className="font-medium">{fmtLastSeen(latestSensor.lastSeen)}</span></div>
+                    </div>
+                    <div className={`${cardClass} rounded-2xl flex flex-col items-start gap-2`}>
+                      <div className="text-xs text-gray-500">Soil Moisture</div>
+                      <div className="text-4xl md:text-5xl font-extrabold text-green-600">{latestSensor.moisture != null ? `${latestSensor.moisture}%` : '--'}</div>
+                      <div className="text-sm text-gray-500">Water Level: <span className="font-medium">{latestSensor.waterLevel ?? '—'}</span></div>
+                    </div>
                   </div>
-                  <div className={`${cardClass} rounded-2xl flex flex-col items-start gap-2`}>
-                    <div className="text-xs text-gray-500">Humidity</div>
-                    <div className="text-4xl md:text-5xl font-extrabold text-sky-600">{latestSensor?.humidity != null ? `${latestSensor.humidity}%` : '--'}</div>
-                    <div className="text-sm text-gray-500">Last seen: <span className="font-medium">{fmtLastSeen(latestSensor?.lastSeen)}</span></div>
+                ) : (
+                  <div className={`${cardClass} rounded-2xl text-center text-sm text-gray-500 dark:text-gray-400`}>
+                    <p className="text-base font-semibold text-gray-800 dark:text-gray-100">No telemetry yet</p>
+                    <p className="mt-1">Connect a VermiLinks sensor to unlock live temperature, humidity, and moisture metrics.</p>
                   </div>
-                  <div className={`${cardClass} rounded-2xl flex flex-col items-start gap-2`}>
-                    <div className="text-xs text-gray-500">Soil Moisture</div>
-                    <div className="text-4xl md:text-5xl font-extrabold text-green-600">{latestSensor?.moisture != null ? `${latestSensor.moisture}%` : '--'}</div>
-                    <div className="text-sm text-gray-500">Water Level: <span className="font-medium">{latestSensor?.waterLevel ?? '—'}</span></div>
-                  </div>
-                </div>
+                )}
 
                 {/* System Overview & Notifications Row */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1235,7 +1246,7 @@ export default function AdminDashboard(): React.ReactElement {
                     <SystemHealth items={[
                       { label: 'Server', ok: systemStatus.server === 'online', details: `${systemStatus.apiLatency}ms` },
                       { label: 'Database', ok: systemStatus.database === 'online' },
-                      { label: 'ESP32s', ok: !!latestSensor },
+                      { label: 'ESP32s', ok: hasLiveTelemetry, details: hasLiveTelemetry ? 'Streaming' : 'Awaiting signal' },
                       { label: 'Cloud API', ok: !!weatherSummary }
                     ]} />
                   </div>
@@ -1383,9 +1394,10 @@ export default function AdminDashboard(): React.ReactElement {
                 <RealtimeTelemetryPanel
                   latest={realtimeSample}
                   history={telemetryHistory}
-                  isConnected={Boolean(socketsConnected || realtimeSample)}
+                  isConnected={Boolean(socketsConnected || hasLiveTelemetry)}
                   onRefresh={handleRealtimeRefresh}
                   refreshing={realtimeRefreshing}
+                  telemetryDisabled={telemetryDisabled}
                 />
               </div>
             )}

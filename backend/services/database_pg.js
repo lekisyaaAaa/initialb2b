@@ -104,6 +104,7 @@ function loadModels() {
 	require('../models/AuditLog');
 	require('../models/PasswordResetToken');
 	require('../models/SensorSnapshot');
+	require('../models/SensorLog');
 }
 
 let setupPromise = null;

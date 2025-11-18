@@ -89,7 +89,7 @@ services:
       - key: REACT_APP_SENSOR_POLL_INTERVAL_MS
         value: "5000"
       - key: REACT_APP_DUMMY_MODE
-        value: "true"
+        value: "false"
       - key: REACT_APP_HOME_ASSISTANT_URL
         sync: false
       - key: REACT_APP_ENABLE_SOCKETS

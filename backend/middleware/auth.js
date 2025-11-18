@@ -1,7 +1,24 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const Admin = require('../models/Admin');
 const UserSession = require('../models/UserSession');
 const RevokedToken = require('../models/RevokedToken');
+
+const buildAdminPrincipal = (admin) => {
+  if (!admin) {
+    return null;
+  }
+  const plain = typeof admin.get === 'function' ? admin.get({ plain: true }) : admin;
+  return {
+    id: plain.id,
+    email: plain.email,
+    username: plain.email,
+    role: 'admin',
+    isActive: true,
+    createdAt: plain.createdAt || null,
+    updatedAt: plain.updatedAt || null,
+  };
+};
 
 // Authentication middleware
 const auth = async (req, res, next) => {
@@ -51,8 +68,20 @@ const auth = async (req, res, next) => {
     try {
       user = await User.findByPk(decoded.id, { attributes: { exclude: ['password'] } });
     } catch (e) {
-      // DB may be unavailable; we'll attempt a lightweight fallback below
       user = null;
+    }
+
+    if (!user) {
+      try {
+        const adminRecord = await Admin.findByPk(decoded.id, {
+          attributes: ['id', 'email', 'createdAt', 'updatedAt'],
+        });
+        if (adminRecord) {
+          user = buildAdminPrincipal(adminRecord);
+        }
+      } catch (e) {
+        // ignore admin lookup errors
+      }
     }
 
     // If user not found in DB but token represents a local/admin fallback, synthesize a user object
@@ -119,11 +148,16 @@ const optionalAuth = async (req, res, next) => {
     
     if (token) {
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-      // Sequelize: use findByPk and exclude password
-      const user = await User.findByPk(decoded.id, { attributes: { exclude: ['password'] } });
-      
-      if (user && user.isActive) {
-        req.user = user;
+      let principal = await User.findByPk(decoded.id, { attributes: { exclude: ['password'] } });
+      if (!principal) {
+        const adminRecord = await Admin.findByPk(decoded.id, {
+          attributes: ['id', 'email', 'createdAt', 'updatedAt'],
+        }).catch(() => null);
+        principal = buildAdminPrincipal(adminRecord);
+      }
+
+      if (principal && principal.isActive !== false) {
+        req.user = principal;
       }
     }
     

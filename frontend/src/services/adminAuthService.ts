@@ -19,6 +19,7 @@ export interface AdminVerifyOtpResponse {
     refreshToken?: string;
     refreshExpiresAt?: string;
     expiresAt?: string;
+    sessionId?: number | string | null;
     user?: Record<string, unknown>;
     attemptsRemaining?: number;
     delivery?: string;

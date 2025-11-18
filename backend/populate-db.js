@@ -28,8 +28,8 @@ async function populateDB() {
 
     // Insert default settings
     await Settings.create({
-      key: 'default_temp_threshold',
-      value: '30',
+      key: 'thresholds',
+      value: JSON.stringify(Settings.DEFAULT_THRESHOLDS || {}),
     });
     await Settings.create({
       key: 'vermitea',

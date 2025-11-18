@@ -48,6 +48,25 @@ jest.mock('../services/weatherService', () => ({
   }
 }));
 
+// Prevent real socket connections during tests
+jest.mock('../socket', () => {
+  const mockSocket = {
+    on: jest.fn(),
+    off: jest.fn(),
+    emit: jest.fn(),
+    connected: false,
+    disconnect: jest.fn(),
+  };
+  return {
+    __esModule: true,
+    SOCKET_URL: 'http://localhost',
+    getSocket: jest.fn(() => mockSocket),
+    createSocket: jest.fn(() => mockSocket),
+    disconnectSocket: jest.fn(),
+    socket: mockSocket,
+  };
+});
+
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -55,6 +74,7 @@ import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { AuthProvider } from '../contexts/AuthContext';
 import { DarkModeProvider } from '../contexts/DarkModeContext';
 import { DataProvider } from '../contexts/DataContext';
+import { ToastProvider } from '../contexts/ToastContext';
 import LoginPage from '../pages/LoginPage';
 import AdminDashboard from '../pages/AdminDashboard';
 
@@ -78,33 +98,37 @@ describe('Auth flow integration', () => {
 
     // Render the AdminDashboard (simulate navigation after login)
     render(
-      <DarkModeProvider>
-        <AuthProvider>
-          <DataProvider>
-            <MemoryRouter initialEntries={["/admin"]}>
-              <Routes>
-                <Route path="/admin/*" element={<AdminDashboard />} />
-              </Routes>
-            </MemoryRouter>
-          </DataProvider>
-        </AuthProvider>
-      </DarkModeProvider>
+      <ToastProvider>
+        <DarkModeProvider>
+          <AuthProvider>
+            <DataProvider>
+              <MemoryRouter initialEntries={["/admin"]}>
+                <Routes>
+                  <Route path="/admin/*" element={<AdminDashboard />} />
+                </Routes>
+              </MemoryRouter>
+            </DataProvider>
+          </AuthProvider>
+        </DarkModeProvider>
+      </ToastProvider>
     );
 
     // Now render the AdminDashboard directly with the AuthProvider and click Logout
     // This simulates navigating to the dashboard after login
     render(
-      <DarkModeProvider>
-        <AuthProvider>
-          <DataProvider>
-            <MemoryRouter initialEntries={["/admin"]}>
-              <Routes>
-                <Route path="/admin/*" element={<AdminDashboard />} />
-              </Routes>
-            </MemoryRouter>
-          </DataProvider>
-        </AuthProvider>
-      </DarkModeProvider>
+      <ToastProvider>
+        <DarkModeProvider>
+          <AuthProvider>
+            <DataProvider>
+              <MemoryRouter initialEntries={["/admin"]}>
+                <Routes>
+                  <Route path="/admin/*" element={<AdminDashboard />} />
+                </Routes>
+              </MemoryRouter>
+            </DataProvider>
+          </AuthProvider>
+        </DarkModeProvider>
+      </ToastProvider>
     );
 
   // Wait for page header to appear (there may be multiple portal/header instances)

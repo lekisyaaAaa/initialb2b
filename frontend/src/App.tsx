@@ -15,6 +15,7 @@ import AdminOTPVerifyPage from './pages/admin/AdminOTPVerifyPage';
 import AdminForgotPasswordPage from './pages/admin/AdminForgotPasswordPage';
 import AdminResetPasswordPage from './pages/admin/AdminResetPasswordPage';
 import AlertsPage from './pages/admin/Alerts';
+import SensorLogsPage from './pages/admin/SensorLogsPage';
 import UserDashboard from './pages/UserDashboard';
 
 // Import context providers
@@ -52,6 +53,7 @@ function App() {
                 {/* Explicit dashboard path kept for compatibility */}
                 <Route path="/admin/dashboard" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
                 <Route path="/admin/alerts" element={<ProtectedRoute><AlertsPage /></ProtectedRoute>} />
+                <Route path="/admin/sensor-logs" element={<ProtectedRoute adminOnly><SensorLogsPage /></ProtectedRoute>} />
                 <Route path="/admin/devices/:deviceId/ports" element={<ProtectedRoute><DevicePortsPage /></ProtectedRoute>} />
                 {/* dev-only debug route removed */}
                 <Route path="/logs" element={<ProtectedRoute><LogsPage /></ProtectedRoute>} />

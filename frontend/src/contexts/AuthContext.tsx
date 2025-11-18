@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react';
 import { User, AuthContextType } from '../types';
 import api, { authService, discoverApi } from '../services/api';
 import { logoutSession } from '../services/adminAuthService';
@@ -314,7 +314,7 @@ const login = async (username: string, password: string): Promise<{ success: boo
     return { success: false, message: errorMessage };
   };
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     const refreshToken = storageGet('adminRefreshToken');
     const currentToken = storageGet('token') || storageGet('adminToken');
     if (refreshToken || currentToken) {
@@ -343,7 +343,7 @@ const login = async (username: string, password: string): Promise<{ success: boo
     } catch (e) {
       // ignore if api shape is unexpected in tests
     }
-  };
+  }, []);
 
   useEffect(() => {
     const handleAuthExpired = () => {

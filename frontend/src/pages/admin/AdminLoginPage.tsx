@@ -4,6 +4,7 @@ import { Mail, Lock, AlertCircle, ArrowRight } from 'lucide-react';
 import DarkModeToggle from '../../components/DarkModeToggle';
 import { login as loginAdmin } from '../../services/adminAuthService';
 import { useAuth } from '../../contexts/AuthContext';
+import { clearPendingOtpState, savePendingOtpState } from '../../utils/pendingOtp';
 
 const AdminLoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -21,6 +22,10 @@ const AdminLoginPage: React.FC = () => {
     }
   }, [isAuthenticated, navigate]);
 
+  useEffect(() => {
+    clearPendingOtpState();
+  }, []);
+
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!isFormValid || isSubmitting) {
@@ -34,23 +39,33 @@ const AdminLoginPage: React.FC = () => {
       const response = await loginAdmin(email, password);
 
       if (response?.data?.requires2FA) {
-        const debugCode = response?.data?.debugCode;
-        const delivery = response?.data?.delivery;
+        const debugCode = response?.data?.debugCode ?? null;
+        const delivery = response?.data?.delivery ?? null;
         const expiresAt = response?.data?.expiresAt || null;
+
+        savePendingOtpState({
+          email: email.trim(),
+          debugCode,
+          delivery,
+          expiresAt,
+        });
+
         navigate('/admin/verify-otp', {
-          state: { email: email.trim(), debugCode: debugCode ?? null, delivery, expiresAt },
+          state: { email: email.trim(), debugCode, delivery, expiresAt },
           replace: true,
         });
         return;
       }
 
       if (response?.success) {
+        clearPendingOtpState();
         navigate('/admin/dashboard');
         return;
       }
 
       setError(response?.message || 'Unexpected response from the server.');
     } catch (err) {
+      clearPendingOtpState();
       const message = err instanceof Error ? err.message : 'Unable to sign in. Please try again.';
       setError(message);
       setPassword('');

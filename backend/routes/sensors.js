@@ -17,6 +17,7 @@ const {
   broadcastSensorData,
   checkThresholds,
 } = require('../utils/sensorEvents');
+const sensorLogService = require('../services/sensorLogService');
 
 const DEVICE_STATUS_TIMEOUT_MS = Math.max(
   2000,
@@ -185,6 +186,7 @@ router.post('/ingest-ha', [
     const io = resolveIo(req.app);
 
     let sensorData = null;
+    const cappedPayload = clampRawPayload(req.body);
     try {
       sensorData = await SensorData.create({
         deviceId: homeAssistantDeviceId,
@@ -202,7 +204,7 @@ router.post('/ingest-ha', [
         signalStrength: req.body.signalStrength !== undefined ? Number(req.body.signalStrength) : null,
         timestamp: effectiveTimestamp,
         source: 'home_assistant_rest',
-        rawPayload: clampRawPayload(req.body),
+        rawPayload: cappedPayload,
       });
       pruneDeviceHistory(homeAssistantDeviceId);
     } catch (createError) {
@@ -233,6 +235,27 @@ router.post('/ingest-ha', [
 
     checkThresholds(plainPayload, io).catch(() => null);
     broadcastSensorData(plainPayload, io);
+
+    await sensorLogService.recordSensorLogs({
+      deviceId: homeAssistantDeviceId,
+      metrics: {
+        temperature: plainPayload.temperature,
+        humidity: plainPayload.humidity,
+        moisture: plainPayload.moisture,
+        ph: plainPayload.ph,
+        ec: plainPayload.ec,
+        nitrogen: plainPayload.nitrogen,
+        phosphorus: plainPayload.phosphorus,
+        potassium: plainPayload.potassium,
+        waterLevel: plainPayload.waterLevel,
+        floatSensor: plainPayload.floatSensor,
+        batteryLevel: plainPayload.batteryLevel,
+        signalStrength: plainPayload.signalStrength,
+      },
+      origin: 'home_assistant_rest',
+      recordedAt: effectiveTimestamp,
+      rawPayload: cappedPayload,
+    });
 
     sensorCache.del('latest:all');
     sensorCache.del(`latest:${homeAssistantDeviceId}`);
@@ -393,6 +416,40 @@ router.post('/', [
       timestamp: ts,
     });
 
+    await sensorLogService.recordSensorLogs({
+      deviceId: normalizedDeviceId,
+      metrics: {
+        temperature: temperature !== undefined ? parseFloat(temperature) : null,
+        humidity: humidity !== undefined ? parseFloat(humidity) : null,
+        moisture: soilMoisture !== undefined ? parseFloat(soilMoisture) : null,
+        ph: ph !== undefined ? parseFloat(ph) : null,
+        ec: ec !== undefined ? parseFloat(ec) : null,
+        nitrogen: nitrogen !== undefined ? parseFloat(nitrogen) : null,
+        phosphorus: phosphorus !== undefined ? parseFloat(phosphorus) : null,
+        potassium: potassium !== undefined ? parseFloat(potassium) : null,
+        waterLevel: waterLevel !== undefined ? parseInt(waterLevel, 10) : null,
+        floatSensor: typeof floatSensor === 'number' ? floatSensor : null,
+        batteryLevel: batteryLevel !== undefined ? parseFloat(batteryLevel) : null,
+        signalStrength: signalStrength !== undefined ? parseFloat(signalStrength) : null,
+      },
+      origin: 'esp32_http',
+      recordedAt: ts,
+      rawPayload: {
+        temperature: temperature !== undefined ? parseFloat(temperature) : null,
+        humidity: humidity !== undefined ? parseFloat(humidity) : null,
+        moisture: soilMoisture !== undefined ? parseFloat(soilMoisture) : null,
+        ph: ph !== undefined ? parseFloat(ph) : null,
+        ec: ec !== undefined ? parseFloat(ec) : null,
+        nitrogen: nitrogen !== undefined ? parseFloat(nitrogen) : null,
+        phosphorus: phosphorus !== undefined ? parseFloat(phosphorus) : null,
+        potassium: potassium !== undefined ? parseFloat(potassium) : null,
+        waterLevel: waterLevel !== undefined ? parseInt(waterLevel, 10) : null,
+        floatSensor: typeof floatSensor === 'number' ? floatSensor : null,
+        batteryLevel: batteryLevel !== undefined ? parseFloat(batteryLevel) : null,
+        signalStrength: signalStrength !== undefined ? parseFloat(signalStrength) : null,
+      },
+    });
+
   // Fire-and-forget alerts and broadcast (only for live data). We still mark the device online via deviceManager
   const metadataUpdate = Object.assign(
     {},
@@ -483,6 +540,26 @@ router.post('/batch', [
         isOfflineData: true,
         source: 'esp32_batch',
         rawPayload: null,
+      });
+
+      await sensorLogService.recordSensorLogs({
+        deviceId,
+        metrics: {
+          temperature: parseFloat(item.temperature),
+          humidity: parseFloat(item.humidity),
+          moisture: parseFloat(item.moisture),
+          batteryLevel: item.batteryLevel ? parseFloat(item.batteryLevel) : null,
+          signalStrength: item.signalStrength ? parseFloat(item.signalStrength) : null,
+        },
+        origin: 'esp32_batch',
+        recordedAt: sensorData.timestamp || new Date(),
+        rawPayload: {
+          temperature: parseFloat(item.temperature),
+          humidity: parseFloat(item.humidity),
+          moisture: parseFloat(item.moisture),
+          batteryLevel: item.batteryLevel ? parseFloat(item.batteryLevel) : null,
+          signalStrength: item.signalStrength ? parseFloat(item.signalStrength) : null,
+        },
       });
 
       const alerts = await checkThresholds(sensorData, io);

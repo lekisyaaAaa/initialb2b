@@ -21,16 +21,63 @@ const Settings = sequelize.define('Settings', {
 });
 
 const DEFAULT_THRESHOLDS = {
-  temperature: { min: 18, max: 30, warning: 30, critical: 35 },
-  humidity: { min: 40, max: 70, warning: 65, critical: 75 },
+  temperature: {
+    min: 20,
+    max: 30,
+    warning: 32,
+    critical: 35,
+    lowWarning: 18,
+    lowCritical: 15,
+  },
+  humidity: {
+    min: 55,
+    max: 70,
+    warning: 75,
+    lowWarning: 45,
+  },
   moisture: { min: 30, max: 60, warning: 35, critical: 25 },
   batteryLevel: { min: 0, max: 100, warning: 20, critical: 10 },
-  ph: { minWarning: 6.0, minCritical: 5.5, maxWarning: 7.5, maxCritical: 8.0 },
-  ec: { min: 0, max: 5000, warning: 2000, critical: 3000 },
-  nitrogen: { minWarning: 50, minCritical: 30 },
-  phosphorus: { minWarning: 20, minCritical: 10 },
-  potassium: { minWarning: 100, minCritical: 50 },
+  ph: {
+    idealMin: 6.2,
+    idealMax: 7.0,
+    minWarning: 6.0,
+    minCritical: 5.5,
+    maxWarning: 7.5,
+    maxCritical: 8.0,
+  },
+  ec: {
+    min: 0.8,
+    max: 2.0,
+    warning: 2.2,
+    critical: 2.5,
+    lowWarning: 0.5,
+  },
+  nitrogen: {
+    minWarning: 150,
+    minCritical: 100,
+    maxWarning: 600,
+  },
+  phosphorus: {
+    minWarning: 20,
+    minCritical: 10,
+    maxWarning: 100,
+  },
+  potassium: {
+    minWarning: 100,
+    minCritical: 50,
+    maxWarning: 350,
+  },
   waterLevel: { critical: 0 },
+  floatSensor: {
+    normalState: 1,
+    lowAlertState: 0,
+    lowAlertDurationSec: 90,
+  },
+  waterPump: {
+    maxRuntimeSec: 300,
+    minRestSec: 120,
+    minFlowLpm: 2,
+  },
 };
 
 const DEFAULT_MONITORING = {
@@ -138,5 +185,6 @@ Settings.getSettings = async () => {
 };
 
 Settings.DEFAULT_ALERT_RULES = DEFAULT_ALERT_RULES;
+Settings.DEFAULT_THRESHOLDS = DEFAULT_THRESHOLDS;
 
 module.exports = Settings;

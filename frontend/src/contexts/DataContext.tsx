@@ -63,6 +63,7 @@ interface DataContextType {
   refreshAlerts: () => Promise<void>;
   clearAlerts: () => Promise<void>;
   clearLastFetchError: () => void;
+  telemetryDisabled: boolean;
 }
 
 const DataContext = createContext<DataContextType | undefined>(undefined);
@@ -114,6 +115,14 @@ const backendBaseFromApi = () => {
 };
 
 const socketsEnabled = (process.env.REACT_APP_ENABLE_SOCKETS || '').toString().toLowerCase() === 'true';
+const STALE_TELEMETRY_THRESHOLD_MS = (() => {
+  const raw = Number(process.env.REACT_APP_HIDE_STALE_MS || 5 * 60 * 1000);
+  return Number.isFinite(raw) && raw > 0 ? raw : 5 * 60 * 1000;
+})();
+const allowStaleTelemetry = (process.env.REACT_APP_ALLOW_STALE_DATA || 'false').toString().toLowerCase() === 'true';
+const envForceTelemetryDisabled = (process.env.REACT_APP_TELEMETRY_DISABLED || '').toString().toLowerCase() === 'true';
+const requireLiveHardwareForTelemetry = (process.env.REACT_APP_REQUIRE_LIVE_SENSORS || 'true').toString().toLowerCase() !== 'false';
+const TELEMETRY_DISABLED_MESSAGE = 'Telemetry feed temporarily disabled until sensors come online.';
 
 export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const [latestTelemetry, setLatestTelemetry] = useState<SensorData | null>(null);
@@ -127,6 +136,8 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const [isLoading, setIsLoading] = useState(false);
   const [lastFetchAt, setLastFetchAt] = useState<string | null>(null);
   const [lastFetchError, setLastFetchError] = useState<string | null>(null);
+  const hardwareGateActive = !envForceTelemetryDisabled && requireLiveHardwareForTelemetry && !isConnected;
+  const telemetryDisabled = envForceTelemetryDisabled || hardwareGateActive;
   const backendBaseRef = useRef<string>('');
   const parsedPollInterval = Number(process.env.REACT_APP_SENSOR_POLL_INTERVAL_MS || '5000');
   const pollIntervalMs = Number.isFinite(parsedPollInterval) && parsedPollInterval > 0
@@ -176,6 +187,13 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   }, [latestTelemetry]);
 
   const refreshAlerts = useCallback(async () => {
+    if (telemetryDisabled) {
+      setRecentAlerts([]);
+      setGroupedAlerts({ critical: [], warning: [], info: [] });
+      setAlertSummary({ critical: 0, warning: 0, info: 0, lastAlertAt: null });
+      setLastFetchError(TELEMETRY_DISABLED_MESSAGE);
+      return;
+    }
     try {
       const [recentResponse, summaryResponse] = await Promise.all([
         alertService.getRecentAlerts(20).catch(() => ({ data: { data: [] } })),
@@ -215,9 +233,13 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       setLastFetchError(error?.message || 'Unable to load alerts');
       throw error;
     }
-  }, []);
+  }, [telemetryDisabled]);
 
   const clearAlerts = useCallback(async () => {
+    if (telemetryDisabled) {
+      setLastFetchError(TELEMETRY_DISABLED_MESSAGE);
+      return;
+    }
     try {
       await alertService.clearAll();
       await refreshAlerts();
@@ -225,18 +247,34 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       setLastFetchError(error?.message || 'Unable to clear alerts');
       throw error;
     }
-  }, [refreshAlerts]);
+  }, [refreshAlerts, telemetryDisabled]);
 
   const handleTelemetryPayload = useCallback((raw: any, options?: { updateLatestList?: boolean }) => {
-    if (!raw) return;
+    if (!raw || telemetryDisabled) return null;
     const sample = Array.isArray(raw) ? raw[0] : raw;
-    if (!sample || typeof sample !== 'object') return;
+    if (!sample || typeof sample !== 'object') return null;
 
     const deviceId = (sample as any).deviceId || (sample as any).device_id || 'unknown-device';
     const normalized: SensorData = {
       ...(sample as SensorData),
       deviceId,
     };
+
+    const timestampMs = normalized.timestamp ? new Date(normalized.timestamp).getTime() : NaN;
+    const sampleAgeMs = Number.isFinite(timestampMs) ? Date.now() - timestampMs : null;
+    const isStale = sampleAgeMs === null ? true : sampleAgeMs > STALE_TELEMETRY_THRESHOLD_MS;
+    normalized.sampleAgeMs = sampleAgeMs;
+    normalized.isStale = isStale;
+    normalized.lastSeen = normalized.timestamp ? new Date(normalized.timestamp).toISOString() : null;
+    normalized.deviceOnline = Boolean(normalized.deviceOnline && !isStale);
+
+    if (isStale && !allowStaleTelemetry) {
+      setLatestTelemetry(null);
+      setLatestSensorData([]);
+      setIsConnected(false);
+      setLastFetchError('Awaiting live telemetry from sensors');
+      return null;
+    }
 
     setLatestTelemetry(normalized);
     if (options?.updateLatestList !== false) {
@@ -250,8 +288,11 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     setLastFetchAt(new Date().toISOString());
     setLastFetchError(null);
 
-    const online = Boolean((sample as any)?.deviceOnline ?? ((sample as any)?.deviceStatus || '').toString().toLowerCase() === 'online');
-    const heartbeat = (sample as any)?.timestamp || (sample as any)?.receivedAt || null;
+    const normalizedDeviceStatus = ((sample as any)?.deviceStatus || '').toString().toLowerCase();
+    const online = typeof normalized.deviceOnline === 'boolean'
+      ? normalized.deviceOnline
+      : normalizedDeviceStatus === 'online';
+    const heartbeat = normalized.lastSeen || (sample as any)?.timestamp || (sample as any)?.receivedAt || null;
     mergeDeviceStatus({
       deviceId,
       online,
@@ -260,9 +301,18 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       updatedAt: new Date().toISOString(),
     });
     return normalized;
-  }, [mergeDeviceStatus]);
+  }, [mergeDeviceStatus, telemetryDisabled]);
 
   const refreshTelemetry = useCallback(async (options?: { background?: boolean }) => {
+    if (telemetryDisabled) {
+      setLatestTelemetry(null);
+      setLatestSensorData([]);
+      setIsConnected(false);
+      setLastFetchAt(null);
+      setLastFetchError(TELEMETRY_DISABLED_MESSAGE);
+      setIsLoading(false);
+      return;
+    }
     const background = Boolean(options?.background);
     if (!background) {
       setIsLoading(true);
@@ -286,8 +336,12 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         : null;
 
       if (reading) {
-        handleTelemetryPayload(reading, { updateLatestList: false });
-        setLatestSensorData([reading]);
+        const processed = handleTelemetryPayload(reading, { updateLatestList: false });
+        if (processed) {
+          setLatestSensorData([processed]);
+        } else {
+          setLatestSensorData([]);
+        }
       } else if (!background) {
         setLatestTelemetry(null);
         setLatestSensorData([]);
@@ -309,7 +363,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         setIsLoading(false);
       }
     }
-  }, [ensureBackendBase, handleTelemetryPayload]);
+  }, [ensureBackendBase, handleTelemetryPayload, telemetryDisabled]);
 
   const refreshSensors = useCallback(async (options?: { background?: boolean }) => {
     await refreshTelemetry(options);
@@ -317,6 +371,117 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
 
   useEffect(() => {
     let isMounted = true;
+
+    const resetRealtimeState = () => {
+      setLatestTelemetry(null);
+      setLatestSensorData([]);
+      setDeviceStatuses({});
+      setRecentAlerts([]);
+      setGroupedAlerts({ critical: [], warning: [], info: [] });
+      setAlertSummary({ critical: 0, warning: 0, info: 0, lastAlertAt: null });
+      setIsConnected(false);
+      setIsLoading(false);
+      setLastFetchAt(null);
+      setLastFetchError(TELEMETRY_DISABLED_MESSAGE);
+    };
+
+    if (envForceTelemetryDisabled) {
+      resetRealtimeState();
+      return () => {
+        isMounted = false;
+      };
+    }
+
+    if (hardwareGateActive) {
+      resetRealtimeState();
+      let cancelled = false;
+
+      const probeDevices = async () => {
+        try {
+          await ensureBackendBase();
+          const resp = await deviceService.list().catch(() => null);
+          if (!resp || cancelled || !isMounted) {
+            return;
+          }
+          const devices = (resp?.data?.data ?? resp?.data ?? []) as any[];
+          devices.forEach((device) => {
+            const deviceId = (device?.deviceId || device?.device_id || '').toString();
+            if (!deviceId || cancelled || !isMounted) return;
+            mergeDeviceStatus({
+              deviceId,
+              online: Boolean(device?.status === 'online' || device?.online === true),
+              status: (device?.status || (device?.online ? 'online' : 'offline')) || 'offline',
+              lastHeartbeat: device?.lastHeartbeat ? new Date(device.lastHeartbeat).toISOString() : null,
+              updatedAt: device?.updatedAt ? new Date(device.updatedAt).toISOString() : new Date().toISOString(),
+            });
+          });
+        } catch (error) {
+          // swallow errors while awaiting live hardware
+        }
+      };
+
+      probeDevices();
+      const gateIntervalMs = Math.max(pollIntervalMs, 5000);
+      const intervalId = window.setInterval(() => {
+        probeDevices();
+      }, gateIntervalMs);
+
+      return () => {
+        cancelled = true;
+        isMounted = false;
+        window.clearInterval(intervalId);
+      };
+    }
+
+    (async () => {
+      try {
+        await ensureBackendBase();
+        await Promise.all([
+          refreshTelemetry().catch(() => null),
+          refreshAlerts().catch(() => null),
+          (async () => {
+            const resp = await deviceService.list().catch(() => null);
+            const devices = (resp?.data?.data ?? resp?.data ?? []) as any[];
+            devices.forEach((device) => {
+              const deviceId = (device?.deviceId || device?.device_id || '').toString();
+              if (!deviceId || !isMounted) return;
+              mergeDeviceStatus({
+                deviceId,
+                online: Boolean(device?.status === 'online' || device?.online === true),
+                status: (device?.status || (device?.online ? 'online' : 'offline')) || 'offline',
+                lastHeartbeat: device?.lastHeartbeat ? new Date(device.lastHeartbeat).toISOString() : null,
+                updatedAt: device?.updatedAt ? new Date(device.updatedAt).toISOString() : new Date().toISOString(),
+              });
+            });
+          })(),
+        ]);
+      } catch (error: any) {
+        setLastFetchError(error?.message || 'Initialization failed');
+      }
+    })();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [hardwareGateActive, ensureBackendBase, mergeDeviceStatus, refreshAlerts, refreshTelemetry, pollIntervalMs]);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (telemetryDisabled) {
+      setLatestTelemetry(null);
+      setLatestSensorData([]);
+      setDeviceStatuses({});
+      setRecentAlerts([]);
+      setGroupedAlerts({ critical: [], warning: [], info: [] });
+      setAlertSummary({ critical: 0, warning: 0, info: 0, lastAlertAt: null });
+      setIsConnected(false);
+      setIsLoading(false);
+      setLastFetchAt(null);
+      setLastFetchError(TELEMETRY_DISABLED_MESSAGE);
+      return () => {
+        isMounted = false;
+      };
+    }
     (async () => {
       try {
         await ensureBackendBase();
@@ -347,10 +512,10 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     return () => {
       isMounted = false;
     };
-  }, [ensureBackendBase, mergeDeviceStatus, refreshAlerts, refreshTelemetry]);
+  }, [ensureBackendBase, mergeDeviceStatus, refreshAlerts, refreshTelemetry, telemetryDisabled]);
 
   useEffect(() => {
-    if (!Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) {
+    if (telemetryDisabled || !Number.isFinite(pollIntervalMs) || pollIntervalMs <= 0) {
       return;
     }
     const timer = setInterval(() => {
@@ -359,10 +524,10 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     return () => {
       clearInterval(timer);
     };
-  }, [pollIntervalMs, refreshTelemetry]);
+  }, [pollIntervalMs, refreshTelemetry, telemetryDisabled]);
 
   useEffect(() => {
-    if (!socketsEnabled) {
+    if (telemetryDisabled || !socketsEnabled) {
       return;
     }
 
@@ -437,7 +602,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       socket.off('alert:cleared', alertsTriggerHandler);
       socket.off('alert:trigger', alertsTriggerHandler);
     };
-  }, [handleTelemetryPayload, mergeDeviceStatus, refreshAlerts]);
+  }, [handleTelemetryPayload, mergeDeviceStatus, refreshAlerts, telemetryDisabled]);
 
   const contextValue = useMemo<DataContextType>(() => ({
     latestTelemetry,
@@ -456,6 +621,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     refreshAlerts,
     clearAlerts,
     clearLastFetchError: () => setLastFetchError(null),
+    telemetryDisabled,
   }), [
     latestTelemetry,
     latestSensorData,
@@ -472,6 +638,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     refreshSensors,
     refreshAlerts,
     clearAlerts,
+    telemetryDisabled,
   ]);
 
   return (

@@ -10,6 +10,87 @@ const {
 } = require('./sensorFormatting');
 const { REALTIME_EVENTS, emitRealtime } = require('./realtime');
 
+const MAX_TRACKED_DEVICES = 500;
+const FLOAT_EVENT_COOLDOWN_MS = 30 * 1000;
+const floatStateTracker = new Map();
+const pumpStateTracker = new Map();
+
+const limitTrackerSize = (map) => {
+  if (map.size <= MAX_TRACKED_DEVICES) {
+    return;
+  }
+  const oldestKey = map.keys().next();
+  if (!oldestKey.done) {
+    map.delete(oldestKey.value);
+  }
+};
+
+const toFiniteNumber = (value) => {
+  if (value === null || typeof value === 'undefined' || value === '') {
+    return null;
+  }
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const getTimestampMs = (sensor) => {
+  if (!sensor) {
+    return Date.now();
+  }
+  const raw = sensor.timestamp || sensor.createdAt || sensor.updatedAt;
+  if (!raw) {
+    return Date.now();
+  }
+  const parsed = raw instanceof Date ? raw.getTime() : new Date(raw).getTime();
+  return Number.isFinite(parsed) ? parsed : Date.now();
+};
+
+const normalizePumpStateValue = (value) => {
+  if (value === null || typeof value === 'undefined') {
+    return null;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    if (value >= 1) return true;
+    if (value <= 0) return false;
+  }
+  const normalized = String(value).trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (['on', 'true', '1', 'active', 'running', 'start'].includes(normalized)) {
+    return true;
+  }
+  if (['off', 'false', '0', 'inactive', 'stopped', 'stop'].includes(normalized)) {
+    return false;
+  }
+  return null;
+};
+
+const resolvePumpState = (sensor) => normalizePumpStateValue(
+  sensor && (sensor.pumpState ?? sensor.pump_state ?? sensor.pump ?? sensor.waterPumpState ?? sensor.pumpStatus)
+);
+
+const pickNumericField = (sensor, keys = []) => {
+  if (!sensor) {
+    return null;
+  }
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(sensor, key)) {
+      const value = toFiniteNumber(sensor[key]);
+      if (value !== null) {
+        return value;
+      }
+    }
+  }
+  return null;
+};
+
 const resolveIo = (app) => {
   if (app && typeof app.get === 'function') {
     const ioInstance = app.get('io');
@@ -67,6 +148,140 @@ const broadcastSensorData = (data, ioInstance) => {
   return payload;
 };
 
+const processFloatLockout = (sensor, config, pushAlert, ioInstance) => {
+  if (!sensor || !config) {
+    return;
+  }
+  const floatValue = toFiniteNumber(
+    Object.prototype.hasOwnProperty.call(sensor, 'floatSensor')
+      ? sensor.floatSensor
+      : sensor.waterLevel
+  );
+  if (floatValue === null) {
+    return;
+  }
+  const normalState = toFiniteNumber(config.normalState);
+  const lowState = toFiniteNumber(config.lowAlertState);
+  const durationThreshold = toFiniteNumber(config.lowAlertDurationSec) || 90;
+  const targetLowState = lowState === null ? 0 : lowState;
+  const deviceId = sensor.deviceId || 'unknown_device';
+  const timestampMs = getTimestampMs(sensor);
+  const tracker = floatStateTracker.get(deviceId) || { lowSince: null, lastState: null, lastAlertAt: null };
+  const isLow = floatValue === targetLowState;
+  const recovered = tracker.lastState === targetLowState && !isLow && tracker.lowSince !== null;
+
+  if (isLow) {
+    if (tracker.lowSince === null) {
+      tracker.lowSince = timestampMs;
+    }
+    const secondsLow = (timestampMs - tracker.lowSince) / 1000;
+    if (secondsLow >= durationThreshold) {
+      pushAlert({
+        type: 'float_sensor',
+        severity: 'critical',
+        message: `Float sensor low for ${Math.round(secondsLow)}s (min ${durationThreshold}s)`,
+        threshold: { value: targetLowState, operator: '==' },
+      });
+      if (!tracker.lastAlertAt || (timestampMs - tracker.lastAlertAt) > FLOAT_EVENT_COOLDOWN_MS) {
+        emitRealtime(REALTIME_EVENTS.FLOAT_LOCKOUT, {
+          deviceId,
+          floatSensor: floatValue,
+          message: `Float sensor low for ${Math.round(secondsLow)}s`,
+          action: 'trigger',
+          timestamp: new Date(timestampMs).toISOString(),
+        }, { io: ioInstance || global.io });
+        tracker.lastAlertAt = timestampMs;
+      }
+    }
+  } else if (recovered) {
+    tracker.lowSince = null;
+    tracker.lastAlertAt = null;
+    emitRealtime(REALTIME_EVENTS.FLOAT_LOCKOUT, {
+      deviceId,
+      floatSensor: floatValue,
+      message: 'Float sensor recovered',
+      action: 'cleared',
+      timestamp: new Date(timestampMs).toISOString(),
+    }, { io: ioInstance || global.io });
+  } else if (!isLow) {
+    tracker.lowSince = null;
+  }
+
+  tracker.lastState = floatValue;
+  floatStateTracker.set(deviceId, tracker);
+  limitTrackerSize(floatStateTracker);
+};
+
+const processWaterPump = (sensor, config, pushAlert) => {
+  if (!sensor || !config) {
+    return;
+  }
+  const pumpState = resolvePumpState(sensor);
+  if (pumpState === null) {
+    return;
+  }
+  const deviceId = sensor.deviceId || 'unknown_device';
+  const timestampMs = getTimestampMs(sensor);
+  const tracker = pumpStateTracker.get(deviceId) || { lastState: null, lastOn: null, lastOff: null };
+  const maxRuntime = toFiniteNumber(config.maxRuntimeSec);
+  const minRest = toFiniteNumber(config.minRestSec);
+  const minFlow = toFiniteNumber(config.minFlowLpm);
+
+  if (pumpState === true) {
+    const isNewRun = tracker.lastState !== true;
+    if (isNewRun) {
+      if (tracker.lastOff && minRest !== null) {
+        const restSeconds = (timestampMs - tracker.lastOff) / 1000;
+        if (restSeconds < minRest) {
+          pushAlert({
+            type: 'water_pump_rest',
+            severity: 'warning',
+            message: `Pump restarted after ${Math.round(restSeconds)}s rest (min ${minRest}s)`,
+            threshold: { value: minRest, operator: '>=' },
+          });
+        }
+      }
+      tracker.lastOn = timestampMs;
+    }
+
+    const runtimeSeconds = (() => {
+      const telemValue = pickNumericField(sensor, ['pumpRuntimeSec', 'pump_runtime_sec', 'pumpRuntime', 'pump_runtime']);
+      if (telemValue !== null) {
+        return telemValue;
+      }
+      if (tracker.lastOn) {
+        return (timestampMs - tracker.lastOn) / 1000;
+      }
+      return null;
+    })();
+
+    if (runtimeSeconds !== null && maxRuntime !== null && runtimeSeconds > maxRuntime) {
+      pushAlert({
+        type: 'water_pump_runtime',
+        severity: 'critical',
+        message: `Pump runtime ${Math.round(runtimeSeconds)}s exceeds ${maxRuntime}s limit`,
+        threshold: { value: maxRuntime, operator: '<=' },
+      });
+    }
+
+    const flowValue = pickNumericField(sensor, ['pumpFlowLpm', 'pump_flow_lpm', 'flowLpm', 'flow_lpm', 'flowRate']);
+    if (flowValue !== null && minFlow !== null && flowValue < minFlow) {
+      pushAlert({
+        type: 'water_pump_flow',
+        severity: 'medium',
+        message: `Pump flow ${flowValue} L/min below ${minFlow} L/min minimum`,
+        threshold: { value: minFlow, operator: '>=' },
+      });
+    }
+  } else if (tracker.lastState === true && tracker.lastOn) {
+    tracker.lastOff = timestampMs;
+  }
+
+  tracker.lastState = pumpState;
+  pumpStateTracker.set(deviceId, tracker);
+  limitTrackerSize(pumpStateTracker);
+};
+
 const checkThresholds = async (sensorData, ioInstance) => {
   try {
     const plainSensor = toPlainObject(sensorData) || {};
@@ -106,7 +321,7 @@ const checkThresholds = async (sensorData, ioInstance) => {
 
     const temperatureThresholds = thresholds.temperature || {};
     if (typeof plainSensor.temperature === 'number') {
-      const { warning, critical } = temperatureThresholds;
+      const { warning, critical, lowWarning, lowCritical } = temperatureThresholds;
       if (typeof critical === 'number' && plainSensor.temperature > critical) {
         pushAlert({
           type: 'temperature',
@@ -121,12 +336,26 @@ const checkThresholds = async (sensorData, ioInstance) => {
           message: `High temperature: ${plainSensor.temperature}°C (threshold: ${warning}°C)`,
           threshold: { value: warning, operator: '>' },
         });
+      } else if (typeof lowCritical === 'number' && plainSensor.temperature < lowCritical) {
+        pushAlert({
+          type: 'temperature',
+          severity: 'critical',
+          message: `Critical low temperature: ${plainSensor.temperature}°C (threshold: ${lowCritical}°C)`,
+          threshold: { value: lowCritical, operator: '<' },
+        });
+      } else if (typeof lowWarning === 'number' && plainSensor.temperature < lowWarning) {
+        pushAlert({
+          type: 'temperature',
+          severity: 'medium',
+          message: `Low temperature: ${plainSensor.temperature}°C (threshold: ${lowWarning}°C)`,
+          threshold: { value: lowWarning, operator: '<' },
+        });
       }
     }
 
     const humidityThresholds = thresholds.humidity || {};
     if (typeof plainSensor.humidity === 'number') {
-      const { warning, critical } = humidityThresholds;
+      const { warning, critical, lowWarning, lowCritical } = humidityThresholds;
       if (typeof critical === 'number' && plainSensor.humidity > critical) {
         pushAlert({
           type: 'humidity',
@@ -140,6 +369,20 @@ const checkThresholds = async (sensorData, ioInstance) => {
           severity: 'high',
           message: `High humidity: ${plainSensor.humidity}% (threshold: ${warning}%)`,
           threshold: { value: warning, operator: '>' },
+        });
+      } else if (typeof lowCritical === 'number' && plainSensor.humidity < lowCritical) {
+        pushAlert({
+          type: 'humidity',
+          severity: 'critical',
+          message: `Critical low humidity: ${plainSensor.humidity}% (threshold: ${lowCritical}%)`,
+          threshold: { value: lowCritical, operator: '<' },
+        });
+      } else if (typeof lowWarning === 'number' && plainSensor.humidity < lowWarning) {
+        pushAlert({
+          type: 'humidity',
+          severity: 'medium',
+          message: `Low humidity: ${plainSensor.humidity}% (threshold: ${lowWarning}%)`,
+          threshold: { value: lowWarning, operator: '<' },
         });
       }
     }
@@ -188,7 +431,7 @@ const checkThresholds = async (sensorData, ioInstance) => {
 
     const ecThresholds = thresholds.ec || {};
     if (typeof plainSensor.ec === 'number') {
-      const { warning, critical } = ecThresholds;
+      const { warning, critical, lowWarning } = ecThresholds;
       if (typeof critical === 'number' && plainSensor.ec > critical) {
         pushAlert({
           type: 'ec',
@@ -203,12 +446,19 @@ const checkThresholds = async (sensorData, ioInstance) => {
           message: `High EC level: ${plainSensor.ec} mS/cm (threshold: ${warning} mS/cm)`,
           threshold: { value: warning, operator: '>' },
         });
+      } else if (typeof lowWarning === 'number' && plainSensor.ec < lowWarning) {
+        pushAlert({
+          type: 'ec',
+          severity: 'medium',
+          message: `Low EC level: ${plainSensor.ec} mS/cm (threshold: ${lowWarning} mS/cm)`,
+          threshold: { value: lowWarning, operator: '<' },
+        });
       }
     }
 
     const nitrogenThresholds = thresholds.nitrogen || {};
     if (typeof plainSensor.nitrogen === 'number') {
-      const { minWarning, minCritical } = nitrogenThresholds;
+      const { minWarning, minCritical, maxWarning, maxCritical } = nitrogenThresholds;
       if (typeof minCritical === 'number' && plainSensor.nitrogen < minCritical) {
         pushAlert({
           type: 'nitrogen',
@@ -223,12 +473,26 @@ const checkThresholds = async (sensorData, ioInstance) => {
           message: `Low nitrogen: ${plainSensor.nitrogen} mg/kg (threshold: ${minWarning} mg/kg)`,
           threshold: { value: minWarning, operator: '<' },
         });
+      } else if (typeof maxCritical === 'number' && plainSensor.nitrogen > maxCritical) {
+        pushAlert({
+          type: 'nitrogen',
+          severity: 'critical',
+          message: `Critical high nitrogen: ${plainSensor.nitrogen} mg/kg (threshold: ${maxCritical} mg/kg)`,
+          threshold: { value: maxCritical, operator: '>' },
+        });
+      } else if (typeof maxWarning === 'number' && plainSensor.nitrogen > maxWarning) {
+        pushAlert({
+          type: 'nitrogen',
+          severity: 'high',
+          message: `High nitrogen: ${plainSensor.nitrogen} mg/kg (threshold: ${maxWarning} mg/kg)`,
+          threshold: { value: maxWarning, operator: '>' },
+        });
       }
     }
 
     const phosphorusThresholds = thresholds.phosphorus || {};
     if (typeof plainSensor.phosphorus === 'number') {
-      const { minWarning, minCritical } = phosphorusThresholds;
+      const { minWarning, minCritical, maxWarning, maxCritical } = phosphorusThresholds;
       if (typeof minCritical === 'number' && plainSensor.phosphorus < minCritical) {
         pushAlert({
           type: 'phosphorus',
@@ -243,12 +507,26 @@ const checkThresholds = async (sensorData, ioInstance) => {
           message: `Low phosphorus: ${plainSensor.phosphorus} mg/kg (threshold: ${minWarning} mg/kg)`,
           threshold: { value: minWarning, operator: '<' },
         });
+      } else if (typeof maxCritical === 'number' && plainSensor.phosphorus > maxCritical) {
+        pushAlert({
+          type: 'phosphorus',
+          severity: 'critical',
+          message: `Critical high phosphorus: ${plainSensor.phosphorus} mg/kg (threshold: ${maxCritical} mg/kg)`,
+          threshold: { value: maxCritical, operator: '>' },
+        });
+      } else if (typeof maxWarning === 'number' && plainSensor.phosphorus > maxWarning) {
+        pushAlert({
+          type: 'phosphorus',
+          severity: 'high',
+          message: `High phosphorus: ${plainSensor.phosphorus} mg/kg (threshold: ${maxWarning} mg/kg)`,
+          threshold: { value: maxWarning, operator: '>' },
+        });
       }
     }
 
     const potassiumThresholds = thresholds.potassium || {};
     if (typeof plainSensor.potassium === 'number') {
-      const { minWarning, minCritical } = potassiumThresholds;
+      const { minWarning, minCritical, maxWarning, maxCritical } = potassiumThresholds;
       if (typeof minCritical === 'number' && plainSensor.potassium < minCritical) {
         pushAlert({
           type: 'potassium',
@@ -262,6 +540,20 @@ const checkThresholds = async (sensorData, ioInstance) => {
           severity: 'medium',
           message: `Low potassium: ${plainSensor.potassium} mg/kg (threshold: ${minWarning} mg/kg)`,
           threshold: { value: minWarning, operator: '<' },
+        });
+      } else if (typeof maxCritical === 'number' && plainSensor.potassium > maxCritical) {
+        pushAlert({
+          type: 'potassium',
+          severity: 'critical',
+          message: `Critical high potassium: ${plainSensor.potassium} mg/kg (threshold: ${maxCritical} mg/kg)`,
+          threshold: { value: maxCritical, operator: '>' },
+        });
+      } else if (typeof maxWarning === 'number' && plainSensor.potassium > maxWarning) {
+        pushAlert({
+          type: 'potassium',
+          severity: 'high',
+          message: `High potassium: ${plainSensor.potassium} mg/kg (threshold: ${maxWarning} mg/kg)`,
+          threshold: { value: maxWarning, operator: '>' },
         });
       }
     }
@@ -278,6 +570,9 @@ const checkThresholds = async (sensorData, ioInstance) => {
         });
       }
     }
+
+    processFloatLockout(sanitizedSensor, thresholds.floatSensor, pushAlert, ioInstance);
+    processWaterPump(sanitizedSensor, thresholds.waterPump, pushAlert);
 
     const batteryThresholds = thresholds.batteryLevel || {};
     if (typeof plainSensor.batteryLevel === 'number') {

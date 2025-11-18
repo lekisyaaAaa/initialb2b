@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, AlertTriangle, Database, Radio, RefreshCw, Server, Wifi } from 'lucide-react';
 import api, { alertService, deviceService, sensorService } from '../services/api';
 import { getSocket } from '../socket';
+import { useData } from '../contexts/DataContext';
 
 type ServiceStatus = 'online' | 'offline' | 'degraded' | 'unknown' | 'connected' | 'ok' | 'warning' | 'pending' | 'initializing' | 'starting' | 'stale' | 'success' | string;
 
@@ -183,6 +184,7 @@ const StatusBadge: React.FC<{ label: string; status: ServiceStatus }> = ({ label
 };
 
 export const SystemDiagnostics: React.FC = () => {
+  const { telemetryDisabled } = useData();
   const [diagnostics, setDiagnostics] = useState<DiagnosticsState>(DEFAULT_STATE);
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
@@ -325,26 +327,34 @@ export const SystemDiagnostics: React.FC = () => {
       missing.push('alerts');
     }
 
-    try {
-      const snapshot = await sensorService.getLatestData();
-      const timestampIso = ensureIsoString(snapshot?.updated_at ?? null);
-      const deviceId = snapshot ? 'vermilinks-homeassistant' : null;
-
-      let ageSeconds: number | null = null;
-      if (timestampIso) {
-        const ms = Date.now() - new Date(timestampIso).getTime();
-        if (Number.isFinite(ms) && ms >= 0) {
-          ageSeconds = Math.round(ms / 1000);
-        }
-      }
-
+    if (telemetryDisabled) {
       nextState.telemetry = {
-        deviceId: deviceId ? String(deviceId) : null,
-        timestamp: timestampIso,
-        ageSeconds,
+        deviceId: null,
+        timestamp: null,
+        ageSeconds: null,
       };
-    } catch (err) {
-      missing.push('telemetry');
+    } else {
+      try {
+        const snapshot = await sensorService.getLatestData();
+        const timestampIso = ensureIsoString(snapshot?.updated_at ?? null);
+        const deviceId = snapshot ? 'vermilinks-homeassistant' : null;
+
+        let ageSeconds: number | null = null;
+        if (timestampIso) {
+          const ms = Date.now() - new Date(timestampIso).getTime();
+          if (Number.isFinite(ms) && ms >= 0) {
+            ageSeconds = Math.round(ms / 1000);
+          }
+        }
+
+        nextState.telemetry = {
+          deviceId: deviceId ? String(deviceId) : null,
+          timestamp: timestampIso,
+          ageSeconds,
+        };
+      } catch (err) {
+        missing.push('telemetry');
+      }
     }
 
     nextState.collectedAt = new Date().toISOString();
@@ -368,7 +378,7 @@ export const SystemDiagnostics: React.FC = () => {
     }
     setLoading(false);
     setRefreshing(false);
-  }, []);
+  }, [telemetryDisabled]);
 
   useEffect(() => {
     mountedRef.current = true;

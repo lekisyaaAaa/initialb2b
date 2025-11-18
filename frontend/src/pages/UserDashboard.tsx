@@ -26,6 +26,7 @@ const UserDashboard: React.FC = () => {
     lastFetchAt,
     lastFetchError,
     isLoading,
+    telemetryDisabled,
   } = useData();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -42,6 +43,9 @@ const UserDashboard: React.FC = () => {
   }, [recentAlerts, groupedAlerts]);
 
   const handleRefresh = async () => {
+    if (telemetryDisabled) {
+      return;
+    }
     setRefreshing(true);
     try {
       await refreshTelemetry({ background: true });
@@ -89,8 +93,8 @@ const UserDashboard: React.FC = () => {
               <button
                 type="button"
                 onClick={handleRefresh}
-                disabled={refreshing}
-                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold border ${refreshing ? 'cursor-not-allowed border-gray-200 text-gray-400' : 'border-primary-200 text-primary-700 hover:bg-primary-50'}`}
+                disabled={refreshing || telemetryDisabled}
+                className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold border ${(refreshing || telemetryDisabled) ? 'cursor-not-allowed border-gray-200 text-gray-400' : 'border-primary-200 text-primary-700 hover:bg-primary-50'}`}
               >
                 <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
                 Refresh data
@@ -105,6 +109,7 @@ const UserDashboard: React.FC = () => {
           isConnected={isConnected}
           onRefresh={handleRefresh}
           refreshing={refreshing || isLoading}
+          telemetryDisabled={telemetryDisabled}
         />
 
         <section className="grid gap-6 md:grid-cols-2">

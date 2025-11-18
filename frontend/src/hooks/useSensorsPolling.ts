@@ -10,6 +10,7 @@ export interface SensorsPollingOptions {
   cacheTtlMs?: number;
   immediate?: boolean;
   deviceId?: string;
+  disabled?: boolean;
 }
 
 export interface SensorsPollingState {
@@ -45,6 +46,7 @@ export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsP
     cacheTtlMs: cacheTtlOption,
     immediate = true,
     deviceId,
+    disabled = false,
   } = options;
 
   const intervalMs = Math.max(1500, intervalOption ?? 5000);
@@ -66,6 +68,9 @@ export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsP
   const fetchSensorsRef = useRef<(force: boolean) => Promise<void>>(async () => undefined);
 
   const scheduleNext = useCallback((delay: number) => {
+    if (disabled) {
+      return;
+    }
     if (!isMountedRef.current) {
       return;
     }
@@ -75,7 +80,7 @@ export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsP
     timerRef.current = setTimeout(() => {
       void fetchSensorsRef.current(false);
     }, delay);
-  }, []);
+  }, [disabled]);
 
   const applyPayload = useCallback((payload: SensorData[]) => {
     const normalized = payload.map(normalizeReading);
@@ -93,6 +98,16 @@ export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsP
   }, []);
 
   const fetchSensors = useCallback(async (force: boolean) => {
+    if (disabled) {
+      cacheRef.current = null;
+      setData([]);
+      setLatest(null);
+      setLastUpdated(null);
+      setStatus('idle');
+      setError(null);
+      setIsPolling(false);
+      return;
+    }
     if (!isMountedRef.current) {
       return;
     }
@@ -155,7 +170,7 @@ export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsP
         scheduleNext(backoffRef.current);
       }
     }
-  }, [applyPayload, cacheTtlMs, deviceId, intervalMs, maxIntervalMs, scheduleNext]);
+  }, [applyPayload, cacheTtlMs, deviceId, disabled, intervalMs, maxIntervalMs, scheduleNext]);
 
   useEffect(() => {
     fetchSensorsRef.current = fetchSensors;
@@ -170,6 +185,19 @@ export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsP
       timerRef.current = null;
     }
 
+    if (disabled) {
+      setData([]);
+      setLatest(null);
+      setStatus('idle');
+      setError(null);
+      return () => {
+        isMountedRef.current = false;
+        if (timerRef.current) {
+          clearTimeout(timerRef.current);
+        }
+      };
+    }
+
     if (immediate) {
       void fetchSensors(true);
     } else {
@@ -182,7 +210,7 @@ export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsP
         clearTimeout(timerRef.current);
       }
     };
-  }, [fetchSensors, immediate, intervalMs, scheduleNext]);
+  }, [disabled, fetchSensors, immediate, intervalMs, scheduleNext]);
 
   useEffect(() => {
     cacheRef.current = null;
@@ -194,8 +222,11 @@ export const useSensorsPolling = (options: SensorsPollingOptions = {}): SensorsP
       timerRef.current = null;
     }
     backoffRef.current = intervalMs;
+    if (disabled) {
+      return;
+    }
     await fetchSensors(true);
-  }, [fetchSensors, intervalMs]);
+  }, [disabled, fetchSensors, intervalMs]);
 
   return {
     data,

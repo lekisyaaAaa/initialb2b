@@ -3,7 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { AlertCircle, KeyRound } from 'lucide-react';
 import DarkModeToggle from '../../components/DarkModeToggle';
 import { useAuth } from '../../contexts/AuthContext';
-import { resendOtp, verifyOtp } from '../../services/adminAuthService';
+import { getSession, resendOtp, verifyOtp } from '../../services/adminAuthService';
+import { clearPendingOtpState, loadPendingOtpState, savePendingOtpState } from '../../utils/pendingOtp';
 
 interface LocationState {
   email?: string;
@@ -17,10 +18,13 @@ const AdminOTPVerifyPage: React.FC = () => {
   const location = useLocation();
   const { setAuth, isAuthenticated } = useAuth();
   const locationState = (location.state as LocationState) || {};
-  const [email] = useState<string>(locationState.email || '');
-  const [debugCode, setDebugCode] = useState<string | null>(locationState.debugCode ?? null);
-  const [delivery, setDelivery] = useState<string | null>(locationState.delivery ?? null);
-  const [otpExpiresAt, setOtpExpiresAt] = useState<string | null>(locationState.expiresAt ?? null);
+  const storedOtpState = useMemo(() => loadPendingOtpState(), []);
+  const initialEmail = locationState.email || storedOtpState?.email || '';
+  const initialExpiresAt = locationState.expiresAt || storedOtpState?.expiresAt || null;
+  const [email] = useState<string>(initialEmail);
+  const [debugCode, setDebugCode] = useState<string | null>(locationState.debugCode ?? storedOtpState?.debugCode ?? null);
+  const [delivery, setDelivery] = useState<string | null>(locationState.delivery ?? storedOtpState?.delivery ?? null);
+  const [otpExpiresAt, setOtpExpiresAt] = useState<string | null>(initialExpiresAt);
   const [otp, setOtp] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [infoMessage, setInfoMessage] = useState<string | null>(null);
@@ -29,8 +33,8 @@ const AdminOTPVerifyPage: React.FC = () => {
   const [resendCooldown, setResendCooldown] = useState<number>(0);
   const [resendRemaining, setResendRemaining] = useState<number | null>(null);
   const [remainingMs, setRemainingMs] = useState<number>(() => {
-    if (!locationState.expiresAt) return 0;
-    const diff = new Date(locationState.expiresAt).getTime() - Date.now();
+    if (!initialExpiresAt) return 0;
+    const diff = new Date(initialExpiresAt).getTime() - Date.now();
     return diff > 0 ? diff : 0;
   });
 
@@ -101,7 +105,15 @@ const AdminOTPVerifyPage: React.FC = () => {
         return;
       }
 
-      const user = response?.data?.user || null;
+      let user = response?.data?.user || null;
+      try {
+        const sessionResp = await getSession(token);
+        if (sessionResp?.data?.user) {
+          user = sessionResp.data.user;
+        }
+      } catch (sessionErr) {
+        console.debug('OTP session probe failed', sessionErr instanceof Error ? sessionErr.message : sessionErr);
+      }
 
       if (typeof setAuth === 'function') {
         if (user) {
@@ -111,6 +123,7 @@ const AdminOTPVerifyPage: React.FC = () => {
         }
       }
 
+      clearPendingOtpState();
       navigate('/admin/dashboard', { replace: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unable to verify the code. Please try again.';
@@ -144,6 +157,13 @@ const AdminOTPVerifyPage: React.FC = () => {
         const diff = new Date(nextExpires).getTime() - Date.now();
         setRemainingMs(diff > 0 ? diff : 0);
       }
+
+      savePendingOtpState({
+        email: formattedEmail,
+        debugCode: nextDebug,
+        delivery: nextDelivery,
+        expiresAt: nextExpires,
+      });
 
       if (rateLimit) {
         if (typeof rateLimit.remaining === 'number') {

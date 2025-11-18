@@ -2,6 +2,7 @@ module.exports = {
   Command: require('./Command'),
   SensorData: require('./SensorData'),
   SensorSnapshot: require('./SensorSnapshot'),
+  SensorLog: require('./SensorLog'),
   Alert: require('./Alert'),
   Actuator: require('./Actuator'),
   ActuatorLog: require('./ActuatorLog'),

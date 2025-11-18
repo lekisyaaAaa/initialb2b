@@ -3,6 +3,7 @@ import { ExternalLink, RefreshCw, Activity } from 'lucide-react';
 import { useSensorsPolling } from '../hooks/useSensorsPolling';
 import { SensorData, SensorSummaryItem } from '../types';
 import { resolveHomeAssistantUrl } from '../utils/homeAssistant';
+import { useData } from '../contexts/DataContext';
 
 interface SensorSummaryPanelProps {
   className?: string;
@@ -53,11 +54,13 @@ const buildFallbackSummary = (latest: SensorData | null): SensorSummaryItem[] =>
 };
 
 const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '', deviceId }) => {
+  const { telemetryDisabled } = useData();
   const { latest, status, error, refresh, isPolling, lastUpdated } = useSensorsPolling({
     deviceId,
     intervalMs: 5000,
     maxIntervalMs: 60000,
     cacheTtlMs: 2500,
+    disabled: telemetryDisabled,
   });
 
   const summaryItems = useMemo(() => {
@@ -92,9 +95,9 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
             type="button"
             onClick={() => refresh()}
             className={`inline-flex items-center gap-1 rounded-full border border-gray-200 px-3 py-1 font-medium transition hover:bg-gray-100 dark:border-gray-700 dark:hover:bg-gray-800 ${
-              isPolling ? 'opacity-60' : ''
+              (isPolling || telemetryDisabled) ? 'opacity-60 cursor-not-allowed' : ''
             }`}
-            disabled={isPolling}
+            disabled={isPolling || telemetryDisabled}
           >
             <RefreshCw className={`h-4 w-4 ${isPolling ? 'animate-spin' : ''}`} />
             Refresh
@@ -102,7 +105,11 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
         </div>
       </header>
 
-      {status === 'error' ? (
+      {telemetryDisabled ? (
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-700 dark:border-amber-700 dark:bg-amber-900/30 dark:text-amber-200">
+          Telemetry feed is temporarily disabled until physical sensors come online.
+        </div>
+      ) : status === 'error' ? (
         <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600 dark:border-red-700 dark:bg-red-900/30 dark:text-red-200">
           {error}
         </div>
