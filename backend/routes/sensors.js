@@ -183,6 +183,15 @@ router.post('/ingest-ha', [
       timestamp: effectiveTimestamp,
     });
 
+    try {
+      await deviceManager.markDeviceOnline(homeAssistantDeviceId, {
+        source: 'home_assistant_rest',
+        lastSnapshotAt: effectiveTimestamp.toISOString(),
+      });
+    } catch (markErr) {
+      console.warn('Failed to mark Home Assistant device online:', markErr && markErr.message ? markErr.message : markErr);
+    }
+
     const io = resolveIo(req.app);
 
     let sensorData = null;

@@ -41,6 +41,7 @@ const maintenanceRoutes = require('./routes/maintenance');
 const notificationRoutes = require('./routes/notifications');
 const deviceCommandRoutes = require('./routes/deviceCommands');
 const commandRoutes = require('./routes/command');
+const publicRoutes = require('./routes/public');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -226,9 +227,13 @@ if ((process.env.NODE_ENV || 'development') !== 'test') {
 let homeAssistantBridgeHandle = null;
 // Start MQTT ingest service if configured (non-test only)
 try {
-  if (process.env.NODE_ENV !== 'test') {
+  // Allow forcing MQTT ingest off even if broker envs remain set.
+  // Set `DISABLE_MQTT_INGEST=true` in your Render / environment to opt out.
+  if (process.env.NODE_ENV !== 'test' && process.env.DISABLE_MQTT_INGEST !== 'true') {
     const mqttService = require('./services/mqttIngest');
     mqttService.startMqtt();
+  } else {
+    logger.info('DISABLE_MQTT_INGEST set or running in test mode; skipping MQTT ingest startup');
   }
 } catch (e) {
   logger.warn('Failed to initialize MQTT ingest service', e && e.message ? e.message : e);
@@ -455,6 +460,7 @@ app.get('/internal/ping', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/sensors', sensorRateLimiter, sensorRoutes);
+app.use('/api/public', publicRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/device-commands', deviceCommandRoutes);
