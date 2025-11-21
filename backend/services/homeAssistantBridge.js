@@ -445,6 +445,29 @@ function buildSnapshot() {
   return payload;
 }
 
+function sanitizeSnapshotForPersistence(snapshot) {
+  if (!snapshot || !snapshot.deviceId) {
+    return null;
+  }
+
+  let timestamp = snapshot.timestamp instanceof Date ? snapshot.timestamp : new Date(snapshot.timestamp || Date.now());
+  if (Number.isNaN(timestamp.getTime())) {
+    timestamp = new Date();
+  }
+
+  const sanitized = {
+    deviceId: snapshot.deviceId,
+    timestamp,
+  };
+
+  ALLOWED_FIELDS.forEach((field) => {
+    const value = snapshot[field];
+    sanitized[field] = typeof value === 'number' && Number.isFinite(value) ? value : null;
+  });
+
+  return sanitized;
+}
+
 function hasRealReading(snapshot) {
   const { temperature, humidity, moisture, floatSensor, waterLevel } = snapshot;
   return (
@@ -457,7 +480,12 @@ function hasRealReading(snapshot) {
 }
 
 async function flushSnapshot() {
-  const snapshot = buildSnapshot();
+  const rawSnapshot = buildSnapshot();
+  if (!rawSnapshot) {
+    return;
+  }
+
+  const snapshot = sanitizeSnapshotForPersistence(rawSnapshot);
   if (!snapshot) {
     return;
   }
@@ -468,8 +496,6 @@ async function flushSnapshot() {
   }
 
   if (!hasRealReading(snapshot)) {
-  const timestamp = snapshot.timestamp instanceof Date ? snapshot.timestamp : new Date(snapshot.timestamp);
-
     logger.debug('[HA Bridge] Ignoring snapshot without real telemetry');
     return;
   }
@@ -494,19 +520,19 @@ async function flushSnapshot() {
     state.lastSnapshotSignature = signature;
     await SensorSnapshot.upsert({
       deviceId: snapshot.deviceId,
-      temperature: typeof snapshot.temperature === 'number' ? snapshot.temperature : null,
-      humidity: typeof snapshot.humidity === 'number' ? snapshot.humidity : null,
-      moisture: typeof snapshot.moisture === 'number' ? snapshot.moisture : null,
-      ph: typeof snapshot.ph === 'number' ? snapshot.ph : null,
-      ec: typeof snapshot.ec === 'number' ? snapshot.ec : null,
-      nitrogen: typeof snapshot.nitrogen === 'number' ? snapshot.nitrogen : null,
-      phosphorus: typeof snapshot.phosphorus === 'number' ? snapshot.phosphorus : null,
-      potassium: typeof snapshot.potassium === 'number' ? snapshot.potassium : null,
-      waterLevel: typeof snapshot.waterLevel === 'number' ? snapshot.waterLevel : null,
-      floatSensor: typeof snapshot.floatSensor === 'number' ? snapshot.floatSensor : null,
-      batteryLevel: typeof snapshot.batteryLevel === 'number' ? snapshot.batteryLevel : null,
-      signalStrength: typeof snapshot.signalStrength === 'number' ? snapshot.signalStrength : null,
-      timestamp,
+      temperature: snapshot.temperature,
+      humidity: snapshot.humidity,
+      moisture: snapshot.moisture,
+      ph: snapshot.ph,
+      ec: snapshot.ec,
+      nitrogen: snapshot.nitrogen,
+      phosphorus: snapshot.phosphorus,
+      potassium: snapshot.potassium,
+      waterLevel: snapshot.waterLevel,
+      floatSensor: snapshot.floatSensor,
+      batteryLevel: snapshot.batteryLevel,
+      signalStrength: snapshot.signalStrength,
+      timestamp: snapshot.timestamp,
     });
     pruneHistory(snapshot.deviceId).catch(() => null);
   } catch (error) {

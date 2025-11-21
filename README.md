@@ -89,6 +89,32 @@ Admin authentication is being upgraded. Configure administrator accounts using t
 - **PM2 Dashboard:** `pm2 monit`
 - **Logs:** `pm2 logs`
 
+## ♻️ Sensor Log Maintenance
+
+Sensor telemetry grows quickly. Use the admin-only purge endpoint or the CLI helper to prune stale rows before storage fills up.
+
+- **API (requires admin JWT):**
+  ```bash
+  curl -X DELETE https://<backend>/api/sensor-logs \
+    -H "Authorization: Bearer <token>" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "days": 30,
+      "deviceId": "vermilinks-homeassistant",
+      "dryRun": true
+    }'
+  ```
+  - `days`: delete everything older than _N_ days (use `before` with an ISO timestamp for a precise cutoff).
+  - Optional filters: `deviceId`, `sensor`, `origin`.
+  - Add `dryRun: true` (or `dryRun=1` query param) to preview how many rows match before actually deleting.
+
+- **CLI helper:** `node backend/scripts/purge-sensor-logs.js --days 45 --dry-run`
+  - Supports the same filters (`--device`, `--sensor`, `--origin`).
+  - Use `--before 2025-01-01T00:00:00Z` for a fixed cutoff instead of `--days`.
+  - Schedule this script via cron/Task Scheduler to enforce rolling retention.
+
+Editing individual log rows should be handled sparingly at the database level (e.g., Postgres `UPDATE sensor_logs SET value=... WHERE id=...`). For most cases pruning old data is safer and keeps disk usage predictable.
+
 ## 🔄 Development Workflow
 
 1. Start services: `pm2 start ecosystem.config.js`

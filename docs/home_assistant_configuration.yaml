@@ -1,0 +1,270 @@
+# VermiLinks Home Assistant configuration (drop into configuration.yaml or !include it)
+# - Forces legacy MQTT template processing so YAML-defined sensors/switches continue to work.
+# - Make sure the ESP32 sketches publish/subscribe with the exact topics referenced below.
+
+mqtt:
+  broker: 192.168.8.142
+  port: 1883
+  client_id: vermilinks-ha-bridge
+  username: knights_iot
+  password: smbcr-5540
+  keepalive: 60
+  discovery: true
+  discovery_prefix: homeassistant
+  legacy_templates: true        # <— forces legacy YAML behavior that HA 2023.6+ hides behind the UI toggle
+  enable_logger: true
+  birth_message:
+    topic: vermilinks/ha/status
+    payload: online
+    qos: 1
+    retain: false
+  will_message:
+    topic: vermilinks/ha/status
+    payload: offline
+    qos: 1
+    retain: false
+
+sensor:
+  - platform: mqtt
+    name: "Vermi Temperature"
+    unique_id: vermilinks_temperature_c
+    state_topic: "vermilinks/esp32b/metrics"
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    value_template: "{{ value_json.temperature | float(0) }}"
+    availability_topic: "vermilinks/esp32b/status"
+    payload_available: "online"
+    payload_not_available: "offline"
+  - platform: mqtt
+    name: "Vermi Humidity"
+    unique_id: vermilinks_humidity_percent
+    state_topic: "vermilinks/esp32b/metrics"
+    unit_of_measurement: "%"
+    device_class: humidity
+    state_class: measurement
+    value_template: "{{ value_json.humidity | float(0) }}"
+    availability_topic: "vermilinks/esp32b/status"
+    payload_available: "online"
+    payload_not_available: "offline"
+  - platform: mqtt
+    name: "Vermi Moisture"
+    unique_id: vermilinks_moisture_percent
+    state_topic: "vermilinks/esp32b/metrics"
+    unit_of_measurement: "%"
+    state_class: measurement
+    value_template: "{{ value_json.moisture | float(0) }}"
+    availability_topic: "vermilinks/esp32b/status"
+    payload_available: "online"
+    payload_not_available: "offline"
+  - platform: mqtt
+    name: "Vermi EC"
+    unique_id: vermilinks_ec_mscm
+    state_topic: "vermilinks/esp32b/metrics"
+    unit_of_measurement: "mS/cm"
+    state_class: measurement
+    value_template: "{{ value_json.ec | float(0) }}"
+    availability_topic: "vermilinks/esp32b/status"
+    payload_available: "online"
+    payload_not_available: "offline"
+  - platform: mqtt
+    name: "Vermi pH"
+    unique_id: vermilinks_ph
+    state_topic: "vermilinks/esp32b/metrics"
+    state_class: measurement
+    value_template: "{{ value_json.ph | float(0) }}"
+    availability_topic: "vermilinks/esp32b/status"
+    payload_available: "online"
+    payload_not_available: "offline"
+  - platform: mqtt
+    name: "Vermi Nitrogen"
+    unique_id: vermilinks_nitrogen_ppm
+    state_topic: "vermilinks/esp32b/metrics"
+    unit_of_measurement: "ppm"
+    state_class: measurement
+    value_template: "{{ value_json.npk.n | default(value_json.nitrogen, true) | float(0) }}"
+    availability_topic: "vermilinks/esp32b/status"
+    payload_available: "online"
+    payload_not_available: "offline"
+  - platform: mqtt
+    name: "Vermi Phosphorus"
+    unique_id: vermilinks_phosphorus_ppm
+    state_topic: "vermilinks/esp32b/metrics"
+    unit_of_measurement: "ppm"
+    state_class: measurement
+    value_template: "{{ value_json.npk.p | default(value_json.phosphorus, true) | float(0) }}"
+    availability_topic: "vermilinks/esp32b/status"
+    payload_available: "online"
+    payload_not_available: "offline"
+  - platform: mqtt
+    name: "Vermi Potassium"
+    unique_id: vermilinks_potassium_ppm
+    state_topic: "vermilinks/esp32b/metrics"
+    unit_of_measurement: "ppm"
+    state_class: measurement
+    value_template: "{{ value_json.npk.k | default(value_json.potassium, true) | float(0) }}"
+    availability_topic: "vermilinks/esp32b/status"
+    payload_available: "online"
+    payload_not_available: "offline"
+  - platform: mqtt
+    name: "Vermi Battery"
+    unique_id: vermilinks_battery_percent
+    state_topic: "vermilinks/esp32b/metrics"
+    unit_of_measurement: "%"
+    device_class: battery
+    value_template: "{{ value_json.battery | default(value_json.batteryLevel) | float(0) }}"
+    availability_topic: "vermilinks/esp32b/status"
+    payload_available: "online"
+    payload_not_available: "offline"
+  - platform: mqtt
+    name: "Vermi RSSI"
+    unique_id: vermilinks_signal_dbm
+    state_topic: "vermilinks/esp32b/metrics"
+    unit_of_measurement: "dBm"
+    icon: mdi:wifi
+    value_template: "{{ value_json.signal | default(value_json.signalStrength) | float(0) }}"
+    availability_topic: "vermilinks/esp32b/status"
+    payload_available: "online"
+    payload_not_available: "offline"
+
+switch:
+  - platform: mqtt
+    name: "Vermi Water Pump"
+    unique_id: vermilinks_pump
+    command_topic: "vermilinks/esp32a/pump"
+    state_topic: "vermilinks/esp32a/state"
+    value_template: "{{ value_json.pump.state | default(value_json.pump_state | default('OFF'), true) }}"
+    payload_on: "ON"
+    payload_off: "OFF"
+    qos: 1
+    retain: false
+  - platform: mqtt
+    name: "Vermi Solenoid Zone 1"
+    unique_id: vermilinks_solenoid_zone_1
+    command_topic: "vermilinks/esp32a/valve1"
+    state_topic: "vermilinks/esp32a/state"
+    value_template: "{{ value_json.valves.zone1.state | default(value_json.valve1.state | default('OFF'), true) }}"
+    payload_on: "ON"
+    payload_off: "OFF"
+    qos: 1
+    retain: false
+  - platform: mqtt
+    name: "Vermi Solenoid Zone 2"
+    unique_id: vermilinks_solenoid_zone_2
+    command_topic: "vermilinks/esp32a/valve2"
+    state_topic: "vermilinks/esp32a/state"
+    value_template: "{{ value_json.valves.zone2.state | default(value_json.valve2.state | default('OFF'), true) }}"
+    payload_on: "ON"
+    payload_off: "OFF"
+    qos: 1
+    retain: false
+  - platform: mqtt
+    name: "Vermi Solenoid Zone 3"
+    unique_id: vermilinks_solenoid_zone_3
+    command_topic: "vermilinks/esp32a/valve3"
+    state_topic: "vermilinks/esp32a/state"
+    value_template: "{{ value_json.valves.zone3.state | default(value_json.valve3.state | default('OFF'), true) }}"
+    payload_on: "ON"
+    payload_off: "OFF"
+    qos: 1
+    retain: false
+
+binary_sensor:
+  - platform: mqtt
+    name: "Vermi Reservoir Low"
+    unique_id: vermilinks_reservoir_low
+    device_class: problem
+    state_topic: "vermilinks/esp32a/state"
+    value_template: "{{ 'ON' if value_json.float.low | default(value_json.float_low | default(false), true) else 'OFF' }}"
+    payload_on: "ON"
+    payload_off: "OFF"
+    availability_topic: "vermilinks/esp32a/status"
+    payload_available: "online"
+    payload_not_available: "offline"
+
+# Mirror the MQTT switch state into template binary_sensors that the backend watches
+template:
+  - binary_sensor:
+      - name: "vermi_water_pump"
+        unique_id: vermilinks_template_pump
+        device_class: running
+        state: "{{ is_state('switch.vermilinks_pump', 'on') }}"
+      - name: "vermi_solenoid_1"
+        unique_id: vermilinks_template_solenoid_1
+        state: "{{ is_state('switch.vermilinks_solenoid_zone_1', 'on') }}"
+      - name: "vermi_solenoid_2"
+        unique_id: vermilinks_template_solenoid_2
+        state: "{{ is_state('switch.vermilinks_solenoid_zone_2', 'on') }}"
+      - name: "vermi_solenoid_3"
+        unique_id: vermilinks_template_solenoid_3
+        state: "{{ is_state('switch.vermilinks_solenoid_zone_3', 'on') }}"
+
+rest_command:
+  vermilinks_forward_metrics:
+    url: "http://192.168.8.142:10000/api/ha/webhook"
+    method: POST
+    headers:
+      Content-Type: "application/json"
+      Authorization: "Bearer VermiLinks_HA_Webhook_2025!"
+      x-ha-device: "{{ device_id | default('vermilinks-homeassistant') }}"
+    payload: >-
+      {
+        "deviceId": "{{ device_id | default('vermilinks-homeassistant') }}",
+        "timestamp": "{{ timestamp | default(now().isoformat()) }}",
+        "metrics": {
+          "temperature": {{ temperature | default(none) | tojson }},
+          "humidity": {{ humidity | default(none) | tojson }},
+          "moisture": {{ moisture | default(none) | tojson }},
+          "ph": {{ ph | default(none) | tojson }},
+          "ec": {{ ec | default(none) | tojson }},
+          "nitrogen": {{ nitrogen | default(none) | tojson }},
+          "phosphorus": {{ phosphorus | default(none) | tojson }},
+          "potassium": {{ potassium | default(none) | tojson }},
+          "waterLevel": {{ water_level | default(none) | tojson }},
+          "floatSensor": {{ float_sensor | default(none) | tojson }},
+          "batteryLevel": {{ battery | default(none) | tojson }},
+          "signalStrength": {{ rssi | default(none) | tojson }},
+          "pumpState": {{ ((pump_state | default('off') | string | lower) in ['true', 'on', '1', 'running']) | tojson }}
+        }
+      }
+    verify_ssl: false
+
+automation:
+  - alias: "Forward VermiLinks metrics to backend"
+    id: vermilinks_forward_metrics
+    mode: queued
+    trigger:
+      - platform: mqtt
+        topic: "vermilinks/esp32b/metrics"
+    condition: []
+    action:
+      - service: rest_command.vermilinks_forward_metrics
+        data:
+          device_id: "{{ trigger.payload_json.device_id | default('vermilinks-esp32b') }}"
+          timestamp: "{{ trigger.payload_json.timestamp | default(now().isoformat()) }}"
+          temperature: "{{ trigger.payload_json.temperature | default(none) }}"
+          humidity: "{{ trigger.payload_json.humidity | default(none) }}"
+          moisture: "{{ trigger.payload_json.moisture | default(trigger.payload_json.soil_moisture) | default(none) }}"
+          ph: "{{ trigger.payload_json.ph | default(none) }}"
+          ec: "{{ trigger.payload_json.ec | default(none) }}"
+          nitrogen: "{{ trigger.payload_json.npk.n | default(trigger.payload_json.nitrogen) | default(none) }}"
+          phosphorus: "{{ trigger.payload_json.npk.p | default(trigger.payload_json.phosphorus) | default(none) }}"
+          potassium: "{{ trigger.payload_json.npk.k | default(trigger.payload_json.potassium) | default(none) }}"
+          water_level: "{{ trigger.payload_json.waterLevel | default(trigger.payload_json.water_level) | default(none) }}"
+          float_sensor: "{{ trigger.payload_json.floatSensor | default(trigger.payload_json.float_state) | default(none) }}"
+          battery: "{{ trigger.payload_json.battery | default(trigger.payload_json.batteryLevel) | default(none) }}"
+          rssi: "{{ trigger.payload_json.signal | default(trigger.payload_json.signalStrength) | default(none) }}"
+          pump_state: "{{ trigger.payload_json.pumpState | default(trigger.payload_json.pump_state) | default('off') }}"
+
+  - alias: "Publish float sensor heartbeat"
+    id: vermilinks_float_heartbeat
+    trigger:
+      - platform: time_pattern
+        minutes: "/5"
+    action:
+      - service: mqtt.publish
+        data:
+          topic: "vermilinks/ha/heartbeat"
+          payload: "{\"device\":\"vermilinks-ha\",\"ts\":\"{{ now().isoformat() }}\"}"
+          qos: 0
+          retain: false

@@ -1,8 +1,7 @@
 import React, { useMemo } from 'react';
-import { ExternalLink, RefreshCw, Activity } from 'lucide-react';
+import { RefreshCw, Activity, ToggleLeft } from 'lucide-react';
 import { useSensorsPolling } from '../hooks/useSensorsPolling';
 import { SensorData, SensorSummaryItem } from '../types';
-import { resolveHomeAssistantUrl } from '../utils/homeAssistant';
 import { useData } from '../contexts/DataContext';
 
 interface SensorSummaryPanelProps {
@@ -32,29 +31,89 @@ const buildFallbackSummary = (latest: SensorData | null): SensorSummaryItem[] =>
   if (!latest) {
     return [];
   }
-  const candidates: Array<[string, string, number | undefined, string | null]> = [
-    ['temperature', 'Temperature', latest.temperature, '°C'],
-    ['humidity', 'Humidity', latest.humidity, '%'],
-    ['moisture', 'Soil Moisture', latest.moisture, '%'],
-    ['ph', 'pH', latest.ph, null],
-    ['ec', 'EC', latest.ec, 'mS/cm'],
-    ['waterLevel', 'Water Level', latest.waterLevel, latest.waterLevel != null ? (latest.waterLevel <= 0 ? null : 'cm') : null],
-    ['batteryLevel', 'Battery', latest.batteryLevel, latest.batteryLevel != null ? '%' : null],
-  ];
 
-  return candidates
-    .filter(([, , value]) => typeof value === 'number' && Number.isFinite(value))
-    .map(([key, label, value, unit]) => ({
-      key,
-      label,
-      value: value as number,
-      unit: unit ?? undefined,
-      timestamp: latest.timestamp ? String(latest.timestamp) : undefined,
-    }));
+  const timestamp = latest.timestamp ? String(latest.timestamp) : undefined;
+  const items: SensorSummaryItem[] = [];
+  const pushNumeric = (key: string, label: string, value: number | undefined, unit?: string | null) => {
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      items.push({ key, label, value, unit: unit ?? undefined, timestamp });
+    }
+  };
+
+  pushNumeric('temperature', 'Temperature', latest.temperature, '°C');
+  pushNumeric('humidity', 'Humidity', latest.humidity, '%');
+  pushNumeric('moisture', 'Soil Moisture', latest.moisture, '%');
+  pushNumeric('waterLevel', 'Water Level', latest.waterLevel, latest.waterLevel != null ? 'cm' : undefined);
+  pushNumeric('floatSensor', 'Float Sensor', typeof latest.floatSensor === 'number' ? latest.floatSensor : undefined);
+  pushNumeric('ph', 'pH', latest.ph);
+  pushNumeric('ec', 'EC', latest.ec, 'mS/cm');
+
+  const nitrogen = typeof latest.nitrogen === 'number' && Number.isFinite(latest.nitrogen) ? latest.nitrogen : null;
+  const phosphorus = typeof latest.phosphorus === 'number' && Number.isFinite(latest.phosphorus) ? latest.phosphorus : null;
+  const potassium = typeof latest.potassium === 'number' && Number.isFinite(latest.potassium) ? latest.potassium : null;
+  if (nitrogen !== null || phosphorus !== null || potassium !== null) {
+    items.push({
+      key: 'npk',
+      label: 'NPK',
+      unit: 'mg/kg',
+      value: {
+        nitrogen,
+        phosphorus,
+        potassium,
+      },
+      timestamp,
+    });
+  }
+
+  pushNumeric('batteryLevel', 'Battery', latest.batteryLevel, latest.batteryLevel != null ? '%' : undefined);
+  pushNumeric('signalStrength', 'Signal Strength', latest.signalStrength, 'dBm');
+
+  return items;
+};
+
+const ACTUATOR_LABELS: Record<string, string> = {
+  water_pump: 'Water Pump',
+  pump: 'Water Pump',
+  pump1: 'Water Pump',
+  pump2: 'Utility Pump',
+  solenoid: 'Solenoid Valve',
+  solenoid1: 'Solenoid 1',
+  solenoid2: 'Solenoid 2',
+  solenoid_valve: 'Solenoid Valve',
+  aerator: 'Aeration Fan',
+  mister: 'Mister',
+};
+
+const ACTUATOR_PRIORITY = ['water_pump', 'pump', 'pump1', 'solenoid', 'solenoid1', 'solenoid2'];
+
+const friendlyActuatorLabel = (key: string): string => {
+  const normalized = key.toLowerCase();
+  if (ACTUATOR_LABELS[normalized]) {
+    return ACTUATOR_LABELS[normalized];
+  }
+  return normalized
+    .replace(/[_-]+/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+};
+
+const actuatorPriorityValue = (key: string): number => {
+  const normalized = key.toLowerCase();
+  const idx = ACTUATOR_PRIORITY.indexOf(normalized);
+  return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
+};
+
+const formatActuatorReading = (value: boolean | number | null): { label: string; tone: 'on' | 'off' | 'neutral' } => {
+  if (typeof value === 'boolean') {
+    return { label: value ? 'On' : 'Off', tone: value ? 'on' : 'off' };
+  }
+  if (typeof value === 'number') {
+    return { label: Number.isInteger(value) ? `${value}` : value.toFixed(1), tone: value > 0 ? 'on' : 'neutral' };
+  }
+  return { label: 'Unknown', tone: 'neutral' };
 };
 
 const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '', deviceId }) => {
-  const { telemetryDisabled } = useData();
+  const { telemetryDisabled, actuatorStates } = useData();
   const { latest, status, error, refresh, isPolling, lastUpdated } = useSensorsPolling({
     deviceId,
     intervalMs: 5000,
@@ -70,7 +129,25 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
     return buildFallbackSummary(latest);
   }, [latest]);
 
-  const homeAssistantUrl = useMemo(resolveHomeAssistantUrl, []);
+  const actuatorItems = useMemo(() => {
+    if (!actuatorStates || Object.keys(actuatorStates).length === 0) {
+      return [];
+    }
+    return Object.entries(actuatorStates)
+      .map(([key, value]) => ({
+        key,
+        label: friendlyActuatorLabel(key),
+        value,
+        priority: actuatorPriorityValue(key),
+      }))
+      .sort((a, b) => {
+        if (a.priority !== b.priority) {
+          return a.priority - b.priority;
+        }
+        return a.label.localeCompare(b.label);
+      });
+  }, [actuatorStates]);
+
   const lastUpdatedText = lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : 'Never';
 
   return (
@@ -153,19 +230,43 @@ const SensorSummaryPanel: React.FC<SensorSummaryPanelProps> = ({ className = '',
         </ul>
       )}
 
-      <footer className="mt-6 flex flex-col gap-3 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200 md:flex-row md:items-center md:justify-between">
-        <div>
-          Looking for actuator controls? Those are now handled exclusively through VermiLinks Actuators.
+      {actuatorItems.length > 0 && (
+        <div className="mt-6 rounded-2xl border border-emerald-100 bg-emerald-50/70 p-4 text-sm text-emerald-900 shadow-sm dark:border-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-100">
+          <div className="flex items-center gap-2">
+            <span className="rounded-full bg-emerald-200/70 p-2 text-emerald-900 dark:bg-emerald-800/60 dark:text-emerald-100">
+              <ToggleLeft className="h-4 w-4" />
+            </span>
+            <div>
+              <p className="text-base font-semibold">Actuator Status</p>
+              <p className="text-xs text-emerald-800/90 dark:text-emerald-200/80">Live hardware acknowledgements from VermiLinks actuators.</p>
+            </div>
+          </div>
+          <ul className="mt-4 divide-y divide-emerald-100 dark:divide-emerald-800">
+            {actuatorItems.map((item) => {
+              const descriptor = formatActuatorReading(item.value);
+              const badgeClass = descriptor.tone === 'on'
+                ? 'bg-emerald-600/10 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200'
+                : descriptor.tone === 'off'
+                  ? 'bg-rose-600/10 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200'
+                  : 'bg-gray-600/10 text-gray-700 dark:bg-gray-600/30 dark:text-gray-200';
+              return (
+                <li key={item.key} className="flex items-center justify-between py-2">
+                  <div>
+                    <p className="text-sm font-medium text-emerald-900 dark:text-emerald-100">{item.label}</p>
+                    <p className="text-xs text-emerald-800/70 dark:text-emerald-200/70">{item.key}</p>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${badgeClass}`}>
+                    {descriptor.label}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
         </div>
-        <a
-          href={homeAssistantUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="inline-flex items-center gap-2 rounded-full bg-blue-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-400"
-        >
-          View VermiLinks Actuators
-          <ExternalLink className="h-4 w-4" />
-        </a>
+      )}
+
+      <footer className="mt-6 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-900/30 dark:text-blue-200">
+        Looking for actuator controls? Use the “View VermiLinks Actuators” button in the dashboard header to launch the control panel.
       </footer>
     </section>
   );

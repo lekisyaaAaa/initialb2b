@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Download, RefreshCw, Search, Filter } from 'lucide-react';
+import { Download, RefreshCw, Search, Filter, Trash2 } from 'lucide-react';
 import DarkModeToggle from '../../components/DarkModeToggle';
 import { sensorLogService } from '../../services/api';
 import { PaginationInfo, SensorLogEntry } from '../../types';
@@ -41,6 +41,7 @@ const SensorLogsPage: React.FC = () => {
   const [page, setPage] = useState(1);
   const [sensorOptions, setSensorOptions] = useState<string[]>([]);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
 
   const limit = 25;
 
@@ -135,6 +136,28 @@ const SensorLogsPage: React.FC = () => {
       return new Date(value).toLocaleString();
     } catch (err) {
       return value;
+    }
+  };
+
+  const handleDelete = async (log: SensorLogEntry) => {
+    if (!log?.id) {
+      return;
+    }
+    const confirmed = window.confirm(`Delete sensor log ${log.id}? This cannot be undone.`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingId(log.id);
+    setError(null);
+    try {
+      await sensorLogService.remove(log.id);
+      await fetchLogs();
+    } catch (err: any) {
+      const message = err?.response?.data?.message || err?.message || 'Failed to delete sensor log';
+      setError(message);
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -284,18 +307,19 @@ const SensorLogsPage: React.FC = () => {
                   <th className="px-4 py-3 text-left">Origin</th>
                   <th className="px-4 py-3 text-left">Topic</th>
                   <th className="px-4 py-3 text-left">Payload</th>
+                  <th className="px-4 py-3 text-left">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={8} className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
                       Fetching logs...
                     </td>
                   </tr>
                 ) : logs.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
+                    <td colSpan={8} className="px-4 py-6 text-center text-gray-500 dark:text-gray-400">
                       No sensor logs found for the selected filters.
                     </td>
                   </tr>
@@ -333,10 +357,21 @@ const SensorLogsPage: React.FC = () => {
                               <span className="text-xs text-gray-400">n/a</span>
                             )}
                           </td>
+                          <td className="px-4 py-3">
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(log)}
+                              disabled={deletingId === log.id}
+                              className="inline-flex items-center gap-1 rounded-lg border border-rose-200 px-3 py-1 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50 dark:border-rose-800 dark:text-rose-200 dark:hover:bg-rose-900/30"
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                              {deletingId === log.id ? 'Deleting…' : 'Delete'}
+                            </button>
+                          </td>
                         </tr>
                         {isExpanded && log.rawPayload && (
                           <tr>
-                            <td colSpan={7} className="bg-gray-50/70 px-4 py-3 text-xs text-gray-700 dark:bg-gray-800/50 dark:text-gray-200">
+                            <td colSpan={8} className="bg-gray-50/70 px-4 py-3 text-xs text-gray-700 dark:bg-gray-800/50 dark:text-gray-200">
                               <pre className="overflow-x-auto rounded-lg bg-gray-900/90 p-3 text-[11px] text-gray-100">
                                 {JSON.stringify(log.rawPayload, null, 2)}
                               </pre>

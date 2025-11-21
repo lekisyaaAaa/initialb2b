@@ -28,6 +28,7 @@ const HISTORY_MS = Math.max(1, historyDays || 7) * 24 * 60 * 60 * 1000;
 const rawPayloadLimit = Math.max(1024, Number.parseInt(process.env.HOME_ASSISTANT_RAW_CACHE_LIMIT || '8192', 10));
 
 const dedupeCache = new NodeCache({ stdTTL: 60, checkperiod: 30, deleteOnExpire: true });
+const haDebugSecret = (process.env.HA_DEBUG_SECRET || '').toString().trim();
 
 const webhookLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -259,6 +260,7 @@ async function pruneHistory(deviceId) {
   if (!deviceId) {
     return;
   }
+
   try {
     const cutoff = new Date(Date.now() - HISTORY_MS);
     await SensorData.destroy({
@@ -271,6 +273,64 @@ async function pruneHistory(deviceId) {
     logger.warn('HA webhook history prune failed', error && error.message ? error.message : error);
   }
 }
+
+// Debug endpoint: accepts any body type, returns parsed JSON or raw text and logs raw payload.
+// If `HA_DEBUG_SECRET` is set in the environment, require header `x-debug-secret` to match it.
+// Use this to validate HA / PowerShell payload formatting without triggering validation/signature checks.
+router.post('/webhook-debug', express.text({ type: '*/*', limit: '1mb' }), async (req, res) => {
+  if (haDebugSecret) {
+    const supplied = (req.get('x-debug-secret') || '').toString().trim();
+    if (!supplied || supplied !== haDebugSecret) {
+      return res.status(401).json({ success: false, message: 'Missing or invalid x-debug-secret header' });
+    }
+  }
+  try {
+    const raw = req.rawBody && req.rawBody.length ? req.rawBody : (typeof req.body === 'string' ? Buffer.from(req.body) : null);
+    const rawPreview = raw ? raw.toString('utf8').slice(0, Math.min(2048, raw.length)) : null;
+    let parsed = null;
+    let parseError = null;
+    if (raw) {
+      try {
+        parsed = JSON.parse(raw.toString('utf8'));
+      } catch (err) {
+        parseError = String(err && err.message ? err.message : err);
+      }
+    } else if (req.body && typeof req.body === 'object') {
+      parsed = req.body;
+    }
+
+    logger.info('HA webhook-debug received', {
+      url: req.originalUrl,
+      headers: {
+        'x-ha-device': req.get('x-ha-device') || null,
+        authorization: req.get('authorization') ? 'present' : 'missing',
+      },
+      rawPreview: rawPreview ? rawPreview.slice(0, 200) : null,
+      parsedPresent: !!parsed,
+      parseError,
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'webhook-debug received',
+      parsed,
+      parseError,
+      rawPreview,
+      headers: {
+        authorization: req.get('authorization') ? 'present' : 'missing',
+        'x-ha-device': req.get('x-ha-device') || null,
+        'content-type': req.get('content-type') || null,
+      },
+    });
+  } catch (error) {
+    logger.warn('webhook-debug handler failed', error && error.message ? error.message : error);
+    return res.status(500).json({
+      success: false,
+      message: 'webhook-debug failed',
+      error: error && error.message ? error.message : String(error),
+    });
+  }
+});
 
 router.post('/webhook', webhookLimiter, [
   body('timestamp').optional({ nullable: true }).isISO8601().withMessage('timestamp must be ISO8601 when provided'),
@@ -349,22 +409,66 @@ router.post('/webhook', webhookLimiter, [
       logger.warn('Failed to create DeviceEvent for HA webhook', evErr && evErr.message ? evErr.message : evErr);
     }
 
-    await SensorSnapshot.upsert({
-      deviceId: resolvedDeviceId,
-      temperature: metrics.temperature,
-      humidity: metrics.humidity,
-      moisture: metrics.moisture,
-      ph: metrics.ph,
-      ec: metrics.ec,
-      nitrogen: metrics.nitrogen,
-      phosphorus: metrics.phosphorus,
-      potassium: metrics.potassium,
-      waterLevel: metrics.waterLevel,
-      floatSensor: metrics.floatSensor,
-      batteryLevel: metrics.batteryLevel,
-      signalStrength: metrics.signalStrength,
-      timestamp,
-    });
+    // Merge incoming metrics with existing snapshot to avoid overwriting
+    // previously-known non-zero values with sparse/zero-filled webhook payloads.
+    // Heuristic: if incoming value is exactly 0 and an existing non-zero value
+    // exists, preserve the existing value. Null/undefined incoming values will
+    // keep the existing value as well. This reduces flicker when partial
+    // snapshots containing zeros arrive from Home Assistant.
+    try {
+      const existingSnapshot = await SensorSnapshot.findOne({ where: { deviceId: resolvedDeviceId }, raw: true });
+
+      const decide = (key) => {
+        const incoming = metrics[key];
+        if (incoming === null || typeof incoming === 'undefined') {
+          return existingSnapshot ? existingSnapshot[key] : null;
+        }
+        // Preserve existing non-zero when incoming is a spurious 0
+        if (typeof incoming === 'number' && incoming === 0 && existingSnapshot && existingSnapshot[key] !== null && existingSnapshot[key] !== 0) {
+          return existingSnapshot[key];
+        }
+        return incoming;
+      };
+
+      const snapshotPayload = {
+        deviceId: resolvedDeviceId,
+        temperature: decide('temperature'),
+        humidity: decide('humidity'),
+        moisture: decide('moisture'),
+        ph: decide('ph'),
+        ec: decide('ec'),
+        nitrogen: decide('nitrogen'),
+        phosphorus: decide('phosphorus'),
+        potassium: decide('potassium'),
+        waterLevel: decide('waterLevel'),
+        floatSensor: decide('floatSensor'),
+        batteryLevel: decide('batteryLevel'),
+        signalStrength: decide('signalStrength'),
+        timestamp,
+      };
+
+      await SensorSnapshot.upsert(snapshotPayload);
+    } catch (mergeErr) {
+      // If merge fails for any reason, fall back to the simple upsert to avoid
+      // dropping telemetry entirely.
+      logger.warn('HA webhook snapshot merge failed, falling back to simple upsert', mergeErr && mergeErr.message ? mergeErr.message : mergeErr);
+      await SensorSnapshot.upsert({
+        deviceId: resolvedDeviceId,
+        temperature: metrics.temperature,
+        humidity: metrics.humidity,
+        moisture: metrics.moisture,
+        ph: metrics.ph,
+        ec: metrics.ec,
+        nitrogen: metrics.nitrogen,
+        phosphorus: metrics.phosphorus,
+        potassium: metrics.potassium,
+        waterLevel: metrics.waterLevel,
+        floatSensor: metrics.floatSensor,
+        batteryLevel: metrics.batteryLevel,
+        signalStrength: metrics.signalStrength,
+        timestamp,
+      });
+    }
 
     await sensorLogService.recordSensorLogs({
       deviceId: resolvedDeviceId,
@@ -396,6 +500,199 @@ router.post('/webhook', webhookLimiter, [
     broadcastSensorData(payload, io);
   } catch (error) {
     logger.warn('HA webhook broadcast failed', error && error.message ? error.message : error);
+  }
+
+  return res.status(201).json({ success: true, data: payload });
+});
+
+// Relaxed webhook: accepts text or malformed JSON payloads commonly sent from Home Assistant
+// or PowerShell. Skips signature verification so it's useful for debugging and quick integration.
+// NOTE: This endpoint is less secure; enable only for short-term debugging or protect via network ACLs.
+router.post('/webhook-relaxed', express.text({ type: '*/*', limit: '1mb' }), async (req, res) => {
+  // Attempt to parse the incoming body into JSON.
+  let parsedBody = null;
+  const raw = req.rawBody && req.rawBody.length ? req.rawBody : (typeof req.body === 'string' ? Buffer.from(req.body) : null);
+  if (raw) {
+    const txt = raw.toString('utf8').trim();
+    // If it's already JSON-like, try parse directly
+    try {
+      parsedBody = JSON.parse(txt);
+    } catch (err) {
+      // Some clients send form-encoded or quoted JSON like payload="{...}" - try to unquote
+      const maybeMatch = txt.match(/^{[\s\S]*}$|^\"{[\s\S]*}\"$/);
+      if (maybeMatch) {
+        const candidate = txt.replace(/^\"/, '').replace(/\"$/, '');
+        try {
+          parsedBody = JSON.parse(candidate);
+        } catch (e2) {
+          parsedBody = null;
+        }
+      } else {
+        // Try to find a JSON substring inside
+        const firstBrace = txt.indexOf('{');
+        const lastBrace = txt.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          const substr = txt.slice(firstBrace, lastBrace + 1);
+          try {
+            parsedBody = JSON.parse(substr);
+          } catch (e3) {
+            parsedBody = null;
+          }
+        }
+      }
+    }
+  }
+
+  // If body parsed as object by body-parser, use that
+  if (!parsedBody && req.body && typeof req.body === 'object') {
+    parsedBody = req.body;
+  }
+
+  if (!parsedBody) {
+    return res.status(400).json({ success: false, message: 'Unable to parse JSON payload (webhook-relaxed)' });
+  }
+
+  // From here on, follow same logic as the main webhook but WITHOUT signature verification.
+  const resolvedDeviceId = (parsedBody.deviceId || req.get('x-ha-device') || homeAssistantDeviceId || '').toString().trim();
+  if (!resolvedDeviceId) {
+    return res.status(400).json({ success: false, message: 'deviceId is required' });
+  }
+
+  const metrics = extractMetrics(parsedBody);
+  if (!hasRealReading(metrics)) {
+    return res.status(400).json({ success: false, message: 'At least one numeric metric is required' });
+  }
+
+  const timestamp = parsedBody.timestamp ? new Date(parsedBody.timestamp) : new Date();
+  if (Number.isNaN(timestamp.getTime())) {
+    return res.status(400).json({ success: false, message: 'Invalid timestamp' });
+  }
+  if (Math.abs(Date.now() - timestamp.getTime()) > 5 * 60 * 1000) {
+    // Relaxed endpoint allows ±5 minutes drift
+    return res.status(422).json({ success: false, message: 'Timestamp is outside the allowed drift (±5 minutes)' });
+  }
+
+  const signatureSource = JSON.stringify({ deviceId: resolvedDeviceId, timestamp: timestamp.toISOString(), metrics });
+  const dedupeSignature = crypto.createHash('sha256').update(signatureSource).digest('hex');
+  if (dedupeCache.get(dedupeSignature)) {
+    return res.status(202).json({ success: true, duplicate: true, message: 'Duplicate telemetry ignored' });
+  }
+  dedupeCache.set(dedupeSignature, true);
+
+  try {
+    await deviceManager.markDeviceOnline(resolvedDeviceId, {
+      source: 'home_assistant_webhook_relaxed',
+      lastWebhookAt: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.warn('HA webhook-relaxed markDeviceOnline failed', error && error.message ? error.message : error);
+  }
+
+  const trimmedPayload = clampPayload(parsedBody);
+
+  try {
+    await SensorData.create({
+      deviceId: resolvedDeviceId,
+      ...metrics,
+      timestamp,
+      isOfflineData: false,
+      source: 'home_assistant_relaxed',
+      rawPayload: trimmedPayload,
+    });
+
+    try {
+      await DeviceEvent.create({
+        deviceId: resolvedDeviceId,
+        eventType: 'webhook_relaxed',
+        payload: trimmedPayload ? JSON.stringify(trimmedPayload) : null,
+        timestamp,
+        source: 'home_assistant_relaxed',
+      });
+    } catch (evErr) {
+      logger.warn('Failed to create DeviceEvent for HA webhook-relaxed', evErr && evErr.message ? evErr.message : evErr);
+    }
+
+    // Merge incoming metrics with existing snapshot to avoid overwriting
+    // previously-known non-zero values with sparse/zero-filled webhook payloads.
+    try {
+      const existingSnapshot = await SensorSnapshot.findOne({ where: { deviceId: resolvedDeviceId }, raw: true });
+      const decide = (key) => {
+        const incoming = metrics[key];
+        if (incoming === null || typeof incoming === 'undefined') {
+          return existingSnapshot ? existingSnapshot[key] : null;
+        }
+        if (typeof incoming === 'number' && incoming === 0 && existingSnapshot && existingSnapshot[key] !== null && existingSnapshot[key] !== 0) {
+          return existingSnapshot[key];
+        }
+        return incoming;
+      };
+      const snapshotPayload = {
+        deviceId: resolvedDeviceId,
+        temperature: decide('temperature'),
+        humidity: decide('humidity'),
+        moisture: decide('moisture'),
+        ph: decide('ph'),
+        ec: decide('ec'),
+        nitrogen: decide('nitrogen'),
+        phosphorus: decide('phosphorus'),
+        potassium: decide('potassium'),
+        waterLevel: decide('waterLevel'),
+        floatSensor: decide('floatSensor'),
+        batteryLevel: decide('batteryLevel'),
+        signalStrength: decide('signalStrength'),
+        timestamp,
+      };
+      await SensorSnapshot.upsert(snapshotPayload);
+    } catch (mergeErr) {
+      logger.warn('HA webhook-relaxed snapshot merge failed, falling back to simple upsert', mergeErr && mergeErr.message ? mergeErr.message : mergeErr);
+      await SensorSnapshot.upsert({
+        deviceId: resolvedDeviceId,
+        temperature: metrics.temperature,
+        humidity: metrics.humidity,
+        moisture: metrics.moisture,
+        ph: metrics.ph,
+        ec: metrics.ec,
+        nitrogen: metrics.nitrogen,
+        phosphorus: metrics.phosphorus,
+        potassium: metrics.potassium,
+        waterLevel: metrics.waterLevel,
+        floatSensor: metrics.floatSensor,
+        batteryLevel: metrics.batteryLevel,
+        signalStrength: metrics.signalStrength,
+        timestamp,
+      });
+    }
+
+    await sensorLogService.recordSensorLogs({
+      deviceId: resolvedDeviceId,
+      metrics,
+      origin: 'home_assistant_webhook_relaxed',
+      recordedAt: timestamp,
+      rawPayload: trimmedPayload,
+    });
+
+    pruneHistory(resolvedDeviceId).catch(() => null);
+  } catch (error) {
+    logger.error('HA webhook-relaxed persistence failed', error && error.message ? error.message : error);
+    return res.status(500).json({ success: false, message: 'Failed to persist telemetry' });
+  }
+
+  const io = resolveIo(req.app);
+  const payload = sanitizeSensorPayload({
+    deviceId: resolvedDeviceId,
+    ...metrics,
+    timestamp,
+    source: 'home_assistant_relaxed',
+  });
+
+  try {
+    const alerts = await checkThresholds(payload, io);
+    if (alerts && alerts.length > 0) {
+      payload.alerts = alerts;
+    }
+    broadcastSensorData(payload, io);
+  } catch (error) {
+    logger.warn('HA webhook-relaxed broadcast failed', error && error.message ? error.message : error);
   }
 
   return res.status(201).json({ success: true, data: payload });

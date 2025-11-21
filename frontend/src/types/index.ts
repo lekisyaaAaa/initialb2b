@@ -36,6 +36,7 @@ export interface SensorData {
   status?: 'normal' | 'warning' | 'critical' | string;
   batteryLevel?: number;
   signalStrength?: number;
+  actuatorStates?: Record<string, boolean | number | null> | null;
   isOfflineData?: boolean;
   deviceStatus?: string;
   deviceOnline?: boolean;
@@ -78,6 +79,8 @@ export interface LatestSnapshot {
   float_state: number | null;
   battery_level?: number | null;
   signal_strength?: number | null;
+  actuator_states?: Record<string, boolean | number | null> | null;
+  actuatorStates?: Record<string, boolean | number | null> | null;
   updated_at: string;
 }
 

@@ -41,7 +41,6 @@ const maintenanceRoutes = require('./routes/maintenance');
 const notificationRoutes = require('./routes/notifications');
 const deviceCommandRoutes = require('./routes/deviceCommands');
 const commandRoutes = require('./routes/command');
-const publicRoutes = require('./routes/public');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -460,7 +459,6 @@ app.get('/internal/ping', (req, res) => {
 
 app.use('/api/auth', authRoutes);
 app.use('/api/sensors', sensorRateLimiter, sensorRoutes);
-app.use('/api/public', publicRoutes);
 app.use('/api/settings', settingsRoutes);
 app.use('/api/maintenance', maintenanceRoutes);
 app.use('/api/device-commands', deviceCommandRoutes);

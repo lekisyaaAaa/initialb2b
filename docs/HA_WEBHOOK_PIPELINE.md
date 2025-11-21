@@ -42,7 +42,7 @@ This document captures the contract, persistence model, and realtime fan-out pat
     "signalStrength": -63
   },
   "source": {
-    "ha_entity": "sensor.vermilinks_bundle",
+    "ha_entity": "sensor.vermi_temperature",
     "automation": "garden_push",
     "trace_id": "abc-123"
   }

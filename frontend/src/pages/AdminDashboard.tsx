@@ -30,6 +30,7 @@ type Sensor = {
   ec?: number | null;
   npk?: { n?: number; p?: number; k?: number } | null;
   waterLevel?: number | null;
+  floatSensor?: number | null;
   batteryLevel?: number | null;
   signalStrength?: number | null;
   lastSeen?: string | null;
@@ -89,6 +90,7 @@ const mapSensorDataToSensor = (reading: Partial<SensorDataType> | null | undefin
     ec: toNumber(reading.ec),
     npk: hasNpk ? npkValues : null,
     waterLevel: toNumber(reading.waterLevel ?? reading.floatSensor),
+    floatSensor: toNumber(reading.floatSensor),
     batteryLevel: toNumber(reading.batteryLevel),
     lastSeen: timestamp,
     deviceOnline: reading.deviceOnline ?? true,
@@ -1215,22 +1217,78 @@ export default function AdminDashboard(): React.ReactElement {
               <div className="space-y-6">
                 {/* Hero Metrics */}
                 {hasLiveTelemetry && latestSensor ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className={`${cardClass} rounded-2xl flex flex-col items-start gap-2`}>
-                      <div className="text-xs text-gray-500">Current Temperature</div>
-                      <div className="text-4xl md:text-5xl font-extrabold text-rose-600">{`${latestSensor.temperature ?? '--'}${latestSensor.temperature != null ? '°C' : ''}`}</div>
-                      <div className="text-sm text-gray-500">Sensor: <span className="font-medium">{latestSensor.name ?? latestSensor.deviceId ?? '—'}</span></div>
-                    </div>
-                    <div className={`${cardClass} rounded-2xl flex flex-col items-start gap-2`}>
-                      <div className="text-xs text-gray-500">Humidity</div>
-                      <div className="text-4xl md:text-5xl font-extrabold text-sky-600">{latestSensor.humidity != null ? `${latestSensor.humidity}%` : '--'}</div>
-                      <div className="text-sm text-gray-500">Last seen: <span className="font-medium">{fmtLastSeen(latestSensor.lastSeen)}</span></div>
-                    </div>
-                    <div className={`${cardClass} rounded-2xl flex flex-col items-start gap-2`}>
-                      <div className="text-xs text-gray-500">Soil Moisture</div>
-                      <div className="text-4xl md:text-5xl font-extrabold text-green-600">{latestSensor.moisture != null ? `${latestSensor.moisture}%` : '--'}</div>
-                      <div className="text-sm text-gray-500">Water Level: <span className="font-medium">{latestSensor.waterLevel ?? '—'}</span></div>
-                    </div>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {(() => {
+                      const formatNumber = (value?: number | null, suffix = '') => (value === null || value === undefined
+                        ? '--'
+                        : `${Number(value.toFixed ? value.toFixed(2) : value)}${suffix}`);
+                      const npk = latestSensor.npk;
+                      const heroMetrics = [
+                        {
+                          key: 'temperature',
+                          label: 'Temperature',
+                          value: latestSensor.temperature != null ? `${latestSensor.temperature.toFixed(1)}°C` : '--',
+                          accent: 'text-rose-600',
+                          detail: `Sensor: ${latestSensor.name ?? latestSensor.deviceId ?? '—'}`,
+                        },
+                        {
+                          key: 'humidity',
+                          label: 'Humidity',
+                          value: latestSensor.humidity != null ? `${latestSensor.humidity.toFixed(1)}%` : '--',
+                          accent: 'text-sky-600',
+                          detail: `Last seen: ${fmtLastSeen(latestSensor.lastSeen)}`,
+                        },
+                        {
+                          key: 'moisture',
+                          label: 'Soil Moisture',
+                          value: latestSensor.moisture != null ? `${latestSensor.moisture.toFixed(1)}%` : '--',
+                          accent: 'text-green-600',
+                          detail: `Water Level: ${formatNumber(latestSensor.waterLevel, ' cm')}`,
+                        },
+                        {
+                          key: 'waterLevel',
+                          label: 'Water Level',
+                          value: latestSensor.waterLevel != null ? `${latestSensor.waterLevel} cm` : '--',
+                          accent: 'text-cyan-600',
+                          detail: `Float Sensor: ${latestSensor.floatSensor ?? '—'}`,
+                        },
+                        {
+                          key: 'ph',
+                          label: 'pH',
+                          value: latestSensor.ph != null ? latestSensor.ph.toFixed(2) : '--',
+                          accent: 'text-amber-600',
+                          detail: latestSensor.ec != null ? `EC: ${latestSensor.ec.toFixed(2)} mS/cm` : 'EC awaiting data',
+                        },
+                        {
+                          key: 'npk',
+                          label: 'NPK Balance',
+                          value: npk ? `N${npk.n ?? 0} · P${npk.p ?? 0} · K${npk.k ?? 0}` : '--',
+                          accent: 'text-purple-600',
+                          detail: 'mg/kg',
+                        },
+                        {
+                          key: 'battery',
+                          label: 'Battery',
+                          value: latestSensor.batteryLevel != null ? `${latestSensor.batteryLevel.toFixed(0)}%` : '--',
+                          accent: 'text-emerald-600',
+                          detail: latestSensor.signalStrength != null ? `Signal ${latestSensor.signalStrength} dBm` : 'Signal pending',
+                        },
+                        {
+                          key: 'signal',
+                          label: 'Signal Strength',
+                          value: latestSensor.signalStrength != null ? `${latestSensor.signalStrength} dBm` : '--',
+                          accent: 'text-indigo-600',
+                          detail: `Updated ${fmtLastSeen(latestSensor.lastSeen)}`,
+                        },
+                      ];
+                      return heroMetrics.map((metric) => (
+                        <div key={metric.key} className={`${cardClass} rounded-2xl flex flex-col items-start gap-2`}>
+                          <div className="text-xs text-gray-500">{metric.label}</div>
+                          <div className={`text-3xl md:text-4xl font-extrabold ${metric.accent}`}>{metric.value}</div>
+                          <div className="text-sm text-gray-500">{metric.detail}</div>
+                        </div>
+                      ));
+                    })()}
                   </div>
                 ) : (
                   <div className={`${cardClass} rounded-2xl text-center text-sm text-gray-500 dark:text-gray-400`}>

@@ -444,6 +444,8 @@ export const sensorLogService = {
     start?: string;
     end?: string;
   }) => api.get<PaginatedResponse<SensorLogEntry>>('/sensor-logs', { params }),
+  remove: (id: number | string) =>
+    api.delete<ApiResponse<{ deleted: number; id: number }>>(`/sensor-logs/${encodeURIComponent(id)}`),
 };
 
 export const alertService = {

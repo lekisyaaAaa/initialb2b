@@ -35,7 +35,7 @@ BeanToBin requires a fully configured environment before starting the backend se
 | `HOME_ASSISTANT_BASE_URL` | `http://192.168.8.134:8123` | Base URL used for REST hydration and deriving the WebSocket endpoint. |
 | `HOME_ASSISTANT_WS_URL` | `ws://192.168.8.134:8123/api/websocket` | Override the derived WebSocket URL when Home Assistant is exposed via a tunnel or reverse proxy. |
 | `HOME_ASSISTANT_TOKEN` | `<long-lived-access-token>` | Home Assistant long-lived access token used for WebSocket auth and REST hydration. |
-| `HOME_ASSISTANT_SENSOR_MAP` | `{"temperature":"sensor.vermilinks_temperature"}` | JSON or comma-separated mapping of VermiLinks sensor fields to Home Assistant `entity_id`s. Supports attribute lookups. |
+| `HOME_ASSISTANT_SENSOR_MAP` | `{"temperature":"sensor.vermi_temperature","humidity":"sensor.vermi_humidity","moisture":"sensor.vermi_moisture"}` | JSON or comma-separated mapping of VermiLinks sensor fields to Home Assistant `entity_id`s. Supports attribute lookups. |
 | `HOME_ASSISTANT_DEVICE_ID` | `vermilinks-homeassistant` | Device identifier attached to Home Assistant readings in the VermiLinks tables. |
 | `HOME_ASSISTANT_FLUSH_DEBOUNCE_MS` | `250` | (Optional) Debounce interval before persisting combined readings, allowing multiple entity updates to coalesce. |
 | `HOME_ASSISTANT_ALLOW_INSECURE_TLS` | `false` | Set to `true` only when using self-signed certificates and you explicitly trust the Home Assistant endpoint. |

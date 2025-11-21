@@ -66,17 +66,17 @@ automation:
 		trigger:
 			- platform: state
 				entity_id:
-					- sensor.vermilinks_temperature
-					- sensor.vermilinks_humidity
-					- sensor.vermilinks_soil_moisture
-					- binary_sensor.vermilinks_float
+					- sensor.vermi_temperature
+					- sensor.vermi_humidity
+					- sensor.vermi_moisture
+					- binary_sensor.vermi_reservoir_low
 		action:
 			- service: rest_command.vermilinks_push_snapshot
 				data:
-					temperature: "{{ states('sensor.vermilinks_temperature') | float(0) }}"
-					humidity: "{{ states('sensor.vermilinks_humidity') | float(0) }}"
-					soil_moisture: "{{ states('sensor.vermilinks_soil_moisture') | float(0) }}"
-					float_state: "{{ is_state('binary_sensor.vermilinks_float', 'on') | int }}"
+					temperature: "{{ states('sensor.vermi_temperature') | float(0) }}"
+					humidity: "{{ states('sensor.vermi_humidity') | float(0) }}"
+					moisture: "{{ states('sensor.vermi_moisture') | float(0) }}"
+					float_state: "{{ is_state('binary_sensor.vermi_reservoir_low', 'on') | int }}"
 					timestamp: "{{ now().isoformat() }}"
 ```
 

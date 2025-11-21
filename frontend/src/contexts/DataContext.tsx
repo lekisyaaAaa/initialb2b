@@ -49,6 +49,7 @@ interface FloatLockoutState {
 interface DataContextType {
   latestTelemetry: SensorData | null;
   latestSensorData: SensorData[];
+  actuatorStates: Record<string, boolean | number | null> | null;
   deviceStatuses: Record<string, DeviceStatusInfo>;
   recentAlerts: Alert[];
   groupedAlerts: AlertBuckets;
@@ -124,9 +125,208 @@ const envForceTelemetryDisabled = (process.env.REACT_APP_TELEMETRY_DISABLED || '
 const requireLiveHardwareForTelemetry = (process.env.REACT_APP_REQUIRE_LIVE_SENSORS || 'true').toString().toLowerCase() !== 'false';
 const TELEMETRY_DISABLED_MESSAGE = 'Telemetry feed temporarily disabled until sensors come online.';
 
+const toNumber = (value: unknown): number | undefined => {
+  if (value === null || typeof value === 'undefined' || value === '') {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const toNullableNumber = (value: unknown): number | null => {
+  if (value === null || typeof value === 'undefined' || value === '') {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+
+const toIsoString = (value: unknown): string | null => {
+  if (!value) {
+    return null;
+  }
+  try {
+    const date = value instanceof Date ? value : new Date(value as string);
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+    return date.toISOString();
+  } catch {
+    return null;
+  }
+};
+
+const actuatorTrueTokens = new Set(['on', 'true', '1', 'open', 'enabled', 'start', 'active']);
+const actuatorFalseTokens = new Set(['off', 'false', '0', 'closed', 'disabled', 'stop', 'inactive']);
+
+const parseActuatorPrimitive = (value: unknown): boolean | number | null => {
+  if (value === null || typeof value === 'undefined') {
+    return null;
+  }
+  if (typeof value === 'boolean') {
+    return value;
+  }
+  if (typeof value === 'number') {
+    return Number.isFinite(value) ? value : null;
+  }
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+    if (actuatorTrueTokens.has(normalized)) {
+      return true;
+    }
+    if (actuatorFalseTokens.has(normalized)) {
+      return false;
+    }
+    const parsed = Number(normalized);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const coerceActuatorRecord = (raw: any): Record<string, any> | null => {
+  if (!raw) {
+    return null;
+  }
+  let source = raw;
+  if (typeof source === 'string') {
+    try {
+      source = JSON.parse(source);
+    } catch {
+      return null;
+    }
+  }
+  if (Array.isArray(source)) {
+    return source.reduce<Record<string, any>>((acc, entry) => {
+      if (!entry || typeof entry !== 'object') {
+        return acc;
+      }
+      const key = entry.key || entry.actuatorKey || entry.name || entry.id || entry.actuator;
+      if (!key) {
+        return acc;
+      }
+      acc[key.toString()] = entry.state ?? entry.status ?? entry.value ?? entry.desiredState ?? entry.on ?? null;
+      return acc;
+    }, {});
+  }
+  if (typeof source === 'object') {
+    return source as Record<string, any>;
+  }
+  return null;
+};
+
+const extractActuatorStates = (sample: any): Record<string, boolean | number | null> | null => {
+  if (!sample || typeof sample !== 'object') {
+    return null;
+  }
+  const candidate = sample.actuatorStates
+    ?? sample.actuator_states
+    ?? sample.actuators
+    ?? sample.actuatorState
+    ?? sample.actuator
+    ?? sample.latestActuators
+    ?? null;
+  if (!candidate) {
+    return null;
+  }
+  const record = coerceActuatorRecord(candidate);
+  if (!record) {
+    return null;
+  }
+  const normalized: Record<string, boolean | number | null> = {};
+  Object.entries(record).forEach(([rawKey, rawValue]) => {
+    if (!rawKey) {
+      return;
+    }
+    const key = rawKey.toString();
+    const candidateValue = (rawValue && typeof rawValue === 'object')
+      ? (rawValue.state ?? rawValue.value ?? rawValue.status ?? rawValue.desiredState ?? rawValue.on ?? null)
+      : rawValue;
+    normalized[key] = parseActuatorPrimitive(candidateValue);
+  });
+  return Object.keys(normalized).length > 0 ? normalized : null;
+};
+
+const normalizeSensorSample = (sample: any, fallbackDeviceId?: string): SensorData | null => {
+  if (!sample || typeof sample !== 'object') {
+    return null;
+  }
+  const resolvedDeviceIdRaw = sample.deviceId || sample.device_id || fallbackDeviceId || 'unknown-device';
+  const deviceId = resolvedDeviceIdRaw ? resolvedDeviceIdRaw.toString() : 'unknown-device';
+  const floatSensorValue = toNullableNumber(
+    sample.floatSensor
+      ?? sample.float_sensor
+      ?? sample.float_state
+      ?? sample.floatLevel
+      ?? sample.waterLevel
+      ?? sample.water_level
+  );
+  const timestampIso = toIsoString(sample.timestamp || sample.updated_at || sample.createdAt || sample.receivedAt) || new Date().toISOString();
+  const sensorSummary = Array.isArray(sample.sensorSummary) ? sample.sensorSummary : undefined;
+
+  const normalized: SensorData = {
+    ...(sample as SensorData),
+    deviceId,
+    temperature: toNumber(sample.temperature ?? sample.temp ?? sample.temperatureC),
+    humidity: toNumber(sample.humidity ?? sample.relativeHumidity),
+    moisture: toNumber(sample.moisture ?? sample.soil_moisture ?? sample.soilMoisture),
+    ph: toNumber(sample.ph),
+    ec: toNumber(sample.ec ?? sample.electricalConductivity),
+    nitrogen: toNumber(sample.nitrogen),
+    phosphorus: toNumber(sample.phosphorus),
+    potassium: toNumber(sample.potassium),
+    waterLevel: toNumber(sample.waterLevel ?? sample.water_level ?? sample.waterlevel) ?? (typeof floatSensorValue === 'number' ? floatSensorValue : undefined),
+    floatSensor: floatSensorValue,
+    floatSensorTimestamp: toIsoString(sample.floatSensorTimestamp ?? sample.float_sensor_timestamp ?? sample.floatTimestamp ?? sample.float_timestamp),
+    batteryLevel: toNumber(sample.batteryLevel ?? sample.battery_level ?? sample.battery ?? sample.batt),
+    signalStrength: toNumber(sample.signalStrength ?? sample.signal_strength ?? sample.rssi),
+    timestamp: timestampIso,
+    actuatorStates: extractActuatorStates(sample),
+    sensorSummary,
+  };
+
+  return normalized;
+};
+
+const mergeSensorReadings = (existing: SensorData | null, incoming: SensorData | null): SensorData | null => {
+  if (!incoming) return existing ? { ...existing } : null;
+  if (!existing) return { ...incoming };
+
+  const decide = (key: keyof SensorData) => {
+    const inc = (incoming as any)[key];
+    const ex = (existing as any)[key];
+    if (inc === null || typeof inc === 'undefined') return ex ?? null;
+    if (typeof inc === 'number' && inc === 0 && typeof ex === 'number' && ex !== 0) return ex;
+    return inc;
+  };
+
+  const merged: SensorData = {
+    ...existing,
+    ...incoming,
+    temperature: decide('temperature') as any,
+    humidity: decide('humidity') as any,
+    moisture: decide('moisture') as any,
+    ph: decide('ph') as any,
+    ec: decide('ec') as any,
+    nitrogen: decide('nitrogen') as any,
+    phosphorus: decide('phosphorus') as any,
+    potassium: decide('potassium') as any,
+    waterLevel: decide('waterLevel') as any,
+    floatSensor: decide('floatSensor') as any,
+    batteryLevel: decide('batteryLevel') as any,
+    signalStrength: decide('signalStrength') as any,
+    actuatorStates: incoming.actuatorStates ?? existing.actuatorStates ?? null,
+  } as SensorData;
+
+  return merged;
+};
+
 export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const [latestTelemetry, setLatestTelemetry] = useState<SensorData | null>(null);
   const [latestSensorData, setLatestSensorData] = useState<SensorData[]>([]);
+  const [actuatorStates, setActuatorStates] = useState<Record<string, boolean | number | null> | null>(null);
   const [deviceStatuses, setDeviceStatuses] = useState<Record<string, DeviceStatusInfo>>({});
   const [recentAlerts, setRecentAlerts] = useState<Alert[]>([]);
   const [groupedAlerts, setGroupedAlerts] = useState<AlertBuckets>({ critical: [], warning: [], info: [] });
@@ -139,6 +339,10 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const hardwareGateActive = !envForceTelemetryDisabled && requireLiveHardwareForTelemetry && !isConnected;
   const telemetryDisabled = envForceTelemetryDisabled || hardwareGateActive;
   const backendBaseRef = useRef<string>('');
+  const latestTelemetryRef = useRef<SensorData | null>(null);
+  useEffect(() => {
+    latestTelemetryRef.current = latestTelemetry;
+  }, [latestTelemetry]);
   const parsedPollInterval = Number(process.env.REACT_APP_SENSOR_POLL_INTERVAL_MS || '5000');
   const pollIntervalMs = Number.isFinite(parsedPollInterval) && parsedPollInterval > 0
     ? parsedPollInterval
@@ -253,12 +457,11 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     if (!raw || telemetryDisabled) return null;
     const sample = Array.isArray(raw) ? raw[0] : raw;
     if (!sample || typeof sample !== 'object') return null;
-
-    const deviceId = (sample as any).deviceId || (sample as any).device_id || 'unknown-device';
-    const normalized: SensorData = {
-      ...(sample as SensorData),
-      deviceId,
-    };
+    const normalized = normalizeSensorSample(sample, (sample as any)?.deviceId || (sample as any)?.device_id || undefined);
+    if (!normalized) {
+      return null;
+    }
+    const deviceId = normalized.deviceId || 'unknown-device';
 
     const timestampMs = normalized.timestamp ? new Date(normalized.timestamp).getTime() : NaN;
     const sampleAgeMs = Number.isFinite(timestampMs) ? Date.now() - timestampMs : null;
@@ -268,21 +471,29 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     normalized.lastSeen = normalized.timestamp ? new Date(normalized.timestamp).toISOString() : null;
     normalized.deviceOnline = Boolean(normalized.deviceOnline && !isStale);
 
-    if (isStale && !allowStaleTelemetry) {
-      setLatestTelemetry(null);
-      setLatestSensorData([]);
-      setIsConnected(false);
+    const connectionHealthy = !isStale || allowStaleTelemetry;
+    if (!connectionHealthy && !latestTelemetryRef.current) {
       setLastFetchError('Awaiting live telemetry from sensors');
-      return null;
+    } else {
+      setLastFetchError(null);
     }
 
-    setLatestTelemetry(normalized);
+    const merged = mergeSensorReadings(latestTelemetryRef.current, normalized) || normalized;
+    // preserve the freshly computed metadata from this incoming sample
+    merged.sampleAgeMs = normalized.sampleAgeMs;
+    merged.isStale = normalized.isStale;
+    merged.lastSeen = normalized.lastSeen;
+    merged.deviceOnline = normalized.deviceOnline;
+
+    setLatestTelemetry(merged);
+    setIsConnected(connectionHealthy || Boolean(latestTelemetryRef.current));
+    setActuatorStates(merged.actuatorStates || null);
     if (options?.updateLatestList !== false) {
       setLatestSensorData((prev) => {
         const filtered = Array.isArray(prev)
           ? prev.filter((reading) => (reading?.deviceId || '') !== deviceId)
           : [];
-        return [...filtered, normalized];
+        return [...filtered, merged];
       });
     }
     setLastFetchAt(new Date().toISOString());
@@ -307,6 +518,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     if (telemetryDisabled) {
       setLatestTelemetry(null);
       setLatestSensorData([]);
+      setActuatorStates(null);
       setIsConnected(false);
       setLastFetchAt(null);
       setLastFetchError(TELEMETRY_DISABLED_MESSAGE);
@@ -323,16 +535,25 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
       const snapshot = await sensorService.getLatestData();
       const resolvedDeviceId = 'vermilinks-homeassistant';
       const reading: SensorData | null = snapshot
-        ? {
+        ? normalizeSensorSample({
             deviceId: resolvedDeviceId,
-            temperature: snapshot.temperature === null ? undefined : snapshot.temperature,
-            humidity: snapshot.humidity === null ? undefined : snapshot.humidity,
-            moisture: snapshot.soil_moisture === null ? undefined : snapshot.soil_moisture,
-            floatSensor: snapshot.float_state === null ? null : snapshot.float_state,
+            temperature: snapshot.temperature,
+            humidity: snapshot.humidity,
+            moisture: snapshot.soil_moisture,
+            ph: snapshot.ph,
+            ec: snapshot.ec,
+            nitrogen: snapshot.nitrogen,
+            phosphorus: snapshot.phosphorus,
+            potassium: snapshot.potassium,
+            waterLevel: snapshot.water_level,
+            floatSensor: snapshot.float_state,
+            batteryLevel: snapshot.battery_level,
+            signalStrength: snapshot.signal_strength,
+            actuatorStates: snapshot.actuatorStates ?? snapshot.actuator_states ?? null,
             timestamp: snapshot.updated_at,
             isOfflineData: false,
             deviceOnline: true,
-          }
+          }, resolvedDeviceId)
         : null;
 
       if (reading) {
@@ -342,10 +563,14 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         } else {
           setLatestSensorData([]);
         }
+        setActuatorStates(reading.actuatorStates || null);
       } else if (!background) {
-        setLatestTelemetry(null);
-        setLatestSensorData([]);
-        setIsConnected(false);
+        if (!latestTelemetryRef.current) {
+          setLatestTelemetry(null);
+          setLatestSensorData([]);
+          setActuatorStates(null);
+          setIsConnected(false);
+        }
       }
       if (!background) {
         setLastFetchError(null);
@@ -353,9 +578,12 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     } catch (error: any) {
       setLastFetchError(error?.message || 'Unable to load telemetry');
       if (!background) {
-        setLatestTelemetry(null);
-        setLatestSensorData([]);
-        setIsConnected(false);
+        if (!latestTelemetryRef.current) {
+          setLatestTelemetry(null);
+          setLatestSensorData([]);
+          setActuatorStates(null);
+          setIsConnected(false);
+        }
         throw error;
       }
     } finally {
@@ -375,6 +603,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     const resetRealtimeState = () => {
       setLatestTelemetry(null);
       setLatestSensorData([]);
+      setActuatorStates(null);
       setDeviceStatuses({});
       setRecentAlerts([]);
       setGroupedAlerts({ critical: [], warning: [], info: [] });
@@ -470,6 +699,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     if (telemetryDisabled) {
       setLatestTelemetry(null);
       setLatestSensorData([]);
+      setActuatorStates(null);
       setDeviceStatuses({});
       setRecentAlerts([]);
       setGroupedAlerts({ critical: [], warning: [], info: [] });
@@ -607,6 +837,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const contextValue = useMemo<DataContextType>(() => ({
     latestTelemetry,
     latestSensorData,
+    actuatorStates,
     deviceStatuses,
     recentAlerts,
     groupedAlerts,
@@ -625,6 +856,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   }), [
     latestTelemetry,
     latestSensorData,
+    actuatorStates,
     deviceStatuses,
     recentAlerts,
     groupedAlerts,
