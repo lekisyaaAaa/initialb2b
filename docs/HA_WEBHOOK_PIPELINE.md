@@ -25,30 +25,28 @@ This document captures the contract, persistence model, and realtime fan-out pat
 
 ```jsonc
 {
-  "deviceId": "vermilinks-homeassistant",
+  "deviceId": "esp32b-rs485",
   "timestamp": "2025-11-15T14:05:12.321Z",
-  "metrics": {
-    "temperature": 24.6,
-    "humidity": 58.2,
-    "moisture": 41.5,
-    "ph": 6.8,
-    "ec": 1.23,
-    "nitrogen": 40,
-    "phosphorus": 10,
-    "potassium": 55,
-    "waterLevel": 1,
-    "floatSensor": 0,
-    "batteryLevel": 87,
-    "signalStrength": -63
+  "temperature": 24.6,
+  "humidity": 58.2,
+  "moisture": 41.5,
+  "ph": 6.8,
+  "ec": 1.23,
+  "nitrogen": 40,
+  "phosphorus": 10,
+  "potassium": 55,
+  "signalStrength": -63,
+  "waterLevel": 1,
+  "floatSensor": 0,
+  "actuators": {
+    "water_pump": false,
+    "solenoid_1": true
   },
-  "source": {
-    "ha_entity": "sensor.vermi_temperature",
-    "automation": "garden_push",
-    "trace_id": "abc-123"
-  }
+  "source": "esp32"
 }
 ```
 
+- Either send metrics at the top level (preferred) or nest the old `{ "metrics": { ... } }` object—both paths are supported.
 - `timestamp` defaults to server time when omitted.
 - At least one numeric metric is required.
 - Extra keys are ignored but captured inside `rawPayload` for audit.

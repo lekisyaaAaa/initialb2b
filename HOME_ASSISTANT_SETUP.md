@@ -1,6 +1,6 @@
-# Home Assistant Snapshot Push
+# Direct ESP Snapshot Push (Home Assistant Optional)
 
-Home Assistant is now the primary source of telemetry for VermiLinks. Instead of maintaining a WebSocket bridge or talking to the ESP32 directly, the backend exposes a REST endpoint (`POST /api/sensors/ingest-ha`) that accepts the latest readings and immediately updates the dashboard cache.
+The preferred architecture now sends telemetry directly from the ESP32 nodes to the backend webhook. Home Assistant continues to host MQTT entities so you can see readings in Lovelace and issue commands, but it no longer has to repost data every two minutes—no more stale 0.0 values.
 
 ## Backend environment checklist
 
@@ -8,93 +8,95 @@ Configure these variables in `backend/.env` (or the Render dashboard):
 
 - `ENABLE_HOME_ASSISTANT_BRIDGE=false`
 - `ALLOW_HOME_ASSISTANT_PUSH_WITHOUT_SOCKET=true`
-- `HOME_ASSISTANT_DEVICE_ID=vermilinks-homeassistant` *(optional override for the device id attached to snapshots)*
-- Leave `HOME_ASSISTANT_BASE_URL`, `HOME_ASSISTANT_TOKEN`, and related mapping settings blank unless you plan to re-enable the WebSocket bridge later.
+- `HOME_ASSISTANT_DEVICE_ID=vermilinks-homeassistant`
+- `HOME_ASSISTANT_WEBHOOK_SECRET=VermiLinks_HA_Webhook_2025!`
 
-For the frontend “Open Home Assistant” button, set `REACT_APP_HOME_ASSISTANT_URL` (or `VITE_HOME_ASSISTANT_URL`) in `frontend/.env` to the URL your operators should visit.
+## Payload contract (ESP32 → `/api/ha/webhook`)
 
-## Snapshot payload contract
+Send JSON with **top-level fields**. Only include the keys you actually track.
 
-Send JSON with any subset of these fields:
-
-```
+```json
 {
+	"deviceId": "esp32b-rs485",
+	"timestamp": "2025-11-22T03:30:01Z",
 	"temperature": 24.2,
 	"humidity": 62.3,
-	"soil_moisture": 44.1,
-	"float_state": 0,
-	"timestamp": "2025-11-14T15:04:05Z",
-	"source": "home_assistant"
+	"moisture": 44.1,
+	"ph": 6.8,
+	"ec": 1280,
+	"nitrogen": 420,
+	"phosphorus": 110,
+	"potassium": 82,
+	"signalStrength": -63,
+	"waterLevel": 12.4,
+	"floatSensor": 1,
+	"actuators": {
+		"water_pump": false,
+		"solenoid_1": true,
+		"solenoid_2": false,
+		"solenoid_3": false
+	}
 }
 ```
 
-- Values are coerced to numbers server-side; omit keys you do not track.
-- `soil_moisture` and `moisture` are treated identically—the backend keeps whichever you provide.
-- `float_state`/`float` expects `0` or `1`. Use Jinja’s `|int` filter to convert `on/off`.
-- `timestamp` is optional; the server falls back to the current time.
-- Duplicate payloads (within ±1 s) are ignored so repeated automations do not spam the database.
+Notes:
 
-## Home Assistant YAML
+- Numbers are coerced server-side; omit a metric or send `null` if you do not measure it.
+- `floatSensor` accepts `0/1`, booleans, or the strings `"WET"/"DRY"`.
+- Duplicate payloads (same `deviceId` + timestamp within ±1 s) are ignored.
 
-1. Define the REST command (use a secret for the URL if exposing over the internet):
+## Beginner-friendly ESP32 checklist
 
-```
-rest_command:
-	vermilinks_push_snapshot:
-		url: !secret vermilinks_ingest_url
-		method: POST
-		content_type: "application/json"
-		timeout: 10
-		payload: >
-			{
-				"temperature": {{ temperature }},
-				"humidity": {{ humidity }},
-				"soil_moisture": {{ soil_moisture }},
-				"float_state": {{ float_state }},
-				"timestamp": "{{ timestamp }}",
-				"source": "home_assistant"
-			}
-```
+1. **Add a webhook helper**
+	 ```cpp
+	 #include <HTTPClient.h>
+	 const char* WEBHOOK_URL = "https://vermilinks-backend.onrender.com/api/ha/webhook";
+	 const char* WEBHOOK_SECRET = "VermiLinks_HA_Webhook_2025!";
 
-2. Create an automation that fires whenever any tracked entity changes:
+	 void postSnapshot(const char* body) {
+		 WiFiClientSecure client;
+		 client.setInsecure();
+		 HTTPClient http;
+		 if (!http.begin(client, WEBHOOK_URL)) return;
+		 http.addHeader("Content-Type", "application/json");
+		 http.addHeader("Authorization", String("Bearer ") + WEBHOOK_SECRET);
+		 const int status = http.POST(body);
+		 if (status < 200 || status >= 300) {
+			 Serial.printf("Webhook POST failed: %d %s\n", status, http.getString().c_str());
+		 }
+		 http.end();
+	 }
+	 ```
+2. **Reuse the same JSON for MQTT + webhook**
+	 ```cpp
+	 char payload[320];
+	 snprintf(payload, sizeof(payload),
+						"{\"deviceId\":\"esp32b-rs485\",\"temperature\":%.1f,\"humidity\":%.1f,"
+						"\"moisture\":%.1f,\"ph\":%.1f,\"ec\":%d,"
+						"\"nitrogen\":%d,\"phosphorus\":%d,\"potassium\":%d,"
+						"\"signalStrength\":%d}",
+						temperature, humidity, moisture,
+						ph, ec,
+						nitrogen, phosphorus, potassium,
+						WiFi.RSSI());
+	 mqtt.publish("vermilinks/esp32b/metrics", payload, false);
+	 postSnapshot(payload);
+	 ```
+3. **ESP32A**: extend `publishSnapshot()` to add an `actuators` object plus `floatSensor`, then call `postSnapshot(payload)` right after `mqtt.publish()`.
 
-```
-automation:
-	- id: vermilinks_push_snapshot
-		alias: VermiLinks • Push Snapshot
-		mode: queued
-		trigger:
-			- platform: state
-				entity_id:
-					- sensor.vermi_temperature
-					- sensor.vermi_humidity
-					- sensor.vermi_moisture
-					- binary_sensor.vermi_reservoir_low
-		action:
-			- service: rest_command.vermilinks_push_snapshot
-				data:
-					temperature: "{{ states('sensor.vermi_temperature') | float(0) }}"
-					humidity: "{{ states('sensor.vermi_humidity') | float(0) }}"
-					moisture: "{{ states('sensor.vermi_moisture') | float(0) }}"
-					float_state: "{{ is_state('binary_sensor.vermi_reservoir_low', 'on') | int }}"
-					timestamp: "{{ now().isoformat() }}"
-```
+## Home Assistant integration (optional but useful)
 
-Adjust the `entity_id` entries to match your sensors. You can run the automation manually from Developer Tools → Automations → *Run* to test.
+- Keep the MQTT broker block so Lovelace cards mirror what the ESP publishes.
+- Use the reference YAML in `docs/home_assistant_configuration.yaml`—it now matches the flattened JSON, removes the unused battery sensor, and avoids `.state` nesting.
+- Disable the old `rest_command` automation so the ESPs remain the single source of truth.
 
 ## Validation steps
 
-1. Redeploy or restart the backend after updating environment variables.
-2. Trigger the automation (e.g., via Developer Tools → Services → `rest_command.vermilinks_push_snapshot` with test data).
-3. Check the backend logs for `ingest-ha` messages.
-4. Call `GET /api/sensors/latest` and confirm the snapshot:
-
-```
-curl http://localhost:5000/api/sensors/latest | ConvertFrom-Json | Format-List
-```
-
-5. Open the VermiLinks dashboard. The Sensor Summary panel refreshes within the polling interval (default 5 s) and the “Open Home Assistant” button links to the URL you configured.
+1. Flash both ESP32A/B with firmware containing the webhook helper.
+2. Watch Render logs (`render deploys tail srv-d43v9q0dl3ps73aarv30`) for `HA webhook` entries returning HTTP `201`.
+3. Open `https://vermilinks-frontend.onrender.com/` and confirm the Sensor Summary panel updates within ~5 s.
+4. Toggle a solenoid from Home Assistant, verify the MQTT state change, and confirm the Admin dashboard actuator badges follow.
 
 ## Optional WebSocket bridge
 
-If you later need continuous streaming from Home Assistant, you can set `ENABLE_HOME_ASSISTANT_BRIDGE=true` and supply the original token plus mapping variables. The REST automation above continues to work; the bridge simply supplements it with real-time events.
+If you later need HA’s WebSocket bridge, set `ENABLE_HOME_ASSISTANT_BRIDGE=true` and restore the original token variables. The ESP webhook flow can stay active; the bridge simply becomes an additional real-time feed.
