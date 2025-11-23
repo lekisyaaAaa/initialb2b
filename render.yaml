@@ -1,4 +1,5 @@
 # Render Blueprint for VermiLinks.com (ESP32-only stack)
+# redeploy-trigger: 2025-11-24T00:00:00Z - harmless comment to force redeploy
 # Services:
 # - vermilinks-backend (Node web service)
 # - vermilinks-frontend (React static site)
