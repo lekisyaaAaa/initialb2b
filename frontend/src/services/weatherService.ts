@@ -178,52 +178,6 @@ class WeatherService {
     }
   }
 
-  /**
-   * Generate realistic mock data based on Manila climate patterns
-   */
-  private generateRealisticMockData(location: LocationConfig): WeatherData {
-    const now = new Date();
-    const hour = now.getHours();
-    
-    // Manila climate: Tropical, 26-34°C, 65-85% humidity
-    let baseTemp = 29;
-    let baseHumidity = 75;
-    
-    // Manila daily temperature variation
-    if (hour >= 6 && hour <= 12) {
-      baseTemp += (hour - 6) * 1.0; // Morning heating in Manila
-    } else if (hour > 12 && hour <= 17) {
-      baseTemp = 33 + Math.sin((hour - 12) / 5 * Math.PI) * 2; // Manila afternoon peak
-    } else {
-      baseTemp = 28 + Math.random() * 2; // Manila evening/night
-    }
-    
-    // Manila humidity patterns (higher due to coastal location)
-    baseHumidity = Math.max(65, 90 - (baseTemp - 26) * 1.5);
-    
-    // Add Manila-specific variation
-    const temperature = Math.round((baseTemp + (Math.random() - 0.5) * 3) * 10) / 10;
-    const humidity = Math.max(60, Math.min(90, baseHumidity + (Math.random() - 0.5) * 8));
-    
-    return {
-      deviceId: location.deviceId,
-      temperature,
-      humidity: Math.round(humidity),
-      moisture: this.calculateMoisture(humidity, temperature),
-      ph: Math.round((6.5 + Math.random() * 1.5) * 10) / 10, // pH 6.5-8.0
-      ec: Math.round((0.8 + Math.random() * 1.2) * 10) / 10, // EC 0.8-2.0 mS/cm
-      nitrogen: Math.floor(30 + Math.random() * 40), // N 30-70 mg/kg
-      phosphorus: Math.floor(20 + Math.random() * 30), // P 20-50 mg/kg
-      potassium: Math.floor(150 + Math.random() * 100), // K 150-250 mg/kg
-      waterLevel: Math.random() > 0.3 ? 1 : 0, // 70% chance of water present
-      timestamp: new Date().toISOString(),
-      status: this.determineStatus(temperature, humidity),
-      batteryLevel: 85 + Math.floor(Math.random() * 15),
-      signalStrength: -50 - Math.floor(Math.random() * 20),
-      location: location.name,
-      description: 'Manila Real-Time Weather'
-    };
-  }
 
   /**
    * Calculate soil moisture based on temperature and humidity
