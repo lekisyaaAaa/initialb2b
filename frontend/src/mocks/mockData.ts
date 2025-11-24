@@ -1,8 +1,6 @@
 import { SensorData, Alert } from '../types';
 
-const isMockEnabled = process.env.REACT_APP_ENABLE_MOCKS === 'true';
-
-export const mockSensorData: SensorData[] = isMockEnabled ? [
+export const mockSensorData: SensorData[] = [
   {
     _id: 'mock-1',
     deviceId: 'DEVICE-001',
@@ -37,9 +35,9 @@ export const mockSensorData: SensorData[] = isMockEnabled ? [
     batteryLevel: 74,
     signalStrength: -70,
   }
-] : [];
+];
 
-export const mockAlerts: Alert[] = isMockEnabled ? [
+export const mockAlerts: Alert[] = [
   {
     _id: 'alert-1',
     type: 'temperature',
@@ -60,7 +58,7 @@ export const mockAlerts: Alert[] = isMockEnabled ? [
   createdAt: new Date().toISOString(),
   sensorData: mockSensorData[1],
   }
-] : [];
+];
 
 const exported = {
   mockSensorData,

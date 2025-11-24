@@ -93,12 +93,6 @@ services:
         value: "5000"
       - key: REACT_APP_ENABLE_MOCKS
         value: "false"
-      - key: REACT_APP_TELEMETRY_DISABLED
-        value: "true"
-      - key: REACT_APP_SUPPRESS_DATA
-        value: "true"
-      - key: REACT_APP_SUPPRESS_DATA_REASON
-        value: "Public build intentionally hides telemetry output."
       - key: REACT_APP_DUMMY_MODE
         value: "false"
       - key: REACT_APP_HOME_ASSISTANT_URL

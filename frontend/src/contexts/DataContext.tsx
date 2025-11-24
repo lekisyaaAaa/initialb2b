@@ -16,7 +16,6 @@ import api, {
   sensorService,
 } from '../services/api';
 import { getSocket } from '../socket';
-import { DATA_SUPPRESSED } from '../utils/dataSuppression';
 
 interface DeviceStatusInfo {
   deviceId: string;
@@ -122,7 +121,7 @@ const STALE_TELEMETRY_THRESHOLD_MS = (() => {
   return Number.isFinite(raw) && raw > 0 ? raw : 5 * 60 * 1000;
 })();
 const allowStaleTelemetry = (process.env.REACT_APP_ALLOW_STALE_DATA || 'false').toString().toLowerCase() === 'true';
-const envForceTelemetryDisabled = DATA_SUPPRESSED || (process.env.REACT_APP_TELEMETRY_DISABLED || '').toString().toLowerCase() === 'true';
+const envForceTelemetryDisabled = (process.env.REACT_APP_TELEMETRY_DISABLED || '').toString().toLowerCase() === 'true';
 const requireLiveHardwareForTelemetry = (process.env.REACT_APP_REQUIRE_LIVE_SENSORS || 'true').toString().toLowerCase() !== 'false';
 const TELEMETRY_DISABLED_MESSAGE = 'Telemetry feed temporarily disabled until sensors come online.';
 

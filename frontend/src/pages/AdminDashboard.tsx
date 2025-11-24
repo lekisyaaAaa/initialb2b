@@ -18,8 +18,6 @@ import { SensorData as SensorDataType } from '../types';
 import { socket as sharedSocket } from '../socket';
 import RealtimeTelemetryPanel from '../components/RealtimeTelemetryPanel';
 import { resolveHomeAssistantUrl } from '../utils/homeAssistant';
-import DataSuppressedNotice from '../components/DataSuppressedNotice';
-import { DATA_SUPPRESSED } from '../utils/dataSuppression';
 
 type Sensor = {
   id: string;
@@ -118,7 +116,7 @@ const StatusPill: React.FC<StatusPillProps> = ({ label, status }) => {
   );
 };
 
-const AdminDashboardContent = (): React.ReactElement => {
+export default function AdminDashboard(): React.ReactElement {
   const { user, logout } = useAuth();
   const {
     latestTelemetry: ctxTelemetry,
@@ -1972,30 +1970,5 @@ const AdminDashboardContent = (): React.ReactElement => {
   {/* remove FAB for Gary-Sheng clean layout */}
     </div>
   );
-};
-
-const AdminDashboardSuppressed = (): React.ReactElement => (
-  <div className="min-h-screen bg-coffee-50 dark:bg-gray-900">
-    <HeaderFrame
-      titleSuffix="Dashboard"
-      subtitle="Administrative telemetry overview"
-      badgeLabel="Admin"
-      badgeTone="default"
-      rightSlot={<div className="text-sm font-medium text-gray-500 dark:text-gray-400">Telemetry paused</div>}
-    />
-    <main className="max-w-5xl mx-auto px-4 py-10">
-      <DataSuppressedNotice
-        title="Admin telemetry disabled"
-        instructions="All administrative dashboards are temporarily offline so no data leaves the backend."
-      />
-    </main>
-  </div>
-);
-
-export default function AdminDashboard(): React.ReactElement {
-  if (DATA_SUPPRESSED) {
-    return <AdminDashboardSuppressed />;
-  }
-  return <AdminDashboardContent />;
 }
 

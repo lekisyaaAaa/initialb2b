@@ -27,8 +27,35 @@ export const UserManagement: React.FC<UserManagementProps> = ({ currentUserRole 
   const loadUsers = async () => {
     setLoading(true);
     try {
-      // TODO: wire real /api/admin/users endpoint once backend is ready.
-      setUsers([]);
+      // In a real implementation, this would fetch from /api/admin/users
+      // For now, we'll simulate with mock data
+      const mockUsers: User[] = [
+        {
+          id: '1',
+          username: 'beantobin',
+          role: 'admin',
+          createdAt: '2024-01-01T00:00:00Z',
+          lastLogin: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(), // 2 hours ago
+          isActive: true
+        },
+        {
+          id: '2',
+          username: 'operator1',
+          role: 'user',
+          createdAt: '2024-01-15T00:00:00Z',
+          lastLogin: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(), // 1 day ago
+          isActive: true
+        },
+        {
+          id: '3',
+          username: 'monitor',
+          role: 'user',
+          createdAt: '2024-02-01T00:00:00Z',
+          lastLogin: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(), // 1 week ago
+          isActive: false
+        }
+      ];
+      setUsers(mockUsers);
     } catch (error) {
       console.error('Failed to load users:', error);
     } finally {

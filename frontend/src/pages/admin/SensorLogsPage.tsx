@@ -2,10 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Download, RefreshCw, Search, Filter, Trash2 } from 'lucide-react';
 import DarkModeToggle from '../../components/DarkModeToggle';
-import DataSuppressedNotice from '../../components/DataSuppressedNotice';
 import { sensorLogService } from '../../services/api';
 import { PaginationInfo, SensorLogEntry } from '../../types';
-import { DATA_SUPPRESSED } from '../../utils/dataSuppression';
 
 interface Filters {
   search: string;
@@ -34,7 +32,7 @@ const ORIGIN_OPTIONS = [
   { label: 'ESP32 Batch', value: 'esp32_batch' },
 ];
 
-const SensorLogsPageContent: React.FC = () => {
+const SensorLogsPage: React.FC = () => {
   const [logs, setLogs] = useState<SensorLogEntry[]>([]);
   const [pagination, setPagination] = useState<PaginationInfo | null>(null);
   const [loading, setLoading] = useState(false);
@@ -418,33 +416,6 @@ const SensorLogsPageContent: React.FC = () => {
       </main>
     </div>
   );
-};
-
-const SensorLogsPageSuppressed: React.FC = () => (
-  <div className="min-h-screen bg-gradient-to-br from-coffee-50 to-white dark:from-gray-900 dark:to-gray-950">
-    <header className="sticky top-0 z-40 border-b border-white/40 bg-white/70 backdrop-blur dark:border-gray-800/60 dark:bg-gray-900/70">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-        <div>
-          <p className="text-xs uppercase tracking-wide text-gray-500">Administrator</p>
-          <h1 className="text-2xl font-semibold text-gray-900 dark:text-white">Sensor Logs</h1>
-        </div>
-        <DarkModeToggle />
-      </div>
-    </header>
-    <main className="mx-auto max-w-5xl px-6 py-10">
-      <DataSuppressedNotice
-        title="Sensor logs unavailable"
-        instructions="Data export endpoints are offline while telemetry is suppressed."
-      />
-    </main>
-  </div>
-);
-
-const SensorLogsPage: React.FC = () => {
-  if (DATA_SUPPRESSED) {
-    return <SensorLogsPageSuppressed />;
-  }
-  return <SensorLogsPageContent />;
 };
 
 export default SensorLogsPage;
