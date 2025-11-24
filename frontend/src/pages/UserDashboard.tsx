@@ -3,7 +3,9 @@ import { Link } from 'react-router-dom';
 import { AlertTriangle, Activity, ArrowLeft, ArrowRight, RefreshCw } from 'lucide-react';
 import RealtimeTelemetryPanel from '../components/RealtimeTelemetryPanel';
 import DarkModeToggle from '../components/DarkModeToggle';
+import DataSuppressedNotice from '../components/DataSuppressedNotice';
 import { useData } from '../contexts/DataContext';
+import { DATA_SUPPRESSED } from '../utils/dataSuppression';
 
 const formatTimestamp = (value?: string | null) => {
   if (!value) return 'Never';
@@ -14,7 +16,31 @@ const formatTimestamp = (value?: string | null) => {
   }
 };
 
-const UserDashboard: React.FC = () => {
+const SuppressedUserDashboard = () => (
+  <div className="min-h-screen bg-gradient-to-br from-coffee-50 via-white to-primary-50 dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
+    <header className="bg-white/90 dark:bg-gray-900/80 border-b border-coffee-100 dark:border-gray-800 backdrop-blur">
+      <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
+        <div>
+          <Link to="/" className="text-2xl font-bold text-espresso-900 dark:text-white">
+            VermiLinks Dashboard
+          </Link>
+          <p className="text-sm text-espresso-500 dark:text-gray-400">Live telemetry temporarily unavailable.</p>
+        </div>
+        <div className="flex items-center gap-4">
+          <Link to="/admin/login" className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-coffee-200 text-sm font-semibold text-espresso-700 hover:bg-coffee-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800">
+            <ArrowRight className="h-4 w-4" /> Admin Login
+          </Link>
+          <DarkModeToggle />
+        </div>
+      </div>
+    </header>
+    <main className="max-w-6xl mx-auto px-6 py-10">
+      <DataSuppressedNotice title="Public dashboard is offline" instructions="Telemetry output has been disabled so no raw or mock sensor values are shown." />
+    </main>
+  </div>
+);
+
+const UserDashboardContent: React.FC = () => {
   const {
     latestTelemetry,
     latestSensorData,
@@ -183,6 +209,13 @@ const UserDashboard: React.FC = () => {
       </main>
     </div>
   );
+};
+
+const UserDashboard: React.FC = () => {
+  if (DATA_SUPPRESSED) {
+    return <SuppressedUserDashboard />;
+  }
+  return <UserDashboardContent />;
 };
 
 export default UserDashboard;

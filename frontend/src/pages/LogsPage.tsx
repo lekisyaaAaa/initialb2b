@@ -2,7 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import DarkModeToggle from '../components/DarkModeToggle';
+import DataSuppressedNotice from '../components/DataSuppressedNotice';
 import { Download, Search } from 'lucide-react';
+import { DATA_SUPPRESSED } from '../utils/dataSuppression';
 
 type LogEntry = {
   id: string;
@@ -12,7 +14,7 @@ type LogEntry = {
   details?: any;
 };
 
-export default function LogsPage() {
+const LogsPageContent = (): React.ReactElement => {
   const { user, isAuthenticated } = useAuth();
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [filteredLogs, setFilteredLogs] = useState<LogEntry[]>([]);
@@ -41,17 +43,14 @@ export default function LogsPage() {
 
   async function loadLogs() {
     try {
-      // Load sensor logs
       const sensorRes = await fetch('/api/sensors?limit=100');
       const sensorData = sensorRes.ok ? await sensorRes.json() : [];
 
-      // Load alerts
       const alertRes = await fetch('/api/alerts?limit=100');
       const alertData = alertRes.ok ? await alertRes.json() : [];
 
       const allLogs: LogEntry[] = [];
 
-      // Process sensor data
       sensorData.forEach((sensor: any) => {
         allLogs.push({
           id: `sensor-${sensor.id}`,
@@ -62,7 +61,6 @@ export default function LogsPage() {
         });
       });
 
-      // Process alerts
       alertData.forEach((alert: any) => {
         allLogs.push({
           id: `alert-${alert.id}`,
@@ -73,7 +71,6 @@ export default function LogsPage() {
         });
       });
 
-      // Sort by timestamp descending
       allLogs.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
       setLogs(allLogs);
     } catch (e) {
@@ -199,4 +196,33 @@ export default function LogsPage() {
       </main>
     </div>
   );
-}
+};
+
+const LogsPageSuppressed = (): React.ReactElement => (
+  <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <header className="border-b border-gray-200 bg-white/80 backdrop-blur dark:border-gray-800 dark:bg-gray-900/80">
+      <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">System Logs</h1>
+          <p className="text-sm text-gray-500">Export temporarily disabled</p>
+        </div>
+        <DarkModeToggle />
+      </div>
+    </header>
+    <main className="mx-auto max-w-4xl px-6 py-10">
+      <DataSuppressedNotice
+        title="Logs unavailable"
+        instructions="Audit and sensor logs cannot be viewed while telemetry is suppressed."
+      />
+    </main>
+  </div>
+);
+
+const LogsPage = (): React.ReactElement => {
+  if (DATA_SUPPRESSED) {
+    return <LogsPageSuppressed />;
+  }
+  return <LogsPageContent />;
+};
+
+export default LogsPage;

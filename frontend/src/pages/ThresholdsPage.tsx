@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import DarkModeToggle from '../components/DarkModeToggle';
+import DataSuppressedNotice from '../components/DataSuppressedNotice';
+import { DATA_SUPPRESSED } from '../utils/dataSuppression';
 
 type Thresholds = {
   temperature: { warning: number; critical: number };
@@ -13,7 +15,7 @@ type Thresholds = {
   waterLevel: { min: number };
 };
 
-export default function ThresholdsPage() {
+const ThresholdsPageContent = (): React.ReactElement => {
   const { user, isAuthenticated } = useAuth();
   const [thresholds, setThresholds] = useState<Thresholds | null>(null);
   const [loading, setLoading] = useState(true);
@@ -261,4 +263,33 @@ export default function ThresholdsPage() {
       </main>
     </div>
   );
-}
+};
+
+const ThresholdsPageSuppressed = (): React.ReactElement => (
+  <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <header className="border-b border-gray-200 bg-white/70 backdrop-blur dark:border-gray-800 dark:bg-gray-900/80">
+      <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
+        <div>
+          <h1 className="text-2xl font-semibold text-gray-900 dark:text-gray-100">Thresholds</h1>
+          <p className="text-sm text-gray-500">Configuration locked while telemetry is disabled.</p>
+        </div>
+        <DarkModeToggle />
+      </div>
+    </header>
+    <main className="mx-auto max-w-4xl px-6 py-10">
+      <DataSuppressedNotice
+        title="Threshold settings unavailable"
+        instructions="Live settings editing is paused to guarantee that no sensor data or rules are exposed during lockdown."
+      />
+    </main>
+  </div>
+);
+
+const ThresholdsPage = (): React.ReactElement => {
+  if (DATA_SUPPRESSED) {
+    return <ThresholdsPageSuppressed />;
+  }
+  return <ThresholdsPageContent />;
+};
+
+export default ThresholdsPage;

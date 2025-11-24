@@ -4,6 +4,8 @@ import { AlertTriangle, ArrowLeft, CheckCircle2, Loader2, Plug, RefreshCw } from
 import HeaderFrame from '../components/layout/HeaderFrame';
 import { DevicePort } from '../types';
 import { assignPort, enumeratePorts, listSavedPorts, EnumeratePortsMeta } from '../services/devicePorts';
+import DataSuppressedNotice from '../components/DataSuppressedNotice';
+import { DATA_SUPPRESSED } from '../utils/dataSuppression';
 
 interface FormState {
   port_name: string;
@@ -16,7 +18,7 @@ interface FormState {
 
 const ALLOWED_PORT_TYPES = ['UART', 'RS485', 'I2C', 'GPIO', 'SPI', 'OTHER'];
 
-const DevicePortsPage: React.FC = () => {
+const DevicePortsPageContent: React.FC = () => {
   const { deviceId } = useParams<{ deviceId: string }>();
   const navigate = useNavigate();
 
@@ -451,6 +453,31 @@ const DevicePortsPage: React.FC = () => {
       )}
     </div>
   );
+};
+
+const DevicePortsPageSuppressed: React.FC = () => (
+  <div className="min-h-screen bg-coffee-50 dark:bg-gray-900">
+    <HeaderFrame
+      titleSuffix="Device Ports"
+      subtitle="Hardware configuration locked"
+      badgeLabel="Admin"
+      badgeTone="default"
+      rightSlot={<div className="text-sm font-medium text-gray-500 dark:text-gray-400">Actions offline</div>}
+    />
+    <main className="max-w-4xl mx-auto px-4 py-10">
+      <DataSuppressedNotice
+        title="Port configuration disabled"
+        instructions="Live hardware configuration is unavailable while data output is suppressed."
+      />
+    </main>
+  </div>
+);
+
+const DevicePortsPage: React.FC = () => {
+  if (DATA_SUPPRESSED) {
+    return <DevicePortsPageSuppressed />;
+  }
+  return <DevicePortsPageContent />;
 };
 
 export default DevicePortsPage;
