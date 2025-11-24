@@ -1,43 +1,14 @@
-/**
- * VermiLinks ESP32 telemetry + actuator firmware
- * - Sends telemetry every 5–10 seconds to the backend REST API
- * - Polls for actuator commands and acknowledges execution
- * - Enforces float sensor safety interlock on GPIO 5 (D5/DB5)
- */
+/*
+  Deprecated: environmental_monitor.ino
 
-#include <WiFi.h>
-#include <WiFiClientSecure.h>
-#include <HTTPClient.h>
-#include <ArduinoJson.h>
-// Modbus/RS485
-#include <ModbusMaster.h>
+  This file has been superseded by two separate sketches added to the repo:
+    - ../esp32a.ino  (Actuator controller)
+    - ../esp32b.ino  (RS485 sensor publisher)
 
-#include "config.h"
+  The original environmental monitor implementation was retained here only as
+  a placeholder. Please use `esp32/esp32a.ino` and `esp32/esp32b.ino` instead.
+*/
 
-// Hardware pin mapping is defined centrally in config.h.
-// Pins in use (from config.h):
-//   FLOAT_SENSOR_PIN 16
-//   PUMP_PIN         5
-//   SOLENOID_PIN_1   25
-//   SOLENOID_PIN_2   26
-//   SOLENOID_PIN_3   27
-
-// Toggle simulation for lab testing. Set to false for production with real RS485 sensors.
-#ifndef SIMULATE_SENSORS
-#define SIMULATE_SENSORS 0
-#endif
-
-// Active-low relay boards keep valves off when the output is HIGH
-const int RELAY_ACTIVE_LEVEL = LOW;
-const int RELAY_INACTIVE_LEVEL = HIGH;
-
-const unsigned long MIN_TELEMETRY_INTERVAL_MS = 5000;
-const unsigned long MAX_TELEMETRY_INTERVAL_MS = 10000;
-const unsigned long COMMAND_POLL_INTERVAL_MS = 3000;
-const unsigned long WIFI_RETRY_BASE_MS = 2000;
-const unsigned long WIFI_RETRY_MAX_MS = 30000;
-
-unsigned long lastTelemetryAt = 0;
 unsigned long nextTelemetryInterval = MIN_TELEMETRY_INTERVAL_MS;
 unsigned long lastCommandPollAt = 0;
 unsigned long lastWifiAttemptAt = 0;
