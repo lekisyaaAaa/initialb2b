@@ -1039,7 +1039,7 @@ export default function AdminDashboard(): React.ReactElement {
     );
   };
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'devices' | 'monitoring' | 'management' | 'reports'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'devices' | 'monitoring' | 'management'>('overview');
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
@@ -1047,7 +1047,7 @@ export default function AdminDashboard(): React.ReactElement {
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const requestedTab = (params.get('tab') || '').toLowerCase();
-    if (['overview', 'devices', 'monitoring', 'management', 'reports'].includes(requestedTab) && requestedTab !== activeTab) {
+    if (['overview', 'devices', 'monitoring', 'management'].includes(requestedTab) && requestedTab !== activeTab) {
       setActiveTab(requestedTab as typeof activeTab);
     }
   }, [activeTab, location.search]);
@@ -1196,17 +1196,7 @@ export default function AdminDashboard(): React.ReactElement {
                 <Users className="w-4 h-4" />
                 Management
               </button>
-              <button
-                onClick={() => setActiveTab('reports')}
-                className={`px-6 py-4 text-sm font-medium border-b-2 whitespace-nowrap flex items-center gap-2 ${
-                  activeTab === 'reports'
-                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
-                }`}
-              >
-                <Calendar className="w-4 h-4" />
-                Reports
-              </button>
+              {/* Reports tab removed */}
               {/* Alerts tab intentionally removed — alerts are managed inside Monitoring */}
             </nav>
           </div>
@@ -1756,7 +1746,7 @@ export default function AdminDashboard(): React.ReactElement {
             )}
 
             {/* Reports Tab */}
-            {activeTab === 'reports' && (
+            {false && (
               <div className="space-y-6">
                 <div className="text-center py-8">
                   <Calendar className="w-12 h-12 mx-auto mb-4 text-gray-400" />
