@@ -118,29 +118,7 @@ export default function ThresholdsPage() {
               </div>
             </div>
 
-            <div>
-              <h3 className="text-md font-medium text-gray-700 dark:text-gray-200 mb-3">Humidity (%)</h3>
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <label className="text-sm w-16">Warning:</label>
-                  <input
-                    type="number"
-                    value={thresholds.humidity.warning}
-                    onChange={e => setThresholds(prev => prev ? { ...prev, humidity: { ...prev.humidity, warning: +e.target.value } } : null)}
-                    className="px-2 py-1 rounded border bg-white/80 dark:bg-gray-700/60 text-sm"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-sm w-16">Critical:</label>
-                  <input
-                    type="number"
-                    value={thresholds.humidity.critical}
-                    onChange={e => setThresholds(prev => prev ? { ...prev, humidity: { ...prev.humidity, critical: +e.target.value } } : null)}
-                    className="px-2 py-1 rounded border bg-white/80 dark:bg-gray-700/60 text-sm"
-                  />
-                </div>
-              </div>
-            </div>
+            {/* Humidity thresholds removed */}
 
             <div>
               <h3 className="text-md font-medium text-gray-700 dark:text-gray-200 mb-3">Moisture (%)</h3>

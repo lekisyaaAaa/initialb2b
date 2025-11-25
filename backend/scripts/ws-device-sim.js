@@ -3,6 +3,11 @@
 // Usage: node ws-device-sim.js [wsUrl] [deviceId]
 // Example: node ws-device-sim.js ws://localhost:5000 esp32-test-01
 
+if (process.env.ENABLE_MOCKS !== 'true') {
+  console.log('Mock simulator disabled in production. Set ENABLE_MOCKS=true to enable.');
+  process.exit(0);
+}
+
 const WebSocket = require('ws');
 
 const wsUrl = process.argv[2] || process.env.WS_URL || 'ws://localhost:5000';

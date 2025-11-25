@@ -118,6 +118,12 @@ const backendBaseFromApi = () => {
 
 const socketsEnabled = (process.env.REACT_APP_ENABLE_SOCKETS || '').toString().toLowerCase() === 'true';
 const treatHaAsSecondary = (process.env.REACT_APP_TREAT_HA_AS_SECONDARY || 'true').toString().toLowerCase() === 'true';
+const TELEMETRY_SMOOTH_ALPHA = (() => {
+  const raw = Number(process.env.REACT_APP_TELEMETRY_SMOOTH_ALPHA ?? 0.4);
+  return Number.isFinite(raw) && raw > 0 && raw <= 1 ? raw : 0.4;
+})();
+const DEVICE_ONLINE_CONFIRM = Number(process.env.REACT_APP_DEVICE_ONLINE_CONFIRM || 3);
+const DEVICE_OFFLINE_CONFIRM = Number(process.env.REACT_APP_DEVICE_OFFLINE_CONFIRM || 3);
 const STALE_TELEMETRY_THRESHOLD_MS = (() => {
   const raw = Number(process.env.REACT_APP_HIDE_STALE_MS || 5 * 60 * 1000);
   return Number.isFinite(raw) && raw > 0 ? raw : 5 * 60 * 1000;
@@ -343,6 +349,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const telemetryDisabled = envForceTelemetryDisabled || hardwareGateActive;
   const backendBaseRef = useRef<string>('');
   const latestTelemetryRef = useRef<SensorData | null>(null);
+  const deviceOnlineCountsRef = useRef<Record<string, number>>({});
   useEffect(() => {
     latestTelemetryRef.current = latestTelemetry;
   }, [latestTelemetry]);
@@ -372,26 +379,41 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   }, []);
 
   const mergeDeviceStatus = useCallback((update: Partial<DeviceStatusInfo> & { deviceId: string }) => {
-    let computed: Record<string, DeviceStatusInfo> = {};
     setDeviceStatuses((prev) => {
       const existing = prev[update.deviceId];
+      const deviceId = update.deviceId;
+      const wasOnline = existing?.online ?? false;
+
+      // Maintain a signed counter: positive = consecutive online confirmations, negative = consecutive offline confirmations
+      const counts = deviceOnlineCountsRef.current || {};
+      let counter = counts[deviceId] ?? 0;
+      if (update.online) {
+        counter = Math.min(counter + 1, DEVICE_ONLINE_CONFIRM);
+      } else if (typeof update.online === 'boolean') {
+        counter = Math.max(counter - 1, -DEVICE_OFFLINE_CONFIRM);
+      }
+      counts[deviceId] = counter;
+      deviceOnlineCountsRef.current = counts;
+
+      const nowConfirmedOnline = counter >= DEVICE_ONLINE_CONFIRM;
+      const nowConfirmedOffline = counter <= -DEVICE_OFFLINE_CONFIRM;
+
+      const nextOnline = nowConfirmedOnline ? true : nowConfirmedOffline ? false : wasOnline;
+
       const next: DeviceStatusInfo = {
-        deviceId: update.deviceId,
-        online: update.online ?? existing?.online ?? false,
-        status: update.status || existing?.status || (update.online ? 'online' : 'offline'),
+        deviceId,
+        online: nextOnline,
+        status: update.status || existing?.status || (nextOnline ? 'online' : 'offline'),
         lastHeartbeat: update.lastHeartbeat ?? existing?.lastHeartbeat ?? null,
         updatedAt: update.updatedAt ?? new Date().toISOString(),
       };
-      computed = { ...prev, [update.deviceId]: next };
-      return computed;
-    });
-    if (Object.keys(computed).length > 0) {
+
+      const computed = { ...prev, [deviceId]: next };
       const anyOnline = Object.values(computed).some((state) => state.online);
       setIsConnected(anyOnline);
-    } else if (!latestTelemetry) {
-      setIsConnected(false);
-    }
-  }, [latestTelemetry]);
+      return computed;
+    });
+  }, []);
 
   const refreshAlerts = useCallback(async () => {
     if (telemetryDisabled) {
@@ -488,7 +510,27 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
     merged.lastSeen = normalized.lastSeen;
     merged.deviceOnline = normalized.deviceOnline;
 
-    setLatestTelemetry(merged);
+    // Apply simple exponential smoothing to numeric telemetry values to reduce UI jitter
+    const smooth = (existing: SensorData | null, incoming: SensorData, alpha = TELEMETRY_SMOOTH_ALPHA): SensorData => {
+      if (!existing) return { ...incoming };
+      const out: any = { ...existing, ...incoming };
+      const numericKeys: Array<keyof SensorData> = ['temperature', 'humidity', 'moisture', 'ph', 'ec', 'nitrogen', 'phosphorus', 'potassium', 'waterLevel', 'floatSensor', 'batteryLevel', 'signalStrength'];
+      numericKeys.forEach((k) => {
+        const inc = (incoming as any)[k];
+        const ex = (existing as any)[k];
+        if (typeof inc === 'number' && typeof ex === 'number') {
+          out[k] = Number((ex * (1 - alpha) + inc * alpha).toFixed(4));
+        } else if (typeof inc === 'number') {
+          out[k] = inc;
+        } else {
+          out[k] = ex ?? null;
+        }
+      });
+      return out as SensorData;
+    };
+
+    const smoothed = smooth(latestTelemetryRef.current, merged);
+    setLatestTelemetry(smoothed);
     setIsConnected(connectionHealthy || Boolean(latestTelemetryRef.current));
     setActuatorStates(merged.actuatorStates || null);
     if (options?.updateLatestList !== false) {
@@ -496,7 +538,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         const filtered = Array.isArray(prev)
           ? prev.filter((reading) => (reading?.deviceId || '') !== deviceId)
           : [];
-        return [...filtered, merged];
+          return [...filtered, merged];
       });
     }
     setLastFetchAt(new Date().toISOString());
@@ -616,7 +658,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
         setIsLoading(false);
       }
     }
-  }, [ensureBackendBase, handleTelemetryPayload, telemetryDisabled]);
+  }, [ensureBackendBase, handleTelemetryPayload, telemetryDisabled, deviceStatuses]);
 
   const refreshSensors = useCallback(async (options?: { background?: boolean }) => {
     await refreshTelemetry(options);
@@ -862,6 +904,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   const contextValue = useMemo<DataContextType>(() => ({
     latestTelemetry,
     latestSensorData,
+    latestHaSnapshot,
     actuatorStates,
     deviceStatuses,
     recentAlerts,
@@ -881,6 +924,7 @@ export const DataProvider: React.FC<DataProviderProps> = ({ children }) => {
   }), [
     latestTelemetry,
     latestSensorData,
+    latestHaSnapshot,
     actuatorStates,
     deviceStatuses,
     recentAlerts,

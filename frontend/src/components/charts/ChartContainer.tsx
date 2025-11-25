@@ -3,7 +3,6 @@ import { toDateTime } from '../../utils/date';
 import { Calendar, Filter, TrendingUp, BarChart3 } from 'lucide-react';
 import { SensorData } from '../../types';
 import TemperatureChart from './TemperatureChart';
-import HumidityChart from './HumidityChart';
 import MoistureChart from './MoistureChart';
 import PhChart from './PhChart';
 import EcChart from './EcChart';
@@ -31,7 +30,7 @@ interface ChartContainerProps {
 }
 
 type TimeRange = '1h' | '6h' | '24h' | '7d' | '30d';
-type ChartType = 'temperature' | 'humidity' | 'moisture' | 'ph' | 'ec' | 'npk' | 'waterLevel' | 'multi';
+type ChartType = 'temperature' | 'moisture' | 'ph' | 'ec' | 'npk' | 'waterLevel' | 'multi';
 
 const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }) => {
   const [timeRange, setTimeRange] = useState<TimeRange>('24h');
@@ -75,7 +74,6 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
   const chartTypeOptions = [
     { value: 'multi', label: 'All Sensors', icon: BarChart3 },
     { value: 'temperature', label: 'Temperature', icon: TrendingUp },
-    { value: 'humidity', label: 'Humidity', icon: TrendingUp },
   { value: 'moisture', label: 'Moisture', icon: TrendingUp },
   { value: 'ph', label: 'pH', icon: TrendingUp },
   { value: 'ec', label: 'EC', icon: TrendingUp },
@@ -89,8 +87,6 @@ const ChartContainer: React.FC<ChartContainerProps> = ({ data, title, deviceId }
     switch (chartType) {
       case 'temperature':
         return <TemperatureChart data={filteredData} height={chartHeight} className="h-full" />;
-      case 'humidity':
-        return <HumidityChart data={filteredData} height={chartHeight} className="h-full" />;
       case 'moisture':
         return <MoistureChart data={filteredData} height={chartHeight} className="h-full" />;
       case 'ph':

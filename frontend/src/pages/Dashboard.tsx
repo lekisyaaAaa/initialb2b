@@ -485,22 +485,7 @@ const Dashboard: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Humidity Card */}
-                    <div className="group relative overflow-hidden h-full">
-                      <div className="relative bg-white/80 dark:bg-gray-800/80 backdrop-blur-lg border border-white/50 dark:border-gray-700/50 rounded-2xl p-6 shadow-2xl hover:shadow-3xl transition-all duration-500 group-hover:scale-105 group-hover:-translate-y-2 flex flex-col h-full dashboard-card">
-                        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-blue-500 to-primary-500 rounded-t-2xl"></div>
-                        <div className="flex items-center mb-4">
-                          <div className="flex-shrink-0 w-14 h-14 flex items-center justify-center rounded-2xl mr-4 bg-gradient-to-br from-blue-100 to-blue-50 dark:from-blue-800 dark:to-blue-700 shadow-lg group-hover:rotate-12 transition-transform duration-500">
-                            <Droplets className="h-6 w-6 text-blue-600 dark:text-blue-300" />
-                          </div>
-                          <div className="flex flex-col justify-center flex-1 min-h-[72px]">
-                            <div className="mb-2"><p className="text-sm font-medium text-espresso-600 dark:text-gray-300">Humidity</p></div>
-                            <p className="text-3xl font-bold text-espresso-900 dark:text-white group-hover:text-letran-600 dark:group-hover:text-letran-400 transition-colors">{`${formatFixed(latestReadings?.humidity, 1)}%`}</p>
-                          </div>
-                        </div>
-                        <div className="flex-1 min-h-[140px]"></div>
-                      </div>
-                    </div>
+                    {/* Humidity removed per request */}
 
                     {/* Soil Moisture Card */}
                     <div className="group relative overflow-hidden h-full">
@@ -850,13 +835,7 @@ const Dashboard: React.FC = () => {
                                   <span className="font-bold text-espresso-900 dark:text-white">{`${formatFixed(latestData.temperature, 1)}??C`}</span>
                                 </div>
 
-                                <div className="flex items-center justify-between p-2 rounded-lg bg-gradient-to-r from-blue-50 to-blue-25 dark:from-blue-900/20 dark:to-blue-800/20">
-                                  <div className="flex items-center space-x-2">
-                                    <Droplets className="h-4 w-4 text-blue-500" />
-                                    <span className="text-sm font-medium text-espresso-600 dark:text-gray-300">Humidity</span>
-                                  </div>
-                                  <span className="font-bold text-espresso-900 dark:text-white">{`${formatFixed(latestData.humidity, 1)}%`}</span>
-                                </div>
+                                {/* Humidity stat removed per request */}
 
                                 <div className="flex items-center justify-between p-2 rounded-lg bg-gradient-to-r from-green-50 to-green-25 dark:from-green-900/20 dark:to-green-800/20">
                                   <div className="flex items-center space-x-2">

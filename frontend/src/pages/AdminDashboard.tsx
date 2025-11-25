@@ -17,6 +17,7 @@ import api, { alertService } from '../services/api';
 import { SensorData as SensorDataType } from '../types';
 import { socket as sharedSocket } from '../socket';
 import RealtimeTelemetryPanel from '../components/RealtimeTelemetryPanel';
+import HADiagnosticsBadge from '../components/HADiagnosticsBadge';
 import { resolveHomeAssistantUrl } from '../utils/homeAssistant';
 
 type Sensor = {
@@ -595,11 +596,10 @@ export default function AdminDashboard(): React.ReactElement {
     }
 
     try {
-      const headers = ['Timestamp', 'Temperature (°C)', 'Humidity (%)', 'Soil Moisture (%)', 'pH', 'EC (mS/cm)', 'Water Level', 'Battery (%)', 'Signal (dBm)'];
+      const headers = ['Timestamp', 'Temperature (°C)', 'Soil Moisture (%)', 'pH', 'EC (mS/cm)', 'Water Level', 'Battery (%)', 'Signal (dBm)'];
       const csvData = sensorHistory.map((entry) => [
         entry.timestamp || entry.lastSeen || '',
         entry.temperature ?? '',
-        entry.humidity ?? '',
         entry.moisture ?? '',
         entry.ph ?? '',
         entry.ec ?? '',
@@ -871,7 +871,6 @@ export default function AdminDashboard(): React.ReactElement {
     return {
       deviceId: latestSensor.deviceId,
       temperature: latestSensor.temperature ?? undefined,
-      humidity: latestSensor.humidity ?? undefined,
       moisture: latestSensor.moisture ?? undefined,
       ph: latestSensor.ph ?? undefined,
       ec: latestSensor.ec ?? undefined,
@@ -896,7 +895,6 @@ export default function AdminDashboard(): React.ReactElement {
     return sensorHistory.map((entry) => ({
       deviceId: entry.deviceId,
       temperature: entry.temperature ?? undefined,
-      humidity: entry.humidity ?? undefined,
       moisture: entry.moisture ?? undefined,
       ph: entry.ph ?? undefined,
       ec: entry.ec ?? undefined,
@@ -1072,7 +1070,7 @@ export default function AdminDashboard(): React.ReactElement {
 
   // Maintenance reminders handled in top-of-file declarations
 
-  const chartData = devicesOnline > 0 ? sensorHistory.map((s, i) => ({ time: `${i * 5}s`, temperature: s.temperature ?? 0, humidity: s.humidity ?? 0, moisture: s.moisture ?? 0, ph: s.ph ?? 0, ec: s.ec ?? 0, waterLevel: s.waterLevel ?? 0 })) : [];
+  const chartData = devicesOnline > 0 ? sensorHistory.map((s, i) => ({ time: `${i * 5}s`, temperature: s.temperature ?? 0, moisture: s.moisture ?? 0, ph: s.ph ?? 0, ec: s.ec ?? 0, waterLevel: s.waterLevel ?? 0 })) : [];
 
   return (
     <div className="min-h-screen pt-24 p-6 bg-gray-50 dark:bg-gray-900">
@@ -1222,13 +1220,6 @@ export default function AdminDashboard(): React.ReactElement {
                           detail: `Sensor: ${latestSensor.name ?? latestSensor.deviceId ?? '—'}`,
                         },
                         {
-                          key: 'humidity',
-                          label: 'Humidity',
-                          value: latestSensor.humidity != null ? `${latestSensor.humidity.toFixed(1)}%` : '--',
-                          accent: 'text-sky-600',
-                          detail: `Last seen: ${fmtLastSeen(latestSensor.lastSeen)}`,
-                        },
-                        {
                           key: 'moisture',
                           label: 'Soil Moisture',
                           value: latestSensor.moisture != null ? `${latestSensor.moisture.toFixed(1)}%` : '--',
@@ -1283,7 +1274,7 @@ export default function AdminDashboard(): React.ReactElement {
                 ) : (
                   <div className={`${cardClass} rounded-2xl text-center text-sm text-gray-500 dark:text-gray-400`}>
                     <p className="text-base font-semibold text-gray-800 dark:text-gray-100">No telemetry yet</p>
-                    <p className="mt-1">Connect a VermiLinks sensor to unlock live temperature, humidity, and moisture metrics.</p>
+                    <p className="mt-1">Connect a VermiLinks sensor to unlock live temperature and moisture metrics.</p>
                   </div>
                 )}
 
@@ -1439,6 +1430,9 @@ export default function AdminDashboard(): React.ReactElement {
                   )}
                 </div>
 
+                <div className="mb-3">
+                  <HADiagnosticsBadge />
+                </div>
                 <RealtimeTelemetryPanel
                   latest={realtimeSample}
                   history={telemetryHistory}

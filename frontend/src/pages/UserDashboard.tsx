@@ -4,6 +4,8 @@ import { AlertTriangle, Activity, ArrowLeft, ArrowRight, RefreshCw } from 'lucid
 import RealtimeTelemetryPanel from '../components/RealtimeTelemetryPanel';
 import DarkModeToggle from '../components/DarkModeToggle';
 import { useData } from '../contexts/DataContext';
+import DataSuppressedNotice from '../components/DataSuppressedNotice';
+import { DATA_SUPPRESSED, suppressionReason } from '../utils/dataSuppression';
 
 const formatTimestamp = (value?: string | null) => {
   if (!value) return 'Never';
@@ -73,6 +75,11 @@ const UserDashboard: React.FC = () => {
         </div>
       </header>
 
+      {DATA_SUPPRESSED ? (
+        <main className="max-w-6xl mx-auto px-6 py-10">
+          <DataSuppressedNotice title="Public dashboard is offline" instructions={suppressionReason} />
+        </main>
+      ) : (
       <main className="max-w-6xl mx-auto px-6 py-10 space-y-10">
         <section className="bg-white/80 dark:bg-gray-900/70 border border-coffee-100 dark:border-gray-800 rounded-2xl shadow-sm p-6">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
@@ -80,7 +87,7 @@ const UserDashboard: React.FC = () => {
               <p className="text-sm uppercase tracking-wide text-primary-600 dark:text-primary-300 font-semibold">Live overview</p>
               <h1 className="text-3xl font-black text-espresso-900 dark:text-white">Community Sensor Dashboard</h1>
               <p className="text-espresso-600 dark:text-gray-300 mt-2 max-w-2xl">
-                Monitor temperature, humidity, water level, and more in real-time. This dashboard stays read-only so students and guests can safely follow along without admin credentials.
+                Monitor temperature, water level, and more in real-time. This dashboard stays read-only so students and guests can safely follow along without admin credentials.
               </p>
             </div>
             <div className="flex flex-col items-end gap-2 text-sm text-espresso-600 dark:text-gray-300">
@@ -181,6 +188,7 @@ const UserDashboard: React.FC = () => {
           </div>
         </section>
       </main>
+      )}
     </div>
   );
 };
